@@ -1,0 +1,94 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@theme {
+  /* Brand */
+  --color-primary: #023e8a;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #90e0ef;
+  --color-secondary-foreground: #023e8a;
+
+  /* Background & Foreground */
+  --color-background: #f4f6f8;
+  --color-foreground: #1e2d45;
+
+  /* Card */
+  --color-card: #ffffff;
+  --color-card-foreground: #1e2d45;
+
+  /* Popover */
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1e2d45;
+
+  /* Muted */
+  --color-muted: #f0f2f5;
+  --color-muted-foreground: #64748b;
+
+  /* Accent */
+  --color-accent: #90e0ef;
+  --color-accent-foreground: #023e8a;
+
+  /* Destructive */
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  /* Border / Input / Ring */
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #023e8a;
+
+  /* Surface */
+  --color-surface: #ffffff;
+  --color-surface-foreground: #1e2d45;
+
+  /* Footer */
+  --color-footer: #131f2e;
+  --color-footer-foreground: #8a9ab0;
+
+  /* Sidebar */
+  --color-sidebar: #f8f9fa;
+  --color-sidebar-foreground: #1e2d45;
+  --color-sidebar-primary: #023e8a;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #f0f2f5;
+  --color-sidebar-accent-foreground: #1e2d45;
+  --color-sidebar-border: #e2e8f0;
+  --color-sidebar-ring: #023e8a;
+
+  /* Fonts */
+  --font-sans: "Roboto", sans-serif;
+  --font-display: "Inter", sans-serif;
+
+  /* Border Radius */
+  --radius-sm: calc(0.5rem - 4px);
+  --radius-md: calc(0.5rem - 2px);
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(2, 62, 138, 0.1);
+  }
+}
