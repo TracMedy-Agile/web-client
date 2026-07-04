@@ -12,19 +12,19 @@ const SolutionSection = () => (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <ScrollReveal>
         <div className="mb-16 text-center lg:text-left">
-          <h2 className="text-4xl font-black tracking-tight text-foreground">Our Solution</h2>
+          <h2 className="text-lg font-bold md:text-3xl tracking-tight text-foreground">Our Solution</h2>
           <p className="mt-4 text-lg text-muted-foreground max-w-2xl">Tracmedy connects patients and hospitals after discharge through guided monitoring, medication tracking, and real-time clinical visibility.</p>
         </div>
       </ScrollReveal>
       <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
         {cards.map((c, i) => (
           <ScrollReveal key={c.title} delay={i * 0.15}>
-            <div className="group relative flex flex-col gap-6 rounded-2xl border border-border bg-surface p-8 transition-all hover:border-primary/50 hover:shadow-xl h-full">
+            <div className="group relative flex flex-col gap-6 rounded-2xl border border-border bg-surface p-4 sm:p-8 transition-all hover:border-primary/50 hover:shadow-xl h-full">
               <div className={`flex h-14 w-14 items-center justify-center rounded-xl shadow-lg ${c.variant === "primary" ? "bg-primary text-primary-foreground shadow-primary/20" : "bg-secondary text-secondary-foreground shadow-secondary/20"}`}>
                 {c.icon}
               </div>
               <div>
-                <h4 className="text-xl font-bold text-foreground">{c.title}</h4>
+                <h4 className="text-lg font-bold md:text-xl text-foreground">{c.title}</h4>
                 <p className="mt-3 text-muted-foreground">{c.desc}</p>
               </div>
             </div>
@@ -36,3 +36,5 @@ const SolutionSection = () => (
 );
 
 export default SolutionSection;
+
+

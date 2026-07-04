@@ -19,7 +19,7 @@ export default function LiveAlerts({ alerts = [] }: LiveAlertsProps) {
   const hasAlerts = alerts.length > 0;
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-border bg-card p-6 shadow-sm">
+    <div className="flex h-full flex-col rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5 lg:p-6">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
           <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -85,3 +85,5 @@ export default function LiveAlerts({ alerts = [] }: LiveAlertsProps) {
     </div>
   );
 }
+
+

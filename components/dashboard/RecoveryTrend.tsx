@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "@/lib/utils";
@@ -19,10 +19,15 @@ const RANGES = ["7d", "30d"] as const;
 
 export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
   const [range, setRange] = useState<(typeof RANGES)[number]>("7d");
+  const [mounted, setMounted] = useState(false);
   const hasData = data.length > 0;
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5 lg:p-6">
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">Recovery Trend</h2>
@@ -61,29 +66,33 @@ export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
       </div>
 
       {hasData ? (
-        <div className="mt-6 h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data}>
-              <CartesianGrid vertical={false} stroke="#e2e8f0" />
-              <XAxis
-                dataKey="day"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "#64748b", fontSize: 12 }}
-              />
-              <YAxis
-                domain={[0, 100]}
-                ticks={[0, 15, 30, 45, 60, 75, 90, 100]}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "#64748b", fontSize: 12 }}
-                label={{ value: "Recovery Score", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 12 }}
-              />
-              <Tooltip />
-              <Line type="monotone" dataKey="active" stroke="#023e8a" strokeWidth={2} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="mean" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div style={{ width: "100%", height: 288 }} className="mt-6">
+          {mounted ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid vertical={false} stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="day"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  ticks={[0, 15, 30, 45, 60, 75, 90, 100]}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                  label={{ value: "Recovery Score", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 12 }}
+                />
+                <Tooltip />
+                <Line type="monotone" dataKey="active" stroke="#023e8a" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="mean" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full animate-pulse rounded-lg bg-muted/40" />
+          )}
         </div>
       ) : (
         <div className="mt-6 flex flex-col items-center justify-center py-16 text-center">
@@ -99,3 +108,5 @@ export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
     </div>
   );
 }
+
+

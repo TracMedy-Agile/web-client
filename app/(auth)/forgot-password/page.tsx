@@ -12,7 +12,7 @@ function TracmedyLogo() {
       <div className=" flex items-center justify-center">
        <Image src="/tracmedy_logo.svg" alt="Tracmedy Logo" width={40} height={40}  />
       </div>
-      <span className="text-xl font-bold text-primary tracking-[0.2em]">TRACMEDY</span>
+      <span className="text-lg font-bold md:text-xl text-primary tracking-[0.2em]">TRACMEDY</span>
     </div>
   )
 }
@@ -69,11 +69,11 @@ export default function ForgotPasswordPage() {
           <TracmedyLogo />
         </div>
 
-        <div className="flex-1 flex items-center justify-center px-8 pb-16">
+        <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-16">
           <div className="w-full max-w-md">
            
 
-            <h2 className="text-3xl font-bold text-gray-900 mb-3 text-center">Forgot Password?</h2>
+            <h2 className="text-lg font-bold md:text-3xl text-gray-900 mb-3 text-center">Forgot Password?</h2>
             <p className="text-gray-400 text-sm mb-10 leading-relaxed text-center">
               Don&apos;t worry, it happens. Enter your registered email address and we&apos;ll send you a secure link to reset your password.
             </p>
@@ -170,3 +170,4 @@ export default function ForgotPasswordPage() {
     </div>
   )
 }
+

@@ -19,7 +19,7 @@ export default function MetricCard({
   changeType = "positive",
 }: MetricCardProps) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
       <div className="flex items-center justify-between">
         <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", iconClassName)}>
           <Icon className="h-5 w-5" />
@@ -36,7 +36,10 @@ export default function MetricCard({
         )}
       </div>
       <p className="mt-4 text-sm text-muted-foreground">{label}</p>
-      <p className="mt-1 text-3xl font-bold text-foreground">{value}</p>
+      <p className="mt-1 text-xl font-bold text-foreground md:text-3xl">{value}</p>
     </div>
   );
 }
+
+
+

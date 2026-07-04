@@ -20,7 +20,7 @@ const FAQSection = () => {
     <section className="py-12 sm:py-16 lg:py-20 bg-surface">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <ScrollReveal>
-          <h2 className="text-center text-3xl font-bold mb-12 text-foreground">Explore our FAQs</h2>
+          <h2 className="text-center text-lg font-bold md:text-3xl mb-12 text-foreground">Explore our FAQs</h2>
         </ScrollReveal>
         <div className="space-y-4">
           {faqs.map((f, i) => (
@@ -56,5 +56,6 @@ const FAQSection = () => {
 };
 
 export default FAQSection;
+
 
 

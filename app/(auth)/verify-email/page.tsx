@@ -23,7 +23,7 @@ function TracmedyLogo() {
       <div className="w-9 h-9 flex items-center justify-center">
        <Image src="/tracmedy_logo.svg" alt="Tracmedy Logo" width={40} height={40}  />
       </div>
-      <span className="text-xl font-bold text-primary tracking-[0.2em]">TRACMEDY</span>
+      <span className="text-lg font-bold md:text-xl text-primary tracking-[0.2em]">TRACMEDY</span>
     </div>
   )
 }
@@ -137,9 +137,9 @@ function VerifyEmailContent() {
           <TracmedyLogo />
         </div>
 
-        <div className="flex-1 flex items-center justify-center px-8 pb-16">
+        <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-16">
           <div className="w-full max-w-md">
-            <h2 className="text-3xl font-bold text-gray-900 text-center mb-3">
+            <h2 className="text-lg font-bold md:text-3xl text-gray-900 text-center mb-3">
               Verify Your Identity
             </h2>
             <p className="text-gray-400 text-sm text-center mb-1">
@@ -258,3 +258,4 @@ export default function VerifyEmailPage() {
     </Suspense>
   )
 }
+

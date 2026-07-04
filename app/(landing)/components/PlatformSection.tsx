@@ -7,14 +7,14 @@ const PlatformSection = () => (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <ScrollReveal>
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-black tracking-tight text-foreground">Launching Soon on iOS, Android &amp; Web</h2>
+          <h2 className="text-lg font-bold md:text-3xl tracking-tight text-foreground">Launching Soon on iOS, Android &amp; Web</h2>
         </div>
       </ScrollReveal>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <ScrollReveal>
           <div className="bg-secondary/30 rounded-3xl p-10 flex flex-col items-center overflow-hidden relative h-full">
             <div className="relative z-10 text-center">
-              <h4 className="text-3xl font-bold text-foreground">iOS &amp; Android</h4>
+              <h4 className="text-lg font-bold md:text-3xl text-foreground">iOS &amp; Android</h4>
               <p className="mt-4 text-muted-foreground max-w-sm mx-auto">
                 A patient-centric app built for easy recovery logging even on low-bandwidth networks.
               </p>
@@ -36,7 +36,7 @@ const PlatformSection = () => (
         <ScrollReveal delay={0.15}>
           <div className="bg-surface border border-border rounded-3xl p-10 flex flex-col justify-between overflow-hidden relative h-full">
             <div className="relative z-10">
-              <h4 className="text-3xl font-bold text-foreground">Clinician Web Dashboard</h4>
+              <h4 className="text-lg font-bold md:text-3xl text-foreground">Clinician Web Dashboard</h4>
               <p className="mt-4 text-muted-foreground max-w-sm">
                 Hospitals gain real-time visibility into post-discharge recovery, enabling structured follow-ups and early intervention.
               </p>
@@ -55,3 +55,4 @@ const PlatformSection = () => (
 );
 
 export default PlatformSection;
+

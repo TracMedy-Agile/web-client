@@ -12,7 +12,7 @@ const HowItWorksSection = () => (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <ScrollReveal>
         <div className="text-center mb-20">
-          <h2 className="text-4xl font-black text-foreground">How Tracmedy Works</h2>
+          <h2 className="text-lg font-bold md:text-3xl text-foreground">How Tracmedy Works</h2>
           <p className="mt-4 text-lg text-muted-foreground">From discharge to continuous care.</p>
         </div>
       </ScrollReveal>
@@ -25,16 +25,16 @@ const HowItWorksSection = () => (
               }`}
             >
               {s.side === "left" && (
-                <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-2xl font-black shadow-lg">
+                <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-2xl font-bold shadow-lg">
                   {s.num}
                 </div>
               )}
-              <div className={`flex-1 bg-surface p-8 rounded-2xl shadow-md ${s.side === "left" ? "border-l-4 border-primary" : "border-r-4 border-secondary text-right"}`}>
-                <h4 className="text-xl font-bold text-primary">{s.title}</h4>
+              <div className={`flex-1 bg-surface p-4 sm:p-8 rounded-2xl shadow-md ${s.side === "left" ? "border-l-4 border-primary" : "border-r-4 border-secondary text-right"}`}>
+                <h4 className="text-lg font-bold md:text-xl text-primary">{s.title}</h4>
                 <p className="mt-2 text-muted-foreground">{s.desc}</p>
               </div>
               {s.side === "right" && (
-                <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-2xl font-black shadow-lg">
+                <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-2xl font-bold shadow-lg">
                   {s.num}
                 </div>
               )}
@@ -47,5 +47,7 @@ const HowItWorksSection = () => (
 );
  
 export default HowItWorksSection;
+
+
 
 

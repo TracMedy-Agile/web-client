@@ -164,7 +164,7 @@ export default function RegisterPage() {
      {/* ── Left panel ── */}
 <div className="hidden lg:flex lg:w-1/2 flex-col overflow-hidden bg-linear-to-br from-[#eaecf8] via-[#dde4f5] to-[#cdd8f0]">
   <div className="px-12 pt-12">
-    <h1 className="text-5xl font-bold text-primary leading-tight mb-4">
+    <h1 className="text-lg font-bold md:text-3xl text-primary leading-tight mb-4">
       Post-Discharge Monitoring
     </h1>
     <p className="text-gray-500 text-lg mb-4">
@@ -187,19 +187,19 @@ export default function RegisterPage() {
       {/* ── Right panel ── */}
       <div className="w-full lg:w-1/2 flex flex-col bg-white">
         {/* Logo */}
-        <div className="flex justify-end p-8">
+        <div className="flex justify-end p-4 sm:p-8">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9  flex items-center justify-center">
             <Image src="/tracmedy_logo.svg" alt="Tracmedy Logo" width={40} height={40} />
             </div>
-            <span className="text-xl font-bold text-primary tracking-[0.2em]">TRACMEDY</span>
+            <span className="text-lg font-bold md:text-xl text-primary tracking-[0.2em]">TRACMEDY</span>
           </div>
         </div>
 
         {/* Form */}
-        <div className="flex-1 flex items-center justify-center px-8 pb-12">
+        <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-12">
           <div className="w-full max-w-md">
-            <h2 className="text-3xl font-bold text-gray-900 text-center mb-10">
+            <h2 className="text-lg font-bold md:text-3xl text-gray-900 text-center mb-10">
               Create Your Account
             </h2>
 
@@ -366,4 +366,6 @@ export default function RegisterPage() {
     </div>
   )
 }
+
+
 

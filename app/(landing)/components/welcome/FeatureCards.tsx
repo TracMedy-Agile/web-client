@@ -53,10 +53,10 @@ export default function FeatureCards() {
             >
                <Image src={card.icon} alt="" width={20} height={20} />
             </div>
-            <h3 className="text-[15px] font-bold text-[#0d1f4a] mb-2">
+            <h3 className="text-base font-bold text-[#0d1f4a] mb-2">
               {card.title}
             </h3>
-            <p className="text-[13px] text-[#5a6a80] leading-relaxed">
+            <p className="text-sm text-[#5a6a80] leading-relaxed">
               {card.description}
             </p>
           </div>

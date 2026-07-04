@@ -48,13 +48,13 @@ const CLINICIAN_WORKLOAD: ClinicianWorkload[] = [
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Command Center</h1>
+        <h1 className="text-lg font-bold text-foreground md:text-2xl">Command Center</h1>
         <p className="text-sm text-muted-foreground">What requires your attention right now</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         <MetricCard
           icon={Users}
           iconClassName="bg-secondary/30 text-primary"
@@ -89,7 +89,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RecoveryTrend data={RECOVERY_TREND} />
         </div>
@@ -100,3 +100,8 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+
+
+
+

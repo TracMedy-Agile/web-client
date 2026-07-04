@@ -25,7 +25,7 @@ const TracmedyHeader = () => {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
               <Image src="/tracmedy_logo.svg" alt="Tracmedy logo" width={40} height={40} className="h-full w-full object-cover" />
             </div>
-            <span className="text-2xl font-black tracking-tight text-primary">Tracmedy</span>
+            <span className="text-2xl font-bold tracking-tight text-primary">Tracmedy</span>
           </div>
 
           <nav className="hidden md:flex items-center gap-10">
@@ -61,7 +61,7 @@ const TracmedyHeader = () => {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed top-0 right-0 z-50 h-full w-72 bg-surface shadow-2xl p-8 flex flex-col gap-6 md:hidden"
+              className="fixed top-0 right-0 z-50 h-full w-72 bg-surface shadow-2xl p-4 sm:p-8 flex flex-col gap-6 md:hidden"
             >
               <button className="self-end mb-4" onClick={() => setMobileOpen(false)} aria-label="Close menu">
                 <X size={24} />
@@ -82,3 +82,4 @@ const TracmedyHeader = () => {
 };
 
 export default TracmedyHeader;
+

@@ -24,7 +24,7 @@ function TracmedyLogo() {
                className="object-contain"
              />
       </div>
-      <span className="text-xl font-bold text-primary tracking-[0.2em]">TRACMEDY</span>
+      <span className="text-lg font-bold md:text-xl text-primary tracking-[0.2em]">TRACMEDY</span>
     </div>
   )
 }
@@ -92,7 +92,7 @@ function TokenExpiredState() {
           </svg>
         </div>
       </div>
-      <h2 className="text-3xl font-bold text-gray-900 mb-3">Link Expired</h2>
+      <h2 className="text-lg font-bold md:text-3xl text-gray-900 mb-3">Link Expired</h2>
       <p className="text-gray-400 text-sm leading-relaxed mb-8">
         This password reset link has expired. Reset links are only valid for{' '}
         <span className="font-semibold text-gray-600">24 hours</span>. Please
@@ -178,7 +178,7 @@ function ResetPasswordContent() {
       <div className="min-h-screen flex">
         <div className="w-full lg:w-1/2 flex flex-col bg-white">
           <div className="p-8"><TracmedyLogo /></div>
-          <div className="flex-1 flex items-center justify-center px-8 pb-16">
+          <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-16">
             <TokenExpiredState />
           </div>
         </div>
@@ -206,9 +206,9 @@ function ResetPasswordContent() {
       <div className="w-full lg:w-1/2 flex flex-col bg-white">
         <div className="p-8"><TracmedyLogo /></div>
 
-        <div className="flex-1 flex items-center justify-center px-8 pb-16">
+        <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-16">
           <div className="w-full max-w-md">
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">Reset Password</h2>
+            <h2 className="text-lg font-bold md:text-3xl text-gray-900 mb-3">Reset Password</h2>
             <p className="text-gray-400 text-sm mb-10 leading-relaxed">
               Create a strong new password for your Tracmedy account.
             </p>
@@ -297,7 +297,7 @@ function ResetPasswordContent() {
                         {CRITERIA.map(({ label, test }) => (
                           <span
                             key={label}
-                            className={`text-[10px] flex items-center gap-1 transition-colors ${
+                            className={`text-xs flex items-center gap-1 transition-colors ${
                               test(newPassword) ? 'text-green-600' : 'text-gray-400'
                             }`}
                           >
@@ -450,3 +450,5 @@ export default function ResetPasswordPage() {
     </Suspense>
   )
 }
+
+

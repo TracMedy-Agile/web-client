@@ -22,7 +22,7 @@ const HeroSection = () => {
               Healthcare Continuity for Africa
             </div>
 
-            <h1 className="text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl lg:text-7xl">
+            <h1 className="text-lg font-bold md:text-3xl leading-tight tracking-tight text-foreground sm:text-3xl lg:text-3xl">
               From discharge to recovery — <span className="text-primary">without the gaps.</span>
             </h1>
 
@@ -31,10 +31,10 @@ const HeroSection = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <a className="flex h-14 items-center justify-center rounded-xl bg-primary px-8 text-base font-bold text-primary-foreground shadow-xl shadow-primary/25 hover:translate-y-[-2px] transition-all" href="#waitlist" onClick={() => capturePostHogEvent("hero_signup_clicked")}>
+              <a className="flex h-14 items-center justify-center rounded-xl bg-primary px-4 sm:px-8 text-base font-bold text-primary-foreground shadow-xl shadow-primary/25 hover:translate-y-[-2px] transition-all" href="#waitlist" onClick={() => capturePostHogEvent("hero_signup_clicked")}>
                 Join the Waitlist
               </a>
-              <a className="flex h-14 items-center justify-center rounded-xl border-2 border-border bg-surface px-8 text-base font-bold text-foreground hover:bg-muted transition-all" href="#how-it-works">
+              <a className="flex h-14 items-center justify-center rounded-xl border-2 border-border bg-surface px-4 sm:px-8 text-base font-bold text-foreground hover:bg-muted transition-all" href="#how-it-works">
                 How It Works
               </a>
             </div>
@@ -62,7 +62,7 @@ const HeroSection = () => {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Patient Recovery</p>
-                  <p className="text-lg font-black text-foreground">98% Progress</p>
+                  <p className="text-lg font-bold text-foreground">98% Progress</p>
                 </div>
               </div>
             </div>
@@ -74,3 +74,4 @@ const HeroSection = () => {
 };
 
 export default HeroSection;
+

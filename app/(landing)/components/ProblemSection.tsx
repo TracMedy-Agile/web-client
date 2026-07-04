@@ -21,7 +21,7 @@ const ProblemSection = () => (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" className="stroke-destructive" strokeWidth="1.5" /><path d="M8 5v3.5M8 10.5v.5" className="stroke-destructive" strokeWidth="1.5" strokeLinecap="round" /></svg>
             The Problem
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-foreground">The Visibility Gap</h2>
+          <h2 className="text-lg font-bold md:text-3xl tracking-tight text-foreground">The Visibility Gap</h2>
           <h3 className="mt-2 text-lg sm:text-xl font-semibold text-muted-foreground">Healthcare continuity should not end at discharge.</h3>
           <p className="mt-3 text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto">
             Millions of patients are discharged every day with little to no structured follow-up. The gap between hospital care and home recovery remains one of the biggest blind spots in modern healthcare.
@@ -176,7 +176,7 @@ const ProblemSection = () => (
  
       {/* Bottom callout */}
       <ScrollReveal delay={0.2}>
-        <div className="relative rounded-2xl border-2 border-primary/20 bg-primary/5 p-8 md:p-10 flex flex-col md:flex-row items-center gap-6 md:gap-10">
+        <div className="relative rounded-2xl border-2 border-primary/20 bg-primary/5 p-4 sm:p-8 md:p-10 flex flex-col md:flex-row items-center gap-6 md:gap-10">
           <div className="flex-shrink-0">
             <svg viewBox="0 0 64 64" fill="none" className="w-16 h-16">
               <circle cx="32" cy="32" r="28" className="fill-primary/10 stroke-primary" strokeWidth="2" />
@@ -201,3 +201,6 @@ const ProblemSection = () => (
 export default ProblemSection;
  
  
+
+
+

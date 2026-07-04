@@ -49,17 +49,17 @@ export default function LoginPage() {
       {/* ── Left panel — form ── */}
       <div className="w-full lg:w-1/2 flex flex-col bg-white">
         {/* Logo */}
-        <div className="flex items-center gap-2 p-8">
+        <div className="flex items-center gap-2 p-4 sm:p-8">
           <div className="w-9 h-9 flex items-center justify-center">
             <Image src="/tracmedy_logo.svg" alt="Tracmedy Logo" width={40} height={40} />
           </div>
-          <span className="text-xl font-bold text-primary tracking-[0.2em]">TRACMEDY</span>
+          <span className="text-lg font-bold md:text-xl text-primary tracking-[0.2em]">TRACMEDY</span>
         </div>
 
         {/* Form */}
-        <div className="flex-1 flex items-start justify-center px-8 pb-4">
+        <div className="flex-1 flex items-start justify-center px-4 sm:px-8 pb-4">
           <div className="w-full max-w-md">
-            <h2 className="text-3xl font-bold text-gray-900 text-center mb-2">Welcome</h2>
+            <h2 className="text-lg font-bold md:text-3xl text-gray-900 text-center mb-2">Welcome</h2>
             <p className="text-gray-400 text-sm text-center mb-10">
               Please enter your email and password to log in.
             </p>
@@ -223,7 +223,7 @@ export default function LoginPage() {
    {/* ── Right panel — mockup ── */}
 <div className="hidden lg:flex lg:w-1/2 flex-col overflow-hidden bg-linear-to-br from-[#eaecf8] via-[#dde4f5] to-[#cdd8f0]">
   <div className="px-12 pt-8 mb-0">
-    <h1 className="text-5xl font-bold text-primary leading-tight mb-3">
+    <h1 className="text-lg font-bold md:text-3xl text-primary leading-tight mb-3">
       Post-Discharge Monitoring
     </h1>
     <p className="text-gray-500 text-lg">
@@ -245,3 +245,5 @@ export default function LoginPage() {
     </div>
   )
 }
+
+

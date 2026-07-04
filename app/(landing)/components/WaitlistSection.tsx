@@ -77,8 +77,8 @@ const WaitlistSection = () => {
     >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
         <ScrollReveal>
-          <div className="rounded-3xl bg-primary-foreground/10 backdrop-blur-md p-8 md:p-16 border border-primary-foreground/20 shadow-2xl text-center">
-            <h2 className="text-4xl font-black mb-4">Join the Waitlist</h2>
+          <div className="rounded-3xl bg-primary-foreground/10 backdrop-blur-md p-4 sm:p-8 md:p-16 border border-primary-foreground/20 shadow-2xl text-center">
+            <h2 className="text-lg font-bold md:text-3xl mb-4">Join the Waitlist</h2>
             <p className="text-primary-foreground/70 text-lg mb-10 max-w-2xl mx-auto">
               Be the first to know when we launch and receive exclusive early
               access.
@@ -152,7 +152,7 @@ const WaitlistSection = () => {
                   )}
                 </div>
                 <button
-                  className="md:col-span-2 h-16 w-full rounded-xl bg-secondary text-secondary-foreground font-black text-xl hover:brightness-110 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="md:col-span-2 h-16 w-full rounded-xl bg-secondary text-secondary-foreground font-bold text-xl hover:brightness-110 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
                   type="submit"
                   disabled={loading}
                 >
@@ -178,3 +178,5 @@ const WaitlistSection = () => {
 };
 
 export default WaitlistSection;
+
+

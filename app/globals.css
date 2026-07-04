@@ -1,5 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
@@ -58,8 +57,28 @@
   --color-sidebar-ring: #023e8a;
 
   /* Fonts */
-  --font-sans: "Roboto", sans-serif;
   --font-display: "Inter", sans-serif;
+  --font-sans: "Inter", sans-serif;
+
+  /* Font sizes */
+  --text-h1: 32px;
+  --text-h2: 24px;
+  --text-h3: 20px;
+  --text-h4: 18px;
+  --text-body-16: 16px;
+  --text-body-14: 14px;
+  --text-body-12: 12px;
+  --text-body-10: 10px;
+
+  /* Line heights */
+  --leading-h1: 38.4px;
+  --leading-h2: 28.8px;
+  --leading-h3: 24px;
+  --leading-h4: 21.6px;
+  --leading-16: 19.2px;
+  --leading-14: 16.8px;
+  --leading-12: 14.4px;
+  --leading-10: 12px;
 
   /* Border Radius */
   --radius-sm: calc(0.5rem - 4px);
@@ -92,3 +111,5 @@
     border: 1px solid rgba(2, 62, 138, 0.1);
   }
 }
+
+

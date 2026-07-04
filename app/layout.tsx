@@ -3,6 +3,7 @@ import { PostHogProvider } from "@/app/(landing)/components/posthog-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://tracmedy.com"),
   title: "Tracmedy",
   description: "Bridging the gap between hospital care and patient recovery through real-time post-discharge monitoring.",
   icons: {

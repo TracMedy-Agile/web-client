@@ -25,7 +25,7 @@ const TracmedyFooter = () => {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl overflow-hidden">
                   <Image src="/tracmedy_logo.svg" alt="Tracmedy logo" width={40} height={40} className="h-full w-full object-cover" />
                 </div>
-                <span className="text-xl font-black tracking-tight text-primary-foreground">Tracmedy</span>
+                <span className="text-lg font-bold md:text-xl tracking-tight text-primary-foreground">Tracmedy</span>
               </div>
               <p className="leading-relaxed text-sm">
                 Tracmedy is the bridge connecting hospital visits to structured recovery at home.
@@ -233,3 +233,4 @@ const TracmedyFooter = () => {
 };
  
 export default TracmedyFooter;
+

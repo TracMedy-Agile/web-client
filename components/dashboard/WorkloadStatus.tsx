@@ -30,7 +30,7 @@ export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps)
   const hasData = clinicians.length > 0;
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5 lg:p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">Clinician Workload Status</h2>
@@ -44,7 +44,7 @@ export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps)
       </div>
 
       {hasData ? (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           {clinicians.map((clinician) => {
             const [dotColor, textColor] = LOAD_COLOR[clinician.load].split(" ");
             return (
@@ -87,3 +87,6 @@ export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps)
     </div>
   );
 }
+
+
+
