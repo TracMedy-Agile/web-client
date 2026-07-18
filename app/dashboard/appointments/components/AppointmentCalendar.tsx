@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Utensils, Video } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
+import { getHospitalFacilityId } from "@/lib/api/care-episodes";
 import { cn } from "@/lib/utils";
 import AppointmentCalendarDaily from "./AppointmentCalendarDaily";
 import AppointmentEmptyState from "./AppointmentEmptyState";
@@ -182,6 +183,7 @@ function WeekCalendar({
   const [filters, setFilters] = useState<CalendarFilters>({ status: "all", department: "all", type: "all" });
   const [refreshKey, setRefreshKey] = useState(0);
   const [nowTime, setNowTime] = useState(() => getCurrentDisplayTime());
+  const [facilityId, setFacilityId] = useState("");
   const days = useMemo(() => buildWeekDays(date), [date]);
   const nowLineTop = getNowLineTop(nowTime);
 
@@ -194,15 +196,35 @@ function WeekCalendar({
 
   useEffect(() => {
     let ignore = false;
-    const dateString = formatDateForApi(date);
+    (async () => {
+      try {
+        const id = await getHospitalFacilityId();
+        if (!ignore) setFacilityId(id);
+      } catch {
+        if (!ignore) setFacilityId("");
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!facilityId) return;
+    let ignore = false;
+    const weekDays = buildWeekDays(date);
 
     const loadAppointments = async () => {
       setIsLoading(true);
       setError("");
 
       try {
-        const payload = await getCalendarAppointments({ date: dateString, view: "week", ...filters });
-        const nextAppointments = normalizeCalendarAppointments(payload, dateString);
+        const payloads = await Promise.all(
+          weekDays.map((day) => getCalendarAppointments({ date: day.key, facilityId })),
+        );
+        const nextAppointments = weekDays.flatMap((day, index) =>
+          normalizeCalendarAppointments(payloads[index], day.key),
+        );
         if (!ignore) {
           setAppointments(nextAppointments);
           onAppointmentsChange?.(nextAppointments);
@@ -220,12 +242,12 @@ function WeekCalendar({
       }
     };
 
-    void Promise.resolve().then(loadAppointments);
+    void loadAppointments();
 
     return () => {
       ignore = true;
     };
-  }, [date, filters, onAppointmentsChange, refreshKey]);
+  }, [date, facilityId, onAppointmentsChange, refreshKey]);
 
   const updateFilter = (key: keyof CalendarFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -355,7 +377,7 @@ type AppointmentCalendarProps = {
 
 export default function AppointmentCalendar({
   mode,
-  date = new Date(2024, 9, 21),
+  date = new Date(),
   onPreviousDay,
   onNextDay,
   onPreviousWeek,

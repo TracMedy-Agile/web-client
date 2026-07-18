@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
+import { Toaster } from "sonner";
 import { PostHogProvider } from "@/app/(landing)/components/posthog-provider";
+import { PostHogPageView } from "@/app/components/PostHogPageView";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
     icon: "/favicon.svg",
   },
   openGraph: {
-    title: "Tracmedy — Healthcare Continuity for Africa",
+    title: "Tracmedy â€” Healthcare Continuity for Africa",
     description: "Bridging the gap between hospital care and patient recovery through real-time post-discharge monitoring.",
     url: "https://tracmedy.com",
     siteName: "Tracmedy",
@@ -27,7 +29,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <PostHogProvider>{children}</PostHogProvider>
+        <PostHogProvider>
+          <PostHogPageView />
+          {children}
+        </PostHogProvider>
+        <Toaster position="top-right" richColors />
       </body>
     </html>
   );

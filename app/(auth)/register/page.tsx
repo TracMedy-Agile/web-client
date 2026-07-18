@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiRegister } from '@/lib/api/auth'
+import { capturePostHogEvent } from '@/lib/analytics/posthog'
 import Image from 'next/image'
 // import hospital_id from '../../../../../public/id_Icon.svg'
 // import hospital from "../../../../../public/hospital.svg"
@@ -152,6 +153,7 @@ export default function RegisterPage() {
         return
       }
       const userId = (result.data as { userId?: string })?.userId ?? ''
+      capturePostHogEvent('hospital_registered')
       router.push(`/verify-email?userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}`)
     } finally {
       setIsLoading(false)

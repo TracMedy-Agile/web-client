@@ -46,12 +46,14 @@ const HeroSection = () => {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.7, delay: 0.2, ease: "easeOut" }}
           >
-            <div className="relative z-10 overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-secondary p-1 shadow-2xl">
+            <div className="relative z-10 overflow-hidden rounded-2xl bg-linear-to-br from-primary to-secondary p-1 shadow-2xl">
               <Image 
                 src="/hero-image.jpg" 
                 alt="Doctor looking at a digital health dashboard" 
                 width={800} 
                 height={450}
+                loading="eager"
+                priority
                 className="aspect-video w-full rounded-xl object-cover" 
               />
             </div>

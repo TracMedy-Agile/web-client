@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutGrid,
@@ -53,13 +53,28 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [showUnlockPro, setShowUnlockPro] = useState(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const storedState = window.localStorage.getItem("dashboard-sidebar-collapsed");
     if (storedState) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsCollapsed(storedState === "true");
     }
   }, []);
+
+  useLayoutEffect(() => {
+    const dismissed = localStorage.getItem("unlock-pro-dismissed");
+    if (dismissed === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShowUnlockPro(false);
+    }
+  }, []);
+
+  const handleDismiss = () => {
+    localStorage.setItem("unlock-pro-dismissed", "true");
+    setShowUnlockPro(false);
+  };
 
   useEffect(() => {
     window.localStorage.setItem("dashboard-sidebar-collapsed", String(isCollapsed));
@@ -71,7 +86,8 @@ export default function Sidebar() {
     return () => window.removeEventListener("dashboard-sidebar:open", openSidebar);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobileOpen(false);
   }, [pathname]);
 
@@ -121,9 +137,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {!isCollapsed ? (
+      {!isCollapsed && showUnlockPro ? (
         <div className="relative m-4 hidden rounded-xl bg-white/10 p-4 lg:block">
-          <button type="button" aria-label="Dismiss" className="absolute right-3 top-3 text-white/60 hover:text-white">
+          <button type="button" aria-label="Dismiss" onClick={handleDismiss} className="absolute right-3 top-3 text-white/60 hover:text-white">
             <X className="h-4 w-4" />
           </button>
           <p className="text-sm font-semibold">Unlock Pro</p>

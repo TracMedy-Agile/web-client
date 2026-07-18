@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import AddClinicianScheduleModal from "./AddClinicianScheduleModal";
 import AddScheduleOverrideModal from "./AddScheduleOverrideModal";
@@ -379,7 +380,7 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
   const [isLoading, setIsLoading] = useState(false);
   const [isDeactivating, setIsDeactivating] = useState(false);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -408,11 +409,16 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
       const profilePayload = await authorizedRequest(`/clinicians/${encodeURIComponent(activeClinicianId)}`);
       const nextProfile = normalizeProfile(profilePayload);
       const today = formatDateParam(new Date());
-      const query = new URLSearchParams({ clinicianId: activeClinicianId, dateFrom: today, dateTo: today });
+      const query = new URLSearchParams({ dateFrom: today, dateTo: today });
       const appointmentsPayload = await authorizedRequest("/appointments", undefined, query);
+      const clinicianAppointments = getItems(appointmentsPayload).filter((item) => {
+        const clinician = asRecord(item.clinician);
+        const itemClinicianId = getString(item, ["clinicianId"]) || getString(clinician, ["id", "clinicianId", "_id"]);
+        return itemClinicianId === activeClinicianId;
+      });
 
       setProfile(nextProfile);
-      setAppointments(getItems(appointmentsPayload).map(normalizeAppointment));
+      setAppointments(clinicianAppointments.map(normalizeAppointment));
     } catch (requestError) {
       setProfile(null);
       setAppointments([]);
@@ -427,11 +433,6 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
     void Promise.resolve().then(loadProfile);
   }, [isOpen, loadProfile]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(""), 3000);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
 
   const tone = getUtilizationTone(profile?.utilizationPercentage ?? 0);
   const analyticsCards = useMemo(() => getAnalytics(appointments, profile), [appointments, profile]);
@@ -452,18 +453,18 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
     if (!activeClinicianId || !window.confirm("Are you sure you want to deactivate this schedule?")) return;
 
     setIsDeactivating(true);
-    setToast("");
+
 
     try {
       await authorizedRequest(`/clinicians/${encodeURIComponent(activeClinicianId)}/schedule`, {
         method: "POST",
         body: JSON.stringify({ isActive: false }),
       });
-      setToast("Schedule deactivated successfully");
+      toast.success("Schedule deactivated successfully");
       window.dispatchEvent(new CustomEvent("clinicians:refresh"));
       onClose();
     } catch (requestError) {
-      setToast(requestError instanceof Error ? requestError.message : "Failed to deactivate schedule.");
+      toast.error(requestError instanceof Error ? requestError.message : "Failed to deactivate schedule.");
     } finally {
       setIsDeactivating(false);
     }
@@ -471,11 +472,6 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
 
   return (
     <>
-      {toast ? (
-        <div className="fixed right-6 top-6 z-[80] rounded-lg border border-[#DDE3EC] bg-white px-4 py-3 text-sm font-semibold text-[#023E8A] shadow-lg">
-          {toast}
-        </div>
-      ) : null}
       <Sheet open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
         <SheetPortal>
           <SheetOverlay className="bg-[#111827]/55 backdrop-blur-[3px]" />

@@ -12,10 +12,7 @@ type AppointmentQueryParams = {
 
 type CalendarQueryParams = {
   date: string;
-  view: "day" | "week";
-  status?: string;
-  department?: string;
-  type?: string;
+  facilityId: string;
 };
 
 type ClinicianQueryParams = {
@@ -95,10 +92,7 @@ export async function getAppointments(params?: AppointmentQueryParams) {
 export async function getCalendarAppointments(params: CalendarQueryParams) {
   const query = new URLSearchParams();
   query.set("date", params.date);
-  query.set("view", params.view);
-  setQueryValue(query, "status", params.status);
-  setQueryValue(query, "department", params.department);
-  setQueryValue(query, "type", params.type);
+  query.set("facilityId", params.facilityId);
 
   return request("/appointments/calendar", undefined, query);
 }

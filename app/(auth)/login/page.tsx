@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiLogin, storeTokens } from '@/lib/api/auth'
+import posthog, { capturePostHogEvent } from '@/lib/analytics/posthog'
 import Image from 'next/image'
 
 
@@ -32,7 +33,17 @@ export default function LoginPage() {
         refreshToken: result.data.refreshToken,
         expiresIn: result.data.expiresIn,
       })
-      const role = result.data.user?.role
+      const user = result.data.user
+      const role = user?.role
+
+      if (user) {
+        posthog.identify(user.id, {
+          email: user.email,
+          role: user.role,
+          facilityId: user.facilityId,
+        })
+        capturePostHogEvent('user_logged_in', { role: user.role })
+      }
 
       if (role === 'tracmedy_admin') {
         router.push('/admin/dashboard')

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, List, Loader2, Plus, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getAppointments } from "@/lib/api/appointments";
 import AppointmentCalendar from "./components/AppointmentCalendar";
 import AppointmentEmptyState from "./components/AppointmentEmptyState";
@@ -32,6 +33,7 @@ function getAppointmentItems(payload: unknown): unknown[] {
   const data = payload.data;
   if (Array.isArray(data)) return data;
   if (isRecord(data)) {
+    if (Array.isArray(data.data)) return data.data;
     if (Array.isArray(data.items)) return data.items;
     if (Array.isArray(data.appointments)) return data.appointments;
     if (Array.isArray(data.results)) return data.results;
@@ -54,6 +56,12 @@ function getAppointmentTotal(payload: unknown) {
   if (isRecord(data)) {
     const nestedTotal = data.total ?? data.totalCount ?? data.count;
     if (typeof nestedTotal === "number") return nestedTotal;
+
+    const meta = data.meta;
+    if (isRecord(meta)) {
+      const metaTotal = meta.total ?? meta.totalCount ?? meta.count;
+      if (typeof metaTotal === "number") return metaTotal;
+    }
   }
 
   return getAppointmentItems(payload).length;
@@ -66,7 +74,7 @@ function hasAppointments(payload: unknown) {
 export default function AppointmentsPage() {
   const [view, setView] = useState<AppointmentView>("table");
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("day");
-  const [selectedDate, setSelectedDate] = useState(() => new Date(2024, 9, 21));
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [appointmentFilters, setAppointmentFilters] = useState<AppointmentListFilters>({
     status: "all",
@@ -80,6 +88,10 @@ export default function AppointmentsPage() {
   const [exportRequestKey, setExportRequestKey] = useState(0);
   const [isCheckingAppointments, setIsCheckingAppointments] = useState(true);
   const [isEmptyStateVisible, setIsEmptyStateVisible] = useState(false);
+
+  useEffect(() => {
+    capturePostHogEvent("appointments_viewed");
+  }, []);
 
   const goToPreviousDay = () => {
     setSelectedDate((currentDate) => addDays(currentDate, -1));

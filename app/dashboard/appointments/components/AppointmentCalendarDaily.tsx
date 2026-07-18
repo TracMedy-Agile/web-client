@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Building2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, Stethoscope, Video } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
+import { getHospitalFacilityId } from "@/lib/api/care-episodes";
 import { cn } from "@/lib/utils";
 import AppointmentEmptyState from "./AppointmentEmptyState";
 import {
@@ -221,6 +222,7 @@ export default function AppointmentCalendarDaily({
   const [filters, setFilters] = useState<CalendarFilters>({ status: "all", department: "all", type: "all" });
   const [refreshKey, setRefreshKey] = useState(0);
   const [nowTime, setNowTime] = useState(() => getCurrentDisplayTime());
+  const [facilityId, setFacilityId] = useState("");
   const timelineHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
   const nowTop = Math.max(0, Math.min(timelineHeight, positionFromTime(nowTime)));
 
@@ -233,6 +235,22 @@ export default function AppointmentCalendarDaily({
 
   useEffect(() => {
     let ignore = false;
+    (async () => {
+      try {
+        const id = await getHospitalFacilityId();
+        if (!ignore) setFacilityId(id);
+      } catch {
+        if (!ignore) setFacilityId("");
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!facilityId) return;
+    let ignore = false;
     const dateString = formatDateForApi(date);
 
     const loadAppointments = async () => {
@@ -240,7 +258,7 @@ export default function AppointmentCalendarDaily({
       setError("");
 
       try {
-        const payload = await getCalendarAppointments({ date: dateString, view: "day", ...filters });
+        const payload = await getCalendarAppointments({ date: dateString, facilityId });
         const nextAppointments = normalizeCalendarAppointments(payload, dateString);
         if (!ignore) {
           setAppointments(nextAppointments);
@@ -264,7 +282,7 @@ export default function AppointmentCalendarDaily({
     return () => {
       ignore = true;
     };
-  }, [date, filters, onAppointmentsChange, refreshKey]);
+  }, [date, facilityId, onAppointmentsChange, refreshKey]);
 
   const updateFilter = (key: keyof CalendarFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));

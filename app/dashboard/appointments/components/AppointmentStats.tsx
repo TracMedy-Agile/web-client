@@ -52,6 +52,7 @@ function getAppointmentItems(payload: unknown): ApiRecord[] {
 
   const data = asRecord(record.data);
   if (data) {
+    if (Array.isArray(data.data)) return data.data.filter((item): item is ApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.appointments)) return data.appointments.filter((item): item is ApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.items)) return data.items.filter((item): item is ApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.results)) return data.results.filter((item): item is ApiRecord => Boolean(asRecord(item)));
@@ -67,7 +68,18 @@ function getAppointmentItems(payload: unknown): ApiRecord[] {
 function getTotalCount(payload: unknown, fallback: number) {
   const record = asRecord(payload);
   const data = record ? asRecord(record.data) : null;
-  const candidates = [record?.total, record?.totalCount, record?.count, data?.total, data?.totalCount, data?.count];
+  const meta = data ? asRecord(data.meta) : null;
+  const candidates = [
+    record?.total,
+    record?.totalCount,
+    record?.count,
+    data?.total,
+    data?.totalCount,
+    data?.count,
+    meta?.total,
+    meta?.totalCount,
+    meta?.count,
+  ];
 
   for (const value of candidates) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -87,6 +99,14 @@ function getRecordDate(record: ApiRecord) {
   return value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? "";
 }
 
+function getAppointmentType(record: ApiRecord) {
+  return getString(record, ["type", "appointmentType"]).toLowerCase().trim();
+}
+
+function getAppointmentStatus(record: ApiRecord) {
+  return getString(record, ["status"]).toLowerCase().trim();
+}
+
 function calculateStats(payload: unknown): AppointmentStatsValues {
   const appointments = getAppointmentItems(payload);
   const today = new Date().toISOString().slice(0, 10);
@@ -94,9 +114,9 @@ function calculateStats(payload: unknown): AppointmentStatsValues {
   return {
     totalBookings: getTotalCount(payload, appointments.length),
     todaysAppointments: appointments.filter((appointment) => getRecordDate(appointment) === today).length,
-    physicalVisits: appointments.filter((appointment) => !getString(appointment, ["type", "appointmentType"]).toLowerCase().includes("tele")).length,
-    teleconsultations: appointments.filter((appointment) => getString(appointment, ["type", "appointmentType"]).toLowerCase().includes("tele")).length,
-    pendingApproval: appointments.filter((appointment) => getString(appointment, ["status"]).toLowerCase().includes("pending")).length,
+    physicalVisits: appointments.filter((appointment) => getAppointmentType(appointment) === "in_person").length,
+    teleconsultations: appointments.filter((appointment) => getAppointmentType(appointment) === "teleconsultation").length,
+    pendingApproval: appointments.filter((appointment) => getAppointmentStatus(appointment) === "pending").length,
   };
 }
 

@@ -123,6 +123,7 @@ function getAppointmentItems(payload: unknown): AppointmentRecord[] {
 
   const data = asRecord(record.data);
   if (data) {
+    if (Array.isArray(data.data)) return data.data.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.appointments)) return data.appointments.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.items)) return data.items.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.results)) return data.results.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
@@ -338,10 +339,7 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
                     <p>{appointment.time}</p>
                   </td>
                   <td className="px-6 py-3 font-medium">{appointment.type}</td>
-                  <td className="px-6 py-3">
-                    <p className="font-semibold">{appointment.department}</p>
-                    <p className="font-medium text-[#71809B]">{appointment.service}</p>
-                  </td>
+                  <td className="px-6 py-3 font-semibold">{appointment.department}</td>
                   <td className="px-6 py-3">
                     <span
                       className={cn(

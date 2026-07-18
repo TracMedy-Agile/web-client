@@ -1,24 +1,23 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL
-const INTERNAL_API_PREFIX = '/api/backend'
 
-async function getServerAccessToken() {
-  if (typeof window !== 'undefined') return null
+async function getAccessToken(): Promise<string | null> {
+  if (typeof window === 'undefined') {
+    try {
+      const { cookies } = await import('next/headers')
+      const cookieStore = await cookies()
+      return cookieStore.get('accessToken')?.value ?? null
+    } catch {
+      return null
+    }
+  }
 
   try {
-    const { cookies } = await import('next/headers')
-    const cookieStore = await cookies()
-    return cookieStore.get('accessToken')?.value ?? null
+    const res = await fetch('/api/auth/get-token')
+    const { accessToken } = await res.json()
+    return typeof accessToken === 'string' ? accessToken : null
   } catch {
     return null
   }
-}
-
-function getRequestUrl(path: string) {
-  if (typeof window !== 'undefined') {
-    return `${INTERNAL_API_PREFIX}${path}`
-  }
-
-  return `${BASE}${path}`
 }
 
 async function request(path: string, options?: RequestInit) {
@@ -27,14 +26,13 @@ async function request(path: string, options?: RequestInit) {
     ...options?.headers,
   })
 
-  const token = await getServerAccessToken()
+  const token = await getAccessToken()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const res = await fetch(getRequestUrl(path), {
+  const res = await fetch(`${BASE}${path}`, {
     ...options,
-    credentials: 'include',
     headers,
   })
   return res

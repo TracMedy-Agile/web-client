@@ -12,5 +12,5 @@ export function PostHogProvider({ children }: PostHogProviderProps) {
     initPostHog();
   }, []);
 
-  return children;
+  return <>{children}</>;
 }
