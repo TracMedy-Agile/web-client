@@ -104,7 +104,7 @@ function getItems(payload: unknown) {
   const record = asRecord(data);
   if (!record) return [];
 
-  for (const key of ["items", "results", "clinicians", "appointments"]) {
+  for (const key of ["data", "items", "results", "clinicians", "appointments"]) {
     const value = record[key];
     if (Array.isArray(value)) return value.filter((item): item is ApiRecord => Boolean(asRecord(item)));
   }
@@ -566,7 +566,7 @@ export default function AvailabilityManagementPage() {
       </section>
      
 
-      <section className="grid gap-4 lg:grid-cols-[300px_1fr]">
+      <section className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div>
           <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#71809B]">System Alerts</p>
           <div className="space-y-2">

@@ -11,7 +11,6 @@ import {
   ChevronRight,
   Download,
   History,
-  Loader2,
   Plus,
   RefreshCcw,
   Search,
@@ -43,6 +42,7 @@ type Consultation = {
   scheduledSecondary: string;
   scheduledDate: string;
   scheduledTime: string;
+  clinicianId: string;
   clinician: string;
   hospitalId: string;
   reason: string;
@@ -145,6 +145,34 @@ async function fetchTeleconsultations() {
   return payload;
 }
 
+// AppointmentResponseDto only exposes clinicianId (no embedded clinician name), so names are
+// resolved separately from GET /clinicians and merged in by id.
+async function fetchClinicianDirectory(): Promise<Record<string, string>> {
+  const accessToken = await getAccessToken();
+  const res = await fetch(`${BASE}/clinicians?limit=100`, {
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) return {};
+
+  const root = asRecord(payload);
+  const list = Array.isArray(root?.data) ? root.data : [];
+  const directory: Record<string, string> = {};
+
+  for (const item of list) {
+    const record = asRecord(item);
+    const id = getString(record, ["id"]);
+    const name = getString(record, ["name"]);
+    if (!id || !name) continue;
+    const department = getString(record, ["department"]);
+    directory[id] = `Dr. ${name}${department ? ` - ${department}` : ""}`;
+  }
+
+  return directory;
+}
+
 function minutesToDisplayTime(totalMinutes: number) {
   const normalized = ((totalMinutes % 1440) + 1440) % 1440;
   const hour24 = Math.floor(normalized / 60);
@@ -245,13 +273,12 @@ function mapStatus(status: string, appointmentDate: Date | null): ConsultationSt
 
 function normalizeConsultation(record: ApiRecord): Consultation {
   const patient = asRecord(record.patient);
-  const clinician = asRecord(record.clinician) ?? asRecord(record.assignedStaff) ?? asRecord(record.doctor);
   const scheduledDate = getScheduledDate(record);
   const scheduledTime = getScheduledTime(record);
   const appointmentDate = getAppointmentDateTime(scheduledDate, scheduledTime);
   const status = mapStatus(getString(record, ["status"], "upcoming"), appointmentDate);
   const waitMinutes = getNumber(record, ["waitMinutes", "waitTime", "averageWaitMinutes"]);
-  const clinicianName = getString(record, ["clinicianName", "doctor", "assignedDoctor"], "") || getString(clinician, ["name", "fullName"], "None assigned");
+  const clinicianId = getString(record, ["clinicianId"]);
   const patientName = getString(record, ["patientName"], "") || getString(patient, ["name", "fullName"], "Unknown Patient");
 
   return {
@@ -262,7 +289,9 @@ function normalizeConsultation(record: ApiRecord): Consultation {
     scheduledSecondary: formatTime(scheduledTime || scheduledDate),
     scheduledDate: getIsoDate(scheduledDate),
     scheduledTime,
-    clinician: clinicianName,
+    clinicianId,
+    // Resolved from the clinician directory once it loads — see `consultations` memo below.
+    clinician: clinicianId ? "" : "Unassigned",
     hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracmedyId", "medicalRecordNumber", "id"], "--"),
     reason: getString(record, ["reason", "notes"], "Teleconsultation"),
     status,
@@ -380,7 +409,8 @@ function isToday(value: string) {
 }
 
 export default function VirtualConsultationsPage() {
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [rawConsultations, setRawConsultations] = useState<Consultation[]>([]);
+  const [clinicianNames, setClinicianNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -398,9 +428,9 @@ export default function VirtualConsultationsPage() {
 
     try {
       const payload = await fetchTeleconsultations();
-      setConsultations(getAppointmentItems(payload).map(normalizeConsultation));
+      setRawConsultations(getAppointmentItems(payload).map(normalizeConsultation));
     } catch (requestError) {
-      setConsultations([]);
+      setRawConsultations([]);
       setError(requestError instanceof Error ? requestError.message : "Failed to load virtual consultations.");
     } finally {
       setIsLoading(false);
@@ -409,8 +439,34 @@ export default function VirtualConsultationsPage() {
   }, []);
 
   useEffect(() => {
-    void loadConsultations();
-  }, [loadConsultations]);
+    let ignore = false;
+    (async () => {
+      try {
+        const directory = await fetchClinicianDirectory();
+        if (!ignore) setClinicianNames(directory);
+      } catch {
+        if (!ignore) setClinicianNames({});
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const consultations = useMemo(
+    () =>
+      rawConsultations.map((consultation) =>
+        consultation.clinicianId
+          ? { ...consultation, clinician: clinicianNames[consultation.clinicianId] ?? "--" }
+          : consultation,
+      ),
+    [rawConsultations, clinicianNames],
+  );
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadConsultations());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const clinicianOptions = useMemo(() => {
     const clinicians = Array.from(new Set(consultations.map((consultation) => consultation.clinician).filter(Boolean))).sort();

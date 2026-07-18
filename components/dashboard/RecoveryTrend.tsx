@@ -23,6 +23,7 @@ export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
   const hasData = data.length > 0;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 

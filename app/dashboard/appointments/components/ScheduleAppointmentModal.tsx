@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import {
   Building2,
@@ -33,7 +34,7 @@ type ScheduleAppointmentFormData = {
   duration: string;
   priority: AppointmentPriority;
   reason: string;
-  assignedStaff: string | { id?: string };
+  clinicianId: string;
   careEpisode: string;
 };
 
@@ -41,6 +42,12 @@ type PatientSearchResult = {
   id: string;
   name: string;
   subtitle: string;
+};
+
+type ClinicianOption = {
+  id: string;
+  label: string;
+  schedule: string;
 };
 
 type ApiRecord = Record<string, unknown>;
@@ -60,7 +67,7 @@ const initialFormData: ScheduleAppointmentFormData = {
   duration: "30m",
   priority: "Routine",
   reason: "",
-  assignedStaff: "Dr. Emeka Nwosu (Cardiologist)",
+  clinicianId: "",
   careEpisode: "No active care episodes available",
 };
 
@@ -103,13 +110,39 @@ function getPatientItems(payload: unknown): ApiRecord[] {
 function normalizePatient(record: ApiRecord): PatientSearchResult {
   const id = getString(record, ["id", "patientId", "_id"]);
   const name = getString(record, ["name", "fullName", "patientName"], "Unknown Patient");
-  const subtitle = [
-    getString(record, ["hospitalId", "medicalRecordNumber", "patientCode"]),
-    getString(record, ["phone", "phoneNumber"]),
-    getString(record, ["email"]),
-  ].filter(Boolean).join(" - ");
+  const subtitle = getString(record, ["email"]);
 
   return { id, name, subtitle };
+}
+
+function getClinicianItems(payload: unknown): ApiRecord[] {
+  const data = unwrapData(payload);
+  if (Array.isArray(data)) return data.filter((item): item is ApiRecord => Boolean(asRecord(item)));
+
+  const record = asRecord(data);
+  if (!record) return [];
+
+  const candidates = [record.data, record.items, record.clinicians, record.results];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.filter((item): item is ApiRecord => Boolean(asRecord(item)));
+  }
+
+  return [];
+}
+
+function normalizeClinician(record: ApiRecord): ClinicianOption {
+  const id = getString(record, ["id", "clinicianId", "_id"]);
+  const name = getString(record, ["name", "fullName", "clinicianName"], "Unknown");
+  const department = getString(record, ["department", "specialty", "specialization"]);
+  // ClinicianListItemDto.schedule is a human-readable string (e.g. "Mon-Fri 08:00-17:00"),
+  // not an object with separate start/end fields.
+  const schedule = getString(record, ["schedule"], "");
+
+  return {
+    id,
+    label: `Dr. ${name} - ${department || "No department"}`,
+    schedule,
+  };
 }
 
 function getFacilityIdFromMe(payload: unknown) {
@@ -213,14 +246,8 @@ function AppointmentTypeCard({
   );
 }
 
-function getClinicianId(assignedStaff: ScheduleAppointmentFormData["assignedStaff"]) {
-  if (typeof assignedStaff === "object" && assignedStaff?.id) return assignedStaff.id;
-  if (typeof assignedStaff === "string" && /^(clx|cm|[0-9a-f]{24})/i.test(assignedStaff.trim())) return assignedStaff.trim();
-  return "";
-}
-
 function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facilityId: string, patientId: string) {
-  const clinicianId = getClinicianId(formValues.assignedStaff);
+  const clinicianId = formValues.clinicianId.trim();
 
   return {
     facilityId,
@@ -244,6 +271,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
   const [isSearchingPatients, setIsSearchingPatients] = useState(false);
+  const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState("");
 
@@ -262,6 +290,27 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
     };
 
     void Promise.resolve().then(loadMe);
+
+    return () => {
+      ignore = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let ignore = false;
+
+    const loadClinicians = async () => {
+      try {
+        const payload = await authorizedRequest("/clinicians");
+        if (!ignore) setClinicians(getClinicianItems(payload).map(normalizeClinician).filter((clinician) => clinician.id));
+      } catch {
+        if (!ignore) setClinicians([]);
+      }
+    };
+
+    void loadClinicians();
 
     return () => {
       ignore = true;
@@ -292,6 +341,8 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
       window.clearTimeout(timeout);
     };
   }, [formData.patient, open, selectedPatientId]);
+
+  const selectedClinician = clinicians.find((clinician) => clinician.id === formData.clinicianId);
 
   const updateFormData = <Key extends keyof ScheduleAppointmentFormData>(
     key: Key,
@@ -337,7 +388,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
       setPatientResults([]);
       onAppointmentCreated?.();
       onOpenChange(false);
-      window.alert("Appointment added successfully.");
+      toast.success("Appointment added successfully.");
       router.refresh();
     } catch (error) {
       setApiError(error instanceof Error ? error.message : "Network error. Please check your connection.");
@@ -507,14 +558,23 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
               <div className="grid gap-6 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-2 block text-sm font-bold text-[#111827]">Assigned Doctor / Staff</span>
-                  <input
+                  <select
                     className="h-12 w-full rounded-lg border border-[#D0D5DD] bg-white px-4 text-sm font-medium text-[#111827] focus:border-primary/40 focus:outline-none"
-                    value={typeof formData.assignedStaff === "string" ? formData.assignedStaff : formData.assignedStaff.id ?? ""}
-                    onChange={(event) => updateFormData("assignedStaff", event.target.value)}
-                  />
+                    value={formData.clinicianId}
+                    onChange={(event) => updateFormData("clinicianId", event.target.value)}
+                  >
+                    <option value="">Select a clinician</option>
+                    {clinicians.map((clinician) => (
+                      <option key={clinician.id} value={clinician.id}>
+                        {clinician.label}
+                      </option>
+                    ))}
+                  </select>
                   <span className="mt-3 flex items-center gap-2 text-xs font-medium text-[#71809B]">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    Available slots: 10:00 AM, 11:30 AM, 2:00 PM
+                    {selectedClinician
+                      ? `Schedule: ${selectedClinician.schedule || "Not set"}`
+                      : "Select a clinician to view their schedule"}
                   </span>
                 </label>
 

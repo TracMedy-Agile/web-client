@@ -148,6 +148,7 @@ function getCalendarItems(payload: unknown): CalendarApiRecord[] {
 
   const data = asRecord(record.data);
   if (data) {
+    if (Array.isArray(data.data)) return data.data.filter((item): item is CalendarApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.appointments)) return data.appointments.filter((item): item is CalendarApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.items)) return data.items.filter((item): item is CalendarApiRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.results)) return data.results.filter((item): item is CalendarApiRecord => Boolean(asRecord(item)));
@@ -169,6 +170,8 @@ export function normalizeCalendarAppointments(payload: unknown, fallbackDate: st
     const endTime = endValue ? toDisplayTime(endValue) : minutesToDisplayTime(parseTimeToMinutes(startTime) + duration);
     const type = getString(appointment, ["type", "appointmentType"], "in_person");
     const patientName = getString(appointment, ["patientName", "patient"], "") || getNestedString(appointment, "patient", ["name", "fullName"]);
+    // AppointmentCalendarItemDto has no clinicianId or clinician fields at all — the calendar
+    // endpoint never returns clinician info, so this can never be resolved from the frontend.
     const doctor = getString(appointment, ["doctor", "clinicianName", "assignedStaff"], "") || getNestedString(appointment, "clinician", ["name", "fullName"]);
     const date = getRecordDate(appointment, fallbackDate);
 
@@ -178,7 +181,7 @@ export function normalizeCalendarAppointments(payload: unknown, fallbackDate: st
       startTime,
       endTime,
       type: mapAppointmentType(type),
-      doctor: doctor || "Unassigned",
+      doctor: doctor || "--",
       status: mapAppointmentStatus(getString(appointment, ["status"], "confirmed")),
       date,
     };

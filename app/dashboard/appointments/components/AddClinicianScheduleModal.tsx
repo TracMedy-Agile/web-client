@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Check, Clock3, Coffee, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -76,7 +77,7 @@ function getItems(payload: unknown) {
   const record = asRecord(data);
   if (!record) return [];
 
-  for (const key of ["items", "results", "clinicians"]) {
+  for (const key of ["data", "items", "results", "clinicians"]) {
     const value = record[key];
     if (Array.isArray(value)) return value.filter((item): item is ApiRecord => Boolean(asRecord(item)));
   }
@@ -311,7 +312,7 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
-  const [successToast, setSuccessToast] = useState("");
+
 
   const selectedDepartmentOptions = useMemo(() => {
     return Array.from(new Set([department, selectedClinician?.department, ...departmentOptions].filter((item): item is string => Boolean(item))));
@@ -329,6 +330,7 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
 
     try {
       const payload = await authorizedRequest("/clinicians");
+      console.log("Raw clinicians response:", payload);
       const nextClinicians = getItems(payload).map(normalizeClinician).filter((clinician) => clinician.id);
       setClinicians(nextClinicians);
 
@@ -377,11 +379,6 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
     void Promise.resolve().then(() => fetchClinicianProfile(selectedClinicianId));
   }, [fetchClinicianProfile, isOpen, selectedClinicianId]);
 
-  useEffect(() => {
-    if (!successToast) return;
-    const timeout = window.setTimeout(() => setSuccessToast(""), 3000);
-    return () => window.clearTimeout(timeout);
-  }, [successToast]);
 
   const toggleDay = (day: string) => {
     setSelectedDays((current) =>
@@ -421,7 +418,7 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
         method: "POST",
         body: JSON.stringify(body),
       });
-      setSuccessToast("Schedule saved successfully");
+      toast.success("Schedule saved successfully");
       await fetchClinicians();
       window.dispatchEvent(new CustomEvent("clinicians:refresh"));
       onClose();
@@ -442,11 +439,6 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
 
   return (
     <>
-      {successToast ? (
-        <div className="fixed right-6 top-6 z-[70] rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 shadow-lg">
-          {successToast}
-        </div>
-      ) : null}
       <DialogPrimitive.Root open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#111827]/60 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />

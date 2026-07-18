@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
@@ -39,6 +40,7 @@ type ApiRecord = Record<string, unknown>;
 type ClinicianOption = {
   id: string;
   name: string;
+  department: string;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -80,7 +82,6 @@ type AppointmentDetails = {
     department: string;
     type: string;
     assignedDoctor: string;
-    warning: string;
   };
   notes: {
     reason: string;
@@ -101,21 +102,6 @@ function unwrapData(payload: unknown) {
   const record = asRecord(payload);
   if (!record) return payload;
   return record.data ?? payload;
-}
-
-function getPayloadItems(payload: unknown, keys: string[]) {
-  const data = unwrapData(payload);
-  if (Array.isArray(data)) return data.filter((item): item is ApiRecord => Boolean(asRecord(item)));
-
-  const record = asRecord(data);
-  if (!record) return [];
-
-  for (const key of keys) {
-    const value = record[key];
-    if (Array.isArray(value)) return value.filter((item): item is ApiRecord => Boolean(asRecord(item)));
-  }
-
-  return [];
 }
 
 function getString(record: ApiRecord | null, keys: string[], fallback = "") {
@@ -168,7 +154,7 @@ async function authorizedRequest(path: string, init?: RequestInit) {
 
   if (!response.ok) {
     const error = new Error(getString(asRecord(payload), ["message", "error"], "Request failed"));
-    error.name = getString(asRecord(payload), ["code", "type"], "");
+    error.name = getString(asRecord(payload), ["errorCode", "code", "type"], "");
     throw error;
   }
 
@@ -178,13 +164,12 @@ async function authorizedRequest(path: string, init?: RequestInit) {
 function normalizeClinician(record: ApiRecord): ClinicianOption {
   const id = getString(record, ["id", "clinicianId", "_id"]);
   const name = getString(record, ["name", "fullName", "displayName"], id || "Unnamed clinician");
-  return { id, name };
+  const department = getString(record, ["department", "specialty", "specialization"], "");
+  return { id, name, department };
 }
 
-function isCapacityError(error: unknown) {
-  if (!(error instanceof Error)) return false;
-  const text = `${error.name} ${error.message}`.toLowerCase();
-  return text.includes("capacity");
+function isClinicianUnavailableError(error: unknown) {
+  return error instanceof Error && error.name === "CLINICIAN_UNAVAILABLE";
 }
 
 
@@ -336,7 +321,6 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
       department,
       type: mapType(getString(record, ["type", "appointmentType"], "in_person")),
       assignedDoctor,
-      warning: assignedDoctor === "None assigned" ? "Doctor assignment required before confirmation." : "Doctor assigned and ready for appointment workflow.",
     },
     notes: {
       reason: getString(record, ["reason"], "No reason provided."),
@@ -409,8 +393,10 @@ export default function AppointmentDetailsPage() {
   const [isLoadingClinicians, setIsLoadingClinicians] = useState(false);
   const [isAssigningDoctor, setIsAssigningDoctor] = useState(false);
   const [assignmentError, setAssignmentError] = useState("");
-  const [capacityWarning, setCapacityWarning] = useState("");
-  const [assignmentToast, setAssignmentToast] = useState("");
+  const [clinicianUnavailableError, setClinicianUnavailableError] = useState("");
+  const [pendingClinicianId, setPendingClinicianId] = useState<string | null>(null);
+  const [forceAssignChecked, setForceAssignChecked] = useState(false);
+  const [resolvedDoctorName, setResolvedDoctorName] = useState<string | null>(null);
 
   const loadAppointment = useCallback(async () => {
     setIsLoading(true);
@@ -431,11 +417,32 @@ export default function AppointmentDetailsPage() {
     void Promise.resolve().then(loadAppointment);
   }, [loadAppointment]);
 
+  // AppointmentResponseDto only exposes clinicianId, not a clinician name — resolve the display
+  // name via GET /clinicians/:id whenever a clinician is actually assigned.
   useEffect(() => {
-    if (!assignmentToast) return;
-    const timeout = window.setTimeout(() => setAssignmentToast(""), 3000);
-    return () => window.clearTimeout(timeout);
-  }, [assignmentToast]);
+    const clinicianId = appointment?.clinicianId;
+    if (!clinicianId) return;
+
+    let ignore = false;
+
+    (async () => {
+      setResolvedDoctorName(null);
+      try {
+        const payload = await authorizedRequest(`/clinicians/${encodeURIComponent(clinicianId)}`);
+        const record = asRecord(asRecord(payload)?.data) ?? asRecord(payload);
+        const name = getString(record, ["name"]);
+        const department = getString(record, ["department"]);
+        if (!ignore) setResolvedDoctorName(name ? `Dr. ${name}${department ? ` - ${department}` : ""}` : null);
+      } catch {
+        if (!ignore) setResolvedDoctorName(null);
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [appointment?.clinicianId]);
+
 
   const historySteps = useMemo(() => appointment?.history ?? [], [appointment]);
 
@@ -460,14 +467,20 @@ export default function AppointmentDetailsPage() {
   const loadClinicians = async () => {
     setIsDoctorSelectorOpen(true);
     setAssignmentError("");
-    setCapacityWarning("");
+    setClinicianUnavailableError("");
+    setPendingClinicianId(null);
+    setForceAssignChecked(false);
 
     if (clinicians.length > 0) return;
 
     setIsLoadingClinicians(true);
     try {
       const payload = await authorizedRequest("/clinicians");
-      setClinicians(getPayloadItems(payload, ["items", "clinicians", "results"]).map(normalizeClinician).filter((clinician) => clinician.id));
+      const dataRecord = asRecord(asRecord(payload)?.data);
+      const items = Array.isArray(dataRecord?.data)
+        ? dataRecord.data.filter((item): item is ApiRecord => Boolean(asRecord(item)))
+        : [];
+      setClinicians(items.map(normalizeClinician).filter((clinician) => clinician.id));
     } catch (requestError) {
       setAssignmentError(requestError instanceof Error ? requestError.message : "Failed to load clinicians.");
     } finally {
@@ -487,38 +500,59 @@ export default function AppointmentDetailsPage() {
 
     setIsAssigningDoctor(true);
     setAssignmentError("");
-    setCapacityWarning("");
-    setAssignmentToast("");
+    setClinicianUnavailableError("");
+    setPendingClinicianId(null);
+    setForceAssignChecked(false);
 
     try {
       await assignClinician(clinicianId);
     } catch (requestError) {
-      if (!isCapacityError(requestError)) {
+      if (!isClinicianUnavailableError(requestError)) {
         setAssignmentError(requestError instanceof Error ? requestError.message : "Failed to assign clinician.");
         setIsAssigningDoctor(false);
         return;
       }
 
-      const warning = "This clinician is at capacity. Assign anyway?";
-      setCapacityWarning(warning);
-      if (!window.confirm(warning)) {
-        setIsAssigningDoctor(false);
-        return;
-      }
-
-      try {
-        await assignClinician(clinicianId, true);
-      } catch (forcedError) {
-        setAssignmentError(forcedError instanceof Error ? forcedError.message : "Failed to assign clinician.");
-        setIsAssigningDoctor(false);
-        return;
-      }
+      toast.warning(
+        "Clinician is not available at the requested appointment time. Please select another clinician or reschedule the appointment.",
+      );
+      setClinicianUnavailableError("This clinician is not available at the appointment time.");
+      setPendingClinicianId(clinicianId);
+      setIsAssigningDoctor(false);
+      return;
     }
 
-    setAssignmentToast("Doctor assigned successfully.");
+    toast.success("Doctor assigned successfully.");
     setNotice("Doctor assigned successfully.");
     setIsDoctorSelectorOpen(false);
-    setCapacityWarning("");
+    setClinicianUnavailableError("");
+    setPendingClinicianId(null);
+    setForceAssignChecked(false);
+    await loadAppointment();
+    setIsAssigningDoctor(false);
+  };
+
+  const handleForceAssignToggle = async (checked: boolean) => {
+    setForceAssignChecked(checked);
+    if (!checked || !pendingClinicianId) return;
+
+    setIsAssigningDoctor(true);
+    setAssignmentError("");
+
+    try {
+      await assignClinician(pendingClinicianId, true);
+    } catch (forcedError) {
+      setAssignmentError(forcedError instanceof Error ? forcedError.message : "Failed to assign clinician.");
+      setIsAssigningDoctor(false);
+      return;
+    }
+
+    toast.success("Doctor assigned successfully.");
+    setNotice("Doctor assigned successfully.");
+    setIsDoctorSelectorOpen(false);
+    setClinicianUnavailableError("");
+    setPendingClinicianId(null);
+    setForceAssignChecked(false);
     await loadAppointment();
     setIsAssigningDoctor(false);
   };
@@ -530,6 +564,16 @@ export default function AppointmentDetailsPage() {
   const canReschedule = isPending || isConfirmed;
   const canCancel = isPending || isConfirmed;
   const canShowMoreActions = isConfirmed;
+  const needsClinician = isPending && !appointment?.clinicianId;
+
+  const handleConfirmClick = () => {
+    if (needsClinician) {
+      toast.error("Please assign a doctor before confirming");
+      return;
+    }
+
+    void runAction("Appointment confirmed", () => confirmAppointment(appointmentId));
+  };
 
   return (
     <>
@@ -550,7 +594,7 @@ export default function AppointmentDetailsPage() {
 
           <div className="flex flex-wrap gap-3">
             {canConfirm ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => runAction("Appointment confirmed", () => confirmAppointment(appointmentId))} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" disabled={!appointment || Boolean(activeAction) || needsClinician} onClick={handleConfirmClick} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                 {activeAction === "Appointment confirmed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Confirm
               </button>
@@ -592,7 +636,6 @@ export default function AppointmentDetailsPage() {
         </div>
 
         {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600">{notice}</div> : null}
-        {assignmentToast ? <div className="fixed right-6 top-6 z-50 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 shadow-lg">{assignmentToast}</div> : null}
         {actionError ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{actionError}</div> : null}
 
         {isLoading ? <DetailsSkeleton /> : null}
@@ -674,7 +717,9 @@ export default function AppointmentDetailsPage() {
                     <div className="relative">
                       <div className="flex h-11 items-center gap-3 rounded-xl border border-border bg-[#F3F4F6] px-4 text-sm font-medium text-[#71809B]">
                         {isAssigningDoctor ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <UserRound className="h-4 w-4 text-primary" />}
-                        <span className="min-w-0 flex-1 truncate">{appointment.service.assignedDoctor}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {appointment.clinicianId ? resolvedDoctorName ?? "Loading..." : appointment.service.assignedDoctor}
+                        </span>
                         {!appointment.clinicianId ? (
                           <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
                             {isLoadingClinicians ? "Loading..." : "Assign"}
@@ -694,7 +739,9 @@ export default function AppointmentDetailsPage() {
                             >
                               <option value="">{isLoadingClinicians ? "Loading clinicians..." : clinicians.length > 0 ? "Select clinician" : "No clinicians available"}</option>
                               {clinicians.map((clinician) => (
-                                <option key={clinician.id} value={clinician.id}>{clinician.name}</option>
+                                <option key={clinician.id} value={clinician.id}>
+                                  {clinician.name} {clinician.department ? `(${clinician.department})` : ""}
+                                </option>
                               ))}
                             </select>
                             <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
@@ -702,9 +749,32 @@ export default function AppointmentDetailsPage() {
                         </div>
                       ) : null}
                     </div>
-                    {capacityWarning ? <p className="mt-4 flex items-center gap-2 text-sm font-medium text-orange-500"><AlertCircle className="h-4 w-4" />{capacityWarning}</p> : null}
                     {assignmentError ? <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500"><AlertCircle className="h-4 w-4" />{assignmentError}</p> : null}
-                    <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500"><AlertCircle className="h-4 w-4" />{appointment.service.warning}</p>
+                    {clinicianUnavailableError ? (
+                      <div className="mt-4 space-y-3">
+                        <p className="flex items-center gap-2 text-sm font-medium text-red-500">
+                          <AlertCircle className="h-4 w-4" />
+                          {clinicianUnavailableError}
+                        </p>
+                        <label className="flex items-center gap-2 text-sm font-medium text-[#344054]">
+                          <input
+                            type="checkbox"
+                            checked={forceAssignChecked}
+                            disabled={isAssigningDoctor}
+                            onChange={(event) => void handleForceAssignToggle(event.target.checked)}
+                            className="h-4 w-4 rounded border-border text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          Assign anyway (override availability)
+                        </label>
+                        {forceAssignChecked ? (
+                          <p className="flex items-center gap-2 text-sm font-medium text-orange-500">
+                            <AlertCircle className="h-4 w-4" />
+                            Assigning outside clinician availability
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {needsClinician ? <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500"><AlertCircle className="h-4 w-4" />Doctor assignment required before confirmation.</p> : null}
                   </div>
                 </div>
               </Card>

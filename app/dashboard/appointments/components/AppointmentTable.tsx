@@ -123,6 +123,7 @@ function getAppointmentItems(payload: unknown): AppointmentRecord[] {
 
   const data = asRecord(record.data);
   if (data) {
+    if (Array.isArray(data.data)) return data.data.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.appointments)) return data.appointments.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.items)) return data.items.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));
     if (Array.isArray(data.results)) return data.results.filter((item): item is AppointmentRecord => Boolean(asRecord(item)));

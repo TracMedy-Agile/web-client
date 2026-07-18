@@ -62,7 +62,7 @@ const ProblemSection = () => (
           <div className="lg:w-3/5">
             <h4 className="text-xl text-primary font-bold mb-3">Discharge Without Structure</h4>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              Patients leave the hospital with instructions that fade quickly. There's no structured plan for what comes next — no clear steps, no timeline, and no way to track if recovery is on course.
+              Patients leave the hospital with instructions that fade quickly. There&apos;s no structured plan for what comes next — no clear steps, no timeline, and no way to track if recovery is on course.
             </p>
           </div>
         </div>
@@ -98,7 +98,7 @@ const ProblemSection = () => (
           <div className="lg:w-3/5">
             <h4 className="text-xl text-primary font-bold mb-3">Zero Continuous Oversight</h4>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              Once a patient walks out, the connection breaks. There's no visibility into their recovery journey — no data, no updates, and no way for providers to intervene before things go wrong.
+              Once a patient walks out, the connection breaks. There&apos;s no visibility into their recovery journey — no data, no updates, and no way for providers to intervene before things go wrong.
             </p>
           </div>
         </div>

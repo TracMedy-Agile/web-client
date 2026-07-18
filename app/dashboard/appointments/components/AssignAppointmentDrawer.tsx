@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AlertCircle, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -332,7 +333,7 @@ export default function AssignAppointmentDrawer({
   const [assigningId, setAssigningId] = useState("");
   const [assignError, setAssignError] = useState("");
   const [capacityWarning, setCapacityWarning] = useState<{ id: string; name: string } | null>(null);
-  const [toast, setToast] = useState("");
+
   const [showAll, setShowAll] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -365,19 +366,17 @@ export default function AssignAppointmentDrawer({
     void Promise.resolve().then(loadData);
   }, [isOpen, loadData]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      setShowAll(false);
-      setCapacityWarning(null);
-      setAssignError("");
-    }
-  }, [isOpen]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(""), 3000);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
+  const resetDrawerState = () => {
+    setShowAll(false);
+    setCapacityWarning(null);
+    setAssignError("");
+  };
+
+  const handleClose = () => {
+    resetDrawerState();
+    onClose();
+  };
 
   const handleAssign = async (clinician: ClinicianSuggestion, force = false) => {
     if (!appointmentId) return;
@@ -389,10 +388,10 @@ export default function AssignAppointmentDrawer({
 
     try {
       await assignAppointment(appointmentId, clinician.id, force || clinician.isFull);
-      setToast("Appointment assigned successfully");
+      toast.success("Appointment assigned successfully");
       window.dispatchEvent(new CustomEvent("availability:refresh"));
       window.dispatchEvent(new CustomEvent("clinicians:refresh"));
-      onClose();
+      handleClose();
     } catch (requestError) {
       if (isCapacityError(requestError)) {
         setCapacityWarning({ id: clinician.id, name: clinician.name });
@@ -406,12 +405,7 @@ export default function AssignAppointmentDrawer({
 
   return (
     <>
-      {toast ? (
-        <div className="fixed right-6 top-6 z-[80] rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 shadow-lg">
-          {toast}
-        </div>
-      ) : null}
-      <Sheet open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <Sheet open={isOpen} onOpenChange={(open) => (!open ? handleClose() : undefined)}>
         <SheetPortal>
           <SheetOverlay className="bg-[#111827]/55 backdrop-blur-[3px]" />
           <DialogPrimitive.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[514px] flex-col border-l border-[#DDE3EC] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.36)] outline-none duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=open]:animate-in">
@@ -425,7 +419,7 @@ export default function AssignAppointmentDrawer({
               <button
                 type="button"
                 aria-label="Close assign appointment drawer"
-                onClick={onClose}
+                onClick={handleClose}
                 className="flex h-9 w-9 items-center justify-center rounded-full text-[#344054] transition-colors hover:bg-[#F3F4F6]"
               >
                 <X className="h-5 w-5" />
