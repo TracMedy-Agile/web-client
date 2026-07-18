@@ -41,13 +41,14 @@ export default function CareTeamPage() {
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
-    setIsLoading(true);
-    Promise.allSettled([getCareEpisodeById(episodeId), getCareTeam(episodeId)]).then(([episodeResult, teamResult]) => {
+    (async () => {
+      setIsLoading(true);
+      const [episodeResult, teamResult] = await Promise.allSettled([getCareEpisodeById(episodeId), getCareTeam(episodeId)]);
       if (ignore) return;
       if (episodeResult.status === "fulfilled") setEpisode(episodeResult.value);
       if (teamResult.status === "fulfilled") setTeam(teamResult.value);
       setIsLoading(false);
-    });
+    })();
     return () => {
       ignore = true;
     };

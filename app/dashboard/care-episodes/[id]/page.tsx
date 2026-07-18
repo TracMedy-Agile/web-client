@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ClipboardList,
-  Loader2,
   Mail,
   MessageSquare,
   Minus,

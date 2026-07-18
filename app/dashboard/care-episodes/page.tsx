@@ -33,6 +33,7 @@ import {
   type CareEpisodeRecord,
 } from "@/lib/api/care-episodes";
 import { getClinicianDirectory, type ClinicianSearchResult } from "@/lib/api/clinicians";
+import { getConnectedPatients, type ConnectedPatientRecord } from "@/lib/api/connected-patients";
 
 type TabKey = "active" | "pending" | "closed";
 
@@ -78,14 +79,24 @@ function formatDate(value?: string | null) {
   return `${date.getDate()} ${month}, ${date.getFullYear()}`;
 }
 
-// CareEpisodeSummaryDto only exposes patientId — there is no endpoint that resolves a raw
-// patient ID to a name/tracmedyPatientId (GET /patients/search only matches by name, email,
-// phone, or tracmedyPatientId text, and GET /facilities/:id/patients does not exist).
+// CareEpisodeSummaryDto only exposes patientId/clinicianId — names are resolved from a
+// facility-wide directory fetched separately (see patientDirectory/clinicianDirectory state).
 function getClinicianLabel(directory: Record<string, ClinicianSearchResult>, clinicianId: string | null) {
   if (!clinicianId) return "--";
   const clinician = directory[clinicianId];
   if (!clinician) return clinicianId;
-  return clinician.department ? `Dr. ${clinician.name} - ${clinician.department}` : `Dr. ${clinician.name}`;
+  const prefix = clinician.name.startsWith("Dr.") ? "" : "Dr. ";
+  const displayName = `${prefix}${clinician.name}`;
+  return clinician.department ? `${displayName} - ${clinician.department}` : displayName;
+}
+
+function getPatientName(directory: Record<string, ConnectedPatientRecord>, patientId: string) {
+  return directory[patientId]?.name || "--";
+}
+
+function getPatientTracmedyCode(directory: Record<string, ConnectedPatientRecord>, patientId: string) {
+  const tracmedyPatientId = directory[patientId]?.tracmedyPatientId;
+  return tracmedyPatientId ? `#PT-${tracmedyPatientId}` : "--";
 }
 
 function getCarePhaseBadge(carePhase: string | null) {
@@ -97,11 +108,12 @@ function getCarePhaseBadge(carePhase: string | null) {
 }
 
 function getRiskBadge(riskCategory: string | null) {
-  const value = (riskCategory ?? "").toLowerCase();
+  if (!riskCategory) return { label: "Unrated", className: "bg-[#F3F4F6] text-[#6B7280]" };
+  const value = riskCategory.toLowerCase();
   if (value === "high") return { label: "High Risk", className: "bg-[#FFECEC] text-[#EF4444]" };
   if (value === "medium") return { label: "Moderate", className: "bg-[#FFF4E5] text-[#F59E0B]" };
   if (value === "low") return { label: "Low Risk", className: "bg-[#DFFBF0] text-[#10B981]" };
-  return { label: "Unrated", className: "bg-[#F3F4F6] text-[#71809B]" };
+  return { label: "Unrated", className: "bg-[#F3F4F6] text-[#6B7280]" };
 }
 
 function getRecommendation(riskCategory: string | null) {
@@ -226,6 +238,7 @@ export default function CareEpisodesPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("active");
   const [episodes, setEpisodes] = useState<CareEpisodeRecord[]>([]);
   const [clinicianDirectory, setClinicianDirectory] = useState<Record<string, ClinicianSearchResult>>({});
+  const [patientDirectory, setPatientDirectory] = useState<Record<string, ConnectedPatientRecord>>({});
   const [counts, setCounts] = useState<Counts>(DEFAULT_COUNTS);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -275,6 +288,27 @@ export default function CareEpisodesPage() {
       ignore = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!facilityId) return;
+    let ignore = false;
+    (async () => {
+      try {
+        const response = await getConnectedPatients(facilityId, { limit: 100 });
+        if (ignore) return;
+        const directory: Record<string, ConnectedPatientRecord> = {};
+        for (const patient of response.data) {
+          if (patient.patientId) directory[patient.patientId] = patient;
+        }
+        setPatientDirectory(directory);
+      } catch {
+        if (!ignore) setPatientDirectory({});
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [facilityId]);
 
 
   useEffect(() => {
@@ -327,7 +361,7 @@ export default function CareEpisodesPage() {
     if (activeTab === "active") {
       const header = ["Patient", "Diagnosis", "Assigned Clinician", "Status", "Progress", "Risk Level"];
       const rows = episodes.map((episode) => [
-        episode.patientId,
+        getPatientName(patientDirectory, episode.patientId),
         episode.diagnosis ?? "",
         getClinicianLabel(clinicianDirectory, episode.clinicianId),
         getCarePhaseBadge(episode.carePhase).label,
@@ -339,7 +373,7 @@ export default function CareEpisodesPage() {
     if (activeTab === "pending") {
       const header = ["Patient", "Diagnosis", "Consultation Date", "Recommendation"];
       const rows = episodes.map((episode) => [
-        episode.patientId,
+        getPatientName(patientDirectory, episode.patientId),
         episode.diagnosis ?? "",
         formatDate(episode.createdAt),
         getRecommendation(episode.riskCategory),
@@ -348,13 +382,13 @@ export default function CareEpisodesPage() {
     }
     const header = ["Patient", "Closed Date", "Episode Duration", "Closure Reason"];
     const rows = episodes.map((episode) => [
-      episode.patientId,
+      getPatientName(patientDirectory, episode.patientId),
       formatDate(episode.updatedAt),
       `${episode.expectedDurationDays ?? 0} days`,
       getClosureInfo(episode.closureReason).label,
     ]);
     return [header, ...rows];
-  }, [activeTab, episodes, clinicianDirectory]);
+  }, [activeTab, episodes, clinicianDirectory, patientDirectory]);
 
   const exportCsv = () => {
     const csv = csvRows
@@ -539,8 +573,8 @@ export default function CareEpisodesPage() {
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                             <TableCell className="px-4 py-5 sm:px-6">
-                              <span className="block font-bold text-[#111827]">{episode.patientId || "Unknown Patient"}</span>
-                              <span className="mt-1 block text-xs font-medium text-[#71809B]">--</span>
+                              <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
                             <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.diagnosis || "--"}</TableCell>
                             <TableCell className="px-4 py-5 text-[#344054] sm:px-6">
@@ -608,8 +642,8 @@ export default function CareEpisodesPage() {
                       episodes.map((episode) => (
                         <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                           <TableCell className="px-4 py-5 sm:px-6">
-                            <span className="block font-bold text-[#111827]">{episode.patientId || "Unknown Patient"}</span>
-                            <span className="mt-1 block text-xs font-medium text-[#71809B]">--</span>
+                            <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
+                            <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                           </TableCell>
                           <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.diagnosis || "--"}</TableCell>
                           <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{formatDate(episode.createdAt)}</TableCell>
@@ -660,8 +694,8 @@ export default function CareEpisodesPage() {
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                             <TableCell className="px-4 py-5 sm:px-6">
-                              <span className="block font-bold text-[#111827]">{episode.patientId || "Unknown Patient"}</span>
-                              <span className="mt-1 block text-xs font-medium text-[#71809B]">--</span>
+                              <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
                             <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{formatDate(episode.updatedAt)}</TableCell>
                             <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.expectedDurationDays ?? 0} days</TableCell>

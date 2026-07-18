@@ -180,9 +180,11 @@ export async function getConnectedPatients(
   setQueryValue(query, "limit", clampLimit(params?.limit));
 
   const payload = await request(`/facilities/${encodeURIComponent(facilityId)}/patients`, undefined, query);
-  const root = asRecord(payload) ?? {};
-  const data = getRecordArray(root.data).map(normalizeConnectedPatient);
-  const metaRecord = asRecord(root.meta);
+  // Responses are wrapped as { statusCode, message, data }, and for this endpoint `data` is
+  // itself the paginated { data: [...], meta: {...} } shape — patients/meta live two levels deep.
+  const body = asRecord(asRecord(payload)?.data);
+  const data = getRecordArray(body?.data).map(normalizeConnectedPatient);
+  const metaRecord = asRecord(body?.meta);
 
   const meta: ConnectedPatientsMeta = {
     page: getNumberField(metaRecord, "page") ?? params?.page ?? 1,
@@ -234,7 +236,10 @@ export async function getPatientProfile(facilityId: string, patientId: string): 
   const payload = await request(
     `/facilities/${encodeURIComponent(facilityId)}/patients/${encodeURIComponent(patientId)}`,
   );
-  const root = asRecord(payload) ?? {};
+  // Same { statusCode, message, data } wrapper as the list endpoint — unwrap it, falling back to
+  // the raw payload if this particular route turns out not to be wrapped.
+  const outer = asRecord(payload);
+  const root = asRecord(outer?.data) ?? outer ?? {};
 
   return {
     patient: normalizePatientDetail(asRecord(root.patient)),

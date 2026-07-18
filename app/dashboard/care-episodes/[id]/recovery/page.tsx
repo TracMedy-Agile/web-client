@@ -149,9 +149,14 @@ export default function CareEpisodeRecoveryPage() {
 
   const dailyTasks = useMemo(() => buildDailyTasks(episode?.currentCarePlan ?? null), [episode]);
 
-  useEffect(() => {
+  // Resync taskState whenever a new set of tasks loads, while keeping it independently mutable
+  // for handleTaskToggle's optimistic updates in between syncs (adjusting state during render,
+  // per https://react.dev/learn/you-might-not-need-an-effect — avoids a redundant extra render).
+  const [syncedDailyTasks, setSyncedDailyTasks] = useState<DailyTask[] | null>(null);
+  if (dailyTasks !== syncedDailyTasks) {
+    setSyncedDailyTasks(dailyTasks);
     setTaskState(Object.fromEntries(dailyTasks.map((task) => [task.id, task.done])));
-  }, [dailyTasks]);
+  }
 
   const handleTaskToggle = async (taskId: string, checked: boolean) => {
     setTaskState((prev) => ({ ...prev, [taskId]: checked }));

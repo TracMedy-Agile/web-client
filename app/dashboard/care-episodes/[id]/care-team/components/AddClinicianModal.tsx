@@ -51,13 +51,14 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, onAdded }: Ad
   useEffect(() => {
     if (!open) return;
     let ignore = false;
-    setIsLoading(true);
-    searchAvailableClinicians(query, roleFilter).then((clinicians) => {
+    (async () => {
+      setIsLoading(true);
+      const clinicians = await searchAvailableClinicians(query, roleFilter);
       if (!ignore) {
         setResults(clinicians);
         setIsLoading(false);
       }
-    });
+    })();
     return () => {
       ignore = true;
     };

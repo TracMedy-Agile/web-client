@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, CheckCircle2, ClipboardList, History, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Bell, CheckCircle2, ClipboardList, History, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

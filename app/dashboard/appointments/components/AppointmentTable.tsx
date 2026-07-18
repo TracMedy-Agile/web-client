@@ -339,10 +339,7 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
                     <p>{appointment.time}</p>
                   </td>
                   <td className="px-6 py-3 font-medium">{appointment.type}</td>
-                  <td className="px-6 py-3">
-                    <p className="font-semibold">{appointment.department}</p>
-                    <p className="font-medium text-[#71809B]">{appointment.service}</p>
-                  </td>
+                  <td className="px-6 py-3 font-semibold">{appointment.department}</td>
                   <td className="px-6 py-3">
                     <span
                       className={cn(

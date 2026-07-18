@@ -62,19 +62,17 @@ export function PatientReviewModal({ open, onOpenChange, episodeId, onActionComp
   const isBusy = isMarkingNoAction || isOpeningEpisode;
 
   useEffect(() => {
-    if (!open || !episodeId) {
-      setEpisode(null);
-      return;
-    }
+    if (!open || !episodeId) return;
 
     let ignore = false;
-    setIsLoading(true);
-    getEpisodeById(episodeId).then((result) => {
+    (async () => {
+      setIsLoading(true);
+      const result = await getEpisodeById(episodeId);
       if (!ignore) {
         setEpisode(result);
         setIsLoading(false);
       }
-    });
+    })();
 
     return () => {
       ignore = true;

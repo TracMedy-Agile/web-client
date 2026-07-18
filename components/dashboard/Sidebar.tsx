@@ -63,9 +63,10 @@ export default function Sidebar() {
     }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dismissed = localStorage.getItem("unlock-pro-dismissed");
     if (dismissed === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowUnlockPro(false);
     }
   }, []);

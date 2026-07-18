@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Download, FileText, Image as ImageIcon, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -78,8 +78,11 @@ function downloadMedia(media: MediaViewerData) {
 export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModalProps) {
   const [zoom, setZoom] = useState(100);
 
-  useEffect(() => {
-    if (open) setZoom(100);
+  useLayoutEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setZoom(100);
+    }
   }, [open, media]);
 
   if (!media) return null;

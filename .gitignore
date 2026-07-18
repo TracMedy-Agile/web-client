@@ -50,3 +50,4 @@ add-patient-scroll-fix.patch
 # Agent files
 .agents/
 AGENTS.md
+docs/ 
