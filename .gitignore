@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local env files
+.env.local
+.AGENTS.md
+.CLAUDE.md
+add-patient-scroll-fix-v2.patch
+add-patient-scroll-fix.patch
+
+# Agent files
+.agents/
+AGENTS.md
+docs/ 

@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const accessToken = request.cookies.get('accessToken')?.value
   if (pathname.startsWith('/dashboard') && !accessToken) {
-    return NextResponse.redirect(new URL('/hospital/login', request.url))
+    return NextResponse.redirect(new URL('/login', request.url))
   }
   return NextResponse.next()
 }

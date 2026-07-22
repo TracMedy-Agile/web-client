@@ -1,6 +1,5 @@
 import type { LoginResponse } from '@/lib/types/auth'
-
-const BASE = process.env.NEXT_PUBLIC_API_URL
+import { apiClient } from '@/lib/services/auth/api-client'
 
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   AUTH_INVALID_CREDENTIALS: 'Invalid email or password. Please try again.',
@@ -20,18 +19,23 @@ interface ApiSuccess<T> { ok: true; data: T }
 interface ApiError { ok: false; code: string; message: string; statusCode: number }
 export type ApiResult<T = unknown> = ApiSuccess<T> | ApiError
 
+async function readJson(response: Response) {
+  const text = await response.text()
+  return text ? JSON.parse(text) : {}
+}
+
 async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await apiClient(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const text = await res.text()
-    const json = text ? JSON.parse(text) : {}
+    const json = await readJson(res)
+
     if (res.ok) {
       return { ok: true, data: (json?.data ?? json) as T }
     }
+
     const code: string = json?.message ?? 'UNKNOWN_ERROR'
     return {
       ok: false,
@@ -48,8 +52,6 @@ async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
     }
   }
 }
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
 
 export const apiRegister = (data: { name: string; email: string; hospitalId: string; password: string }) =>
   post<{ userId: string }>('/auth/hospital/register', data)
@@ -71,23 +73,24 @@ export const apiResetPassword = (data: { token: string; newPassword: string }) =
 
 export async function storeTokens(tokens: { accessToken: string; refreshToken: string; expiresIn: number }) {
   try {
-    console.log('Storing tokens:', tokens)
     const res = await fetch('/api/auth/set-tokens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(tokens),
     })
+
     if (!res.ok) {
       console.error('Failed to store tokens:', await res.text())
-    } else {
-      console.log('Tokens stored successfully')
     }
   } catch (err) {
     console.error('storeTokens error:', err)
   }
 }
 
-// ── Waitlist ──────────────────────────────────────────────────────────────────
+export async function logout() {
+  await fetch('/api/auth/set-tokens', { method: 'DELETE', credentials: 'include' })
+}
 
 export const apiSubmitWaitlist = (data: { fullName: string; email: string; phone: string }) =>
   post<{ message: string }>('/waitlist/submit', data)
+
