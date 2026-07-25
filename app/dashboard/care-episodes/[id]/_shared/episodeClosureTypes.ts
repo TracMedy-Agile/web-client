@@ -2,16 +2,13 @@ import type { Assessment } from "./careTeamTypes";
 
 export type ClosureReason =
   | "Recovery completed"
-  | "Transferred"
-  | "Patient discontinued"
   | "Lost to follow-up"
-  | "Deceased"
-  | "Administrative closure";
+  | "No further action";
 
 export type EpisodeClosureSummary = {
   checkInCompletion: { completed: number; total: number };
-  goalAchievementPercent: number;
-  missedTasksCount: number;
+  goalAchievementPercent: number | null;
+  missedTasksCount: number | null;
   closureReason: ClosureReason | "";
   finalClinicalSummary: string;
 };
@@ -19,7 +16,7 @@ export type EpisodeClosureSummary = {
 export type ClosedPatientInfo = {
   name: string;
   patientCode: string;
-  age: number;
+  age: number | null;
   gender: string;
   episodeCode: string;
   diagnosisTag: string;
@@ -32,7 +29,7 @@ export type ClosedEpisodeOverview = {
   diagnosis: string;
   openedDate: string;
   closedDate: string;
-  totalDurationDays: number;
+  totalDurationDays: number | null;
   closureReason: ClosureReason;
   outcome: string;
   carePhaseAtClosure: string;
@@ -51,16 +48,16 @@ export type AIClosureSummary = {
   statusBadge: string;
   frozenAtLabel: string;
   narrative: string;
-  medicationAdherencePercent: number;
-  checkInCompletionPercent: number;
+  medicationAdherencePercent: number | null;
+  checkInCompletionPercent: number | null;
   emergencyEscalations: number;
   monitoringDays: { completed: number; total: number };
 };
 
 export type RiskTrendSummary = {
-  opening: number;
-  closing: number;
-  improvementPercent: number;
+  opening: number | null;
+  closing: number | null;
+  improvementPercent: number | null;
 };
 
 export type AlertSummary = {

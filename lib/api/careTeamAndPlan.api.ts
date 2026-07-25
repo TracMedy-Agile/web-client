@@ -1,173 +1,204 @@
+import {
+  createCareEpisodeTimelineEvent,
+  getCareEpisodeById,
+  getCareEpisodeDailyVitals,
+  getCareEpisodeMedicationAdherence,
+  getCareEpisodeTimelinePage,
+  type ApiRecord,
+} from "@/lib/api/care-episodes";
 import type {
   Assessment,
+  AssessmentOutcome,
   AssessmentWorkspaceEntry,
-  CareTeamMember,
-  Clinician,
-  ClinicianRole,
   EscalationStatus,
 } from "@/app/dashboard/care-episodes/[id]/_shared/careTeamTypes";
 
-const FAKE_DELAY_MS = 500;
+const ASSESSMENT_EVENT_TYPE = "clinical_assessment";
 
-function delay<T>(value: T, ms = FAKE_DELAY_MS): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+function stringValue(record: ApiRecord, keys: string[], fallback = "") {
+  for (const key of keys) {
+    if (typeof record[key] === "string" && record[key]) return record[key] as string;
+  }
+  return fallback;
 }
 
-const MOCK_DIRECTORY: Clinician[] = [
-  { id: "clin-101", name: "Dr. Fatima Bello", role: "Doctor", specialty: "Cardiology", phone: "+234 803 555 0142", avatarUrl: "" },
-  { id: "clin-102", name: "Dr. Marvelous Faith", role: "Doctor", specialty: "Neurology", phone: "+234 803 555 0142", avatarUrl: "" },
-  { id: "clin-103", name: "Nurse Aisha Musa", role: "Nurse", specialty: "Cardiology", phone: "+234 803 555 0142", avatarUrl: "" },
-  { id: "clin-104", name: "Dr. Uche Bello", role: "Doctor", specialty: "Pediatrics", phone: "+234 803 555 0142", avatarUrl: "" },
-  { id: "clin-105", name: "Nurse Ngozi Okafor", role: "Nurse", specialty: "Cardiology", phone: "+234 803 555 0143", avatarUrl: "" },
-  { id: "clin-106", name: "Dr. Chinedu Obi", role: "Doctor", specialty: "Internal Medicine", phone: "+234 803 555 0144", avatarUrl: "" },
-  { id: "clin-107", name: "David Mensah", role: "Physiotherapist", specialty: "Rehabilitation", phone: "+234 803 555 0145", avatarUrl: "" },
-];
-
-let mockCareTeam: CareTeamMember[] = [
-  { ...MOCK_DIRECTORY[0], roleOnTeam: "Attending Physician", dateAdded: "2026-04-24T09:00:00" },
-  { ...MOCK_DIRECTORY[4], roleOnTeam: "Primary Nurse", dateAdded: "2026-04-24T09:00:00" },
-];
-
-const MOCK_ASSESSMENT_HISTORY: Assessment[] = [
-  { id: "assess-1", episodeId: "", date: "2026-04-29T11:42:00", escalationStatus: "Delayed Recovery", outcome: "Escalated", clinicianNotes: "Patient meets all discharge criteria. Vitals stable within nominal range.", clinicianName: "Dr. Emeka Nwosu" },
-  { id: "assess-2", episodeId: "", date: "2026-09-08T14:30:00", escalationStatus: "Stable", outcome: "No Escalation", clinicianNotes: "SpO2 drop detected overnight. Patient reporting mild chest discomfort.", clinicianName: "Dr. Fatima Bello" },
-  { id: "assess-3", episodeId: "", date: "2026-02-01T23:27:00", escalationStatus: "Stable", outcome: "No Escalation", clinicianNotes: "Vitals showing positive trend. Mobility increased to 500m.", clinicianName: "Dr. Chinedu Obi" },
-  { id: "assess-4", episodeId: "", date: "2026-10-17T17:14:00", escalationStatus: "Stable", outcome: "No Escalation", clinicianNotes: "Increased Furosemide to 80mg. Patient advised to reduce sodium urgently. Will reassess in 48h.", clinicianName: "Dr. Emeka Nwosu" },
-  { id: "assess-5", episodeId: "", date: "2026-09-21T23:49:00", escalationStatus: "Improving", outcome: "Care Plan Adjustment", clinicianNotes: "Wound redness increasing — possible infection", clinicianName: "Dr. Chinedu Obi" },
-];
-
-export async function getCareTeam(episodeId: string): Promise<CareTeamMember[]> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. GET /care-episodes/:id/care-team)
-  void episodeId;
-  return delay(mockCareTeam);
+function isAssessmentOutcome(value: string): value is AssessmentOutcome {
+  return [
+    "Improving",
+    "Stable",
+    "Delayed Recovery",
+    "Deteriorating",
+    "Resolved",
+    "No Escalation",
+    "Escalated",
+    "Care Plan Adjustment",
+  ].includes(value);
 }
 
-export async function addClinicianToTeam(episodeId: string, clinicianId: string): Promise<CareTeamMember> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. POST /care-episodes/:id/care-team)
-  void episodeId;
-  const clinician = MOCK_DIRECTORY.find((item) => item.id === clinicianId);
-  if (!clinician) throw new Error("Clinician not found.");
-  if (mockCareTeam.some((member) => member.id === clinicianId)) throw new Error("Clinician is already on this care team.");
-
-  const member: CareTeamMember = { ...clinician, roleOnTeam: clinician.role === "Nurse" ? "Care Nurse" : "Consulting Clinician", dateAdded: new Date().toISOString() };
-  mockCareTeam = [...mockCareTeam, member];
-  return delay(member);
+function isEscalationStatus(value: string): value is EscalationStatus {
+  return ["Stable", "Improving", "Delayed Recovery", "Escalated"].includes(value);
 }
 
-export async function removeClinicianFromTeam(episodeId: string, clinicianId: string): Promise<{ id: string }> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. DELETE /care-episodes/:id/care-team/:clinicianId)
-  void episodeId;
-  mockCareTeam = mockCareTeam.filter((member) => member.id !== clinicianId);
-  return delay({ id: clinicianId });
-}
-
-export async function searchAvailableClinicians(query: string, roleFilter?: ClinicianRole | "all"): Promise<Clinician[]> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. GET /clinicians/search)
-  const normalizedQuery = query.trim().toLowerCase();
-  const results = MOCK_DIRECTORY.filter((clinician) => !mockCareTeam.some((member) => member.id === clinician.id))
-    .filter((clinician) => (roleFilter && roleFilter !== "all" ? clinician.role === roleFilter : true))
-    .filter((clinician) =>
-      normalizedQuery
-        ? [clinician.name, clinician.specialty, clinician.role].some((field) => field.toLowerCase().includes(normalizedQuery))
-        : true,
-    );
-  return delay(results);
+function symptomNames(checkin: ApiRecord | null) {
+  if (!checkin) return [];
+  const raw = checkin.symptoms;
+  if (Array.isArray(raw)) {
+    return raw.map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        return stringValue(entry as ApiRecord, ["name", "type", "symptom"]);
+      }
+      return "";
+    }).filter(Boolean);
+  }
+  if (raw && typeof raw === "object") return Object.keys(raw as ApiRecord).map((key) => key.replaceAll("_", " "));
+  return [];
 }
 
 export type AssessmentHistoryFilters = {
   dateFrom?: string;
   dateTo?: string;
-  clinicianName?: string;
-  outcome?: string;
 };
 
-export async function getAssessmentHistory(episodeId: string, filters?: AssessmentHistoryFilters): Promise<Assessment[]> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. GET /care-episodes/:id/assessments)
-  const results = MOCK_ASSESSMENT_HISTORY.map((assessment) => ({ ...assessment, episodeId })).filter((assessment) => {
-    if (filters?.clinicianName && filters.clinicianName !== "all" && assessment.clinicianName !== filters.clinicianName) return false;
-    if (filters?.outcome && filters.outcome !== "all" && assessment.outcome !== filters.outcome) return false;
-    if (filters?.dateFrom && Date.parse(assessment.date) < Date.parse(filters.dateFrom)) return false;
-    if (filters?.dateTo && Date.parse(assessment.date) > Date.parse(filters.dateTo)) return false;
-    return true;
+export async function getAssessmentHistory(
+  episodeId: string,
+  filters?: AssessmentHistoryFilters,
+): Promise<Assessment[]> {
+  const page = await getCareEpisodeTimelinePage(episodeId, {
+    eventType: ASSESSMENT_EVENT_TYPE,
+    dateFrom: filters?.dateFrom,
+    dateTo: filters?.dateTo,
+    limit: 100,
   });
-  return delay(results);
+
+  return page.data.map((event) => {
+    const outcomeValue = stringValue(event.payload, ["outcome"], "Stable");
+    const escalationValue = stringValue(event.payload, ["escalationStatus"], "Stable");
+    return {
+      id: event.id,
+      episodeId,
+      date: event.timestamp,
+      escalationStatus: isEscalationStatus(escalationValue) ? escalationValue : "Stable",
+      outcome: isAssessmentOutcome(outcomeValue) ? outcomeValue : "Stable",
+      clinicianNotes: stringValue(event.payload, ["clinicianNotes", "notes", "message"], "No clinical notes recorded."),
+      clinicianName: stringValue(event.payload, ["clinicianName"], event.source === "clinician" ? "Clinician" : event.source),
+    };
+  });
 }
 
 export type SaveAssessmentPayload = {
-  outcome: Assessment["outcome"];
-  escalationStatus: Assessment["escalationStatus"];
+  outcome: AssessmentOutcome;
+  escalationStatus: EscalationStatus;
   recommendedActions: string[];
   symptomStatus: string;
   treatmentResponse: string;
   keyObservation: string;
   clinicianNotes: string;
+  clinicianName: string;
 };
 
 export async function saveAssessment(episodeId: string, payload: SaveAssessmentPayload): Promise<Assessment> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. POST /care-episodes/:id/assessments)
-  console.log("[mock] saveAssessment payload:", episodeId, payload);
-  const assessment: Assessment = {
-    id: `assess-mock-${Date.now()}`,
+  const event = await createCareEpisodeTimelineEvent(episodeId, {
+    eventType: ASSESSMENT_EVENT_TYPE,
+    source: "clinician",
+    status: "completed",
+    payload: {
+      ...payload,
+      message: payload.clinicianNotes || `Clinical assessment recorded: ${payload.outcome}`,
+    },
+  });
+
+  return {
+    id: event.id,
     episodeId,
-    date: new Date().toISOString(),
+    date: event.timestamp,
     escalationStatus: payload.escalationStatus,
     outcome: payload.outcome,
     clinicianNotes: payload.clinicianNotes,
-    clinicianName: "Dr. Emeka Nwosu",
+    clinicianName: payload.clinicianName,
   };
-  MOCK_ASSESSMENT_HISTORY.unshift(assessment);
-  return delay(assessment);
 }
 
 export async function getAssessmentWorkspace(episodeId: string): Promise<AssessmentWorkspaceEntry> {
-  // TODO: replace with real API call once staging endpoint is confirmed (e.g. GET /care-episodes/:id/assessments/workspace)
-  return delay({
+  const [episode, medicationRecords, dailyVitals, history] = await Promise.all([
+    getCareEpisodeById(episodeId),
+    getCareEpisodeMedicationAdherence(episodeId).catch(() => []),
+    getCareEpisodeDailyVitals(episodeId, 7).catch(() => []),
+    getAssessmentHistory(episodeId).catch(() => []),
+  ]);
+
+  const symptoms = symptomNames(episode.latestCheckin);
+  const latestVitals = dailyVitals.filter((entry) => entry.hasEntry).at(-1)?.vitals;
+  const checkinNotes = stringValue(episode.latestCheckin ?? {}, ["notes"]);
+  const clinicalSources = [
+    latestVitals ? { label: "Vitals", verified: true } : null,
+    symptoms.length > 0 ? { label: "Symptoms", verified: true } : null,
+    checkinNotes ? { label: "Patient Notes", verified: true } : null,
+    Array.isArray(episode.latestCheckin?.images) && episode.latestCheckin.images.length > 0
+      ? { label: "Clinical Media", verified: true }
+      : null,
+  ].filter((source): source is { label: string; verified: boolean } => Boolean(source));
+
+  const vitalSummary = latestVitals
+    ? [
+        latestVitals.spo2 != null ? `SpO2 ${latestVitals.spo2}%` : "",
+        latestVitals.heartRate != null ? `heart rate ${latestVitals.heartRate} bpm` : "",
+        latestVitals.bloodPressureSystolic != null
+          ? `blood pressure ${latestVitals.bloodPressureSystolic}/${latestVitals.bloodPressureDiastolic ?? "--"} mmHg`
+          : "",
+      ].filter(Boolean).join(", ")
+    : "";
+
+  const clinicalSummary = [
+    episode.diagnosis ? `The active episode is monitoring ${episode.diagnosis}.` : "",
+    vitalSummary ? `The latest recorded vitals show ${vitalSummary}.` : "No recent daily vitals are available.",
+    symptoms.length > 0 ? `The latest check-in reports ${symptoms.join(", ")}.` : "No symptoms were reported in the latest check-in.",
+    checkinNotes ? `Patient note: ${checkinNotes}` : "",
+    episode.riskScore != null ? `The current risk score is ${episode.riskScore}.` : "",
+  ].filter(Boolean).join(" ");
+
+  const adherencePercent = medicationRecords.length > 0
+    ? Math.round(medicationRecords.reduce((total, item) => total + item.adherencePercentage, 0) / medicationRecords.length)
+    : 0;
+  const missedDoses = medicationRecords.reduce((total, item) => total + item.missedCount, 0);
+  const adherenceBreakdown = medicationRecords.map((item) => ({
+    label: item.missedCount > 0
+      ? `${item.name}: ${item.missedCount} missed dose${item.missedCount === 1 ? "" : "s"}`
+      : `${item.name}: no missed doses`,
+    positive: item.missedCount === 0,
+  }));
+  if (episode.latestCheckin) adherenceBreakdown.push({ label: "Latest check-in received", positive: true });
+
+  return {
     episodeId,
-    assessmentNumber: MOCK_ASSESSMENT_HISTORY.length + 1,
+    assessmentNumber: history.length + 1,
     clinicalStatus: {
-      title: "Clinical Status Intelligence",
-      confidencePercent: 92,
-      summary:
-        "Patient demonstrates worsening respiratory symptoms with SpO₂ declining to 88% and recent weight gain of 1.8 kg over 48 hours. Clinical media and symptom logs suggest possible fluid retention requiring immediate review. Lab results show BNP elevation. No adverse medication reactions recorded.",
-      sources: [
-        { label: "Vitals", verified: true },
-        { label: "Symptoms", verified: true },
-        { label: "Patient Notes", verified: true },
-        { label: "Clinical Media", verified: true },
-        { label: "Lab Results", verified: true },
-        { label: "Med Side Effects", verified: true },
-      ],
+      title: "Clinical Status Summary",
+      confidencePercent: null,
+      summary: clinicalSummary,
+      sources: clinicalSources,
     },
     carePlanAdherence: {
-      title: "Care Plan Adherence Intelligence",
-      confidencePercent: 96,
-      summary: "Is the patient following the plan?",
-      adherencePercent: 72,
-      trendLabel: "Declining vs last period",
-      trendDeltaPercent: -9,
-      breakdown: [
-        { label: "3 missed evening medications", positive: false },
-        { label: "4 missed daily check-ins", positive: false },
-        { label: "Exercise target at 80%", positive: true },
-        { label: "Monitoring tasks at 85%", positive: true },
-      ],
-      sources: [
-        { label: "Medication", verified: true },
-        { label: "Daily Tasks", verified: true },
-        { label: "Monitoring", verified: true },
-        { label: "Check-ins", verified: true },
-        { label: "Appointments", verified: true },
-      ],
+      title: "Care Plan Adherence",
+      confidencePercent: null,
+      summary: medicationRecords.length > 0
+        ? "Calculated from medication logs available for this episode."
+        : "No medication adherence records are available for this episode.",
+      adherencePercent: medicationRecords.length > 0 ? adherencePercent : null,
+      trendLabel: missedDoses > 0 ? `${missedDoses} missed dose${missedDoses === 1 ? "" : "s"}` : "No missed doses",
+      trendDeltaPercent: null,
+      breakdown: adherenceBreakdown,
+      sources: medicationRecords.length > 0 ? [{ label: "Medication", verified: true }] : [],
     },
     outcomeOptions: ["Improving", "Stable", "Delayed Recovery", "Deteriorating", "Resolved"],
     recommendedActions: ["Adjust Care Plan", "Schedule Follow-up", "Send Patient Instructions", "Escalate to Specialist"],
     findings: {
-      symptomStatus: "Worsening",
-      treatmentResponse: "Partial response",
-      keyObservation: "SpO2 drop + weight gain — possible fluid over",
-      clinicalNotes: "Increased Furosemide to 80mg. Patient advised to reduce sodium urgently. Will reassess in 48h.",
+      symptomStatus: symptoms.length > 0 ? symptoms.join(", ") : "",
+      treatmentResponse: "",
+      keyObservation: checkinNotes,
+      clinicalNotes: "",
     },
-  });
+  };
 }
 
 export type { EscalationStatus };

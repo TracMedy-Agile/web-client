@@ -23,7 +23,7 @@ export function AddTaskModal({ kind, open, onClose, onAdd }: { kind: AddTaskKind
   const close = () => { setDraft(empty); onClose(); };
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
-      <DialogContent className="rounded-xl border-[#DDE3EC] bg-white sm:max-w-xl">
+      <DialogContent className="rounded-xl border-border bg-card sm:max-w-xl">
         <DialogHeader><DialogTitle>{copy.description}</DialogTitle><DialogDescription>Complete the required details below.</DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <label><FieldLabel>{copy.title}</FieldLabel><input className={fieldClass} value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></label>
@@ -32,7 +32,7 @@ export function AddTaskModal({ kind, open, onClose, onAdd }: { kind: AddTaskKind
           {kind === "lab" ? <label><FieldLabel>Priority</FieldLabel><select className={fieldClass} value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as NewTaskValues["priority"] }))}><option>Routine</option><option>Urgent</option></select></label> : null}
           <label className="sm:col-span-2"><FieldLabel>{kind === "warning" ? "Patient response" : "Instructions / details"}</FieldLabel><textarea className={areaClass} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></label>
         </div>
-        <DialogFooter><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button type="button" disabled={!valid} className="bg-[#0753A5] text-white" onClick={() => { if (!valid) return; onAdd(draft); close(); }}>Add to plan</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button type="button" disabled={!valid} className="bg-primary text-white" onClick={() => { if (!valid) return; onAdd(draft); close(); }}>Add to plan</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

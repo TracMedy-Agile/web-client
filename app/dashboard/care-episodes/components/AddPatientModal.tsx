@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { addPatientToQueue, searchPatients, type PatientSearchResult } from "@/lib/api/care-episodes";
 import { searchClinicians, type ClinicianSearchResult } from "@/lib/api/clinicians";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,6 @@ import type {
 } from "./types";
 
 const ENCOUNTER_TYPES = ["Outpatient", "Inpatient", "Emergency", "Telehealth"] as const;
-const DISCHARGE_STATUSES = ["Outpatient", "Admitted", "Discharged", "Under Observation"] as const;
-const FOLLOW_UP_TRIGGERS = ["Outpatient", "Scheduled", "As Needed", "Urgent"] as const;
 const FOLLOW_UP_DURATIONS = ["1 Week", "2 Weeks", "1 Month", "2 Months", "3 Months", "6 Months"] as const;
 const SEVERITIES: ConditionSeverity[] = ["Mild", "Moderate", "Severe"];
 const CONCERN_LEVELS: ClinicalConcern[] = ["None", "Mild", "Moderate", "High"];
@@ -68,10 +67,7 @@ const INITIAL_FORM_DATA: AddPatientFormData = {
   phoneNumber: "",
   tracmedyPatientId: "",
   clinicianName: "",
-  consultationDate: "",
   encounterType: "Outpatient",
-  dischargeStatus: "Outpatient",
-  followUpTrigger: "Outpatient",
   diagnosis: "",
   clinicianNotes: "",
   conditionSeverity: "Moderate",
@@ -81,21 +77,21 @@ const INITIAL_FORM_DATA: AddPatientFormData = {
 };
 
 const fieldClassName =
-  "h-11 rounded-lg border-transparent bg-[#F1F3F5] px-3.5 text-sm font-medium text-[#172033] shadow-none placeholder:text-[#7689A5] focus-visible:border-[#74A9E5] focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-[#0B5CAB]/10 focus-visible:ring-offset-0";
+  "h-11 rounded-lg border-transparent bg-slate-100 px-3.5 text-sm font-medium text-slate-900 shadow-none placeholder:text-slate-500 focus-visible:border-blue-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-primary/10 focus-visible:ring-offset-0";
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#E7F2FF] text-[#1769C2]">
+      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-primary">
         {icon}
       </span>
-      <h3 className="text-sm font-extrabold uppercase tracking-[0.04em] text-[#182132]">{children}</h3>
+      <h3 className="text-sm font-extrabold uppercase tracking-[0.04em] text-slate-900">{children}</h3>
     </div>
   );
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <span className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#182132]">{children}</span>;
+  return <span className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">{children}</span>;
 }
 
 function FormSelect({
@@ -113,10 +109,10 @@ function FormSelect({
     <label className="block min-w-0">
       <FieldLabel>{label}</FieldLabel>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className={cn(fieldClassName, "w-full focus:ring-2 focus:ring-[#0B5CAB]/10 focus:ring-offset-0")}>
+        <SelectTrigger className={cn(fieldClassName, "w-full focus:ring-2 focus:ring-primary/10 focus:ring-offset-0")}>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent className="z-[70] border-[#DDE3EC]">
+        <SelectContent className="z-[70] border-border">
           {options.map((option) => (
             <SelectItem key={option} value={option}>
               {option}
@@ -144,7 +140,7 @@ function SegmentedRadio<T extends string>({
       aria-label={label}
       value={value}
       onValueChange={(nextValue) => onChange(nextValue as T)}
-      className="flex h-10 gap-1 rounded-xl bg-[#E4F0FF] p-1"
+      className="flex h-10 gap-1 rounded-xl bg-blue-50 p-1"
     >
       {options.map((option) => (
         <div key={option} className="relative min-w-0 flex-1">
@@ -154,12 +150,10 @@ function SegmentedRadio<T extends string>({
             className="peer absolute inset-0 z-10 h-full w-full cursor-pointer rounded-lg border-0 opacity-0"
           />
           <span
-            className="pointer-events-none flex h-8 items-center justify-center rounded-lg text-xs font-bold text-[#344054] transition-colors"
-            style={
-              option === value
-                ? { backgroundColor: "#FFFFFF", color: "#034B9A", boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)" }
-                : undefined
-            }
+            className={cn(
+              "pointer-events-none flex h-8 items-center justify-center rounded-lg text-xs font-bold text-slate-700 transition-colors",
+              option === value && "bg-white text-primary shadow-sm",
+            )}
           >
             {option}
           </span>
@@ -280,7 +274,7 @@ function SearchField<T,>({
     <div ref={containerRef} className="relative block">
       <FieldLabel>{label}</FieldLabel>
       <span className="relative block">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7689A5]" />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <Input
           value={value}
           onChange={(event) => {
@@ -306,7 +300,7 @@ function SearchField<T,>({
           aria-autocomplete="list"
         />
         {isLoading ? (
-          <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-[#7689A5]" />
+          <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-500" />
         ) : value ? (
           <button
             type="button"
@@ -318,7 +312,7 @@ function SearchField<T,>({
               setHasSearched(false);
             }}
             aria-label={`Clear ${label.toLowerCase()}`}
-            className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-[#7689A5] transition-colors hover:bg-[#E5EAF0] hover:text-[#344054]"
+            className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -326,7 +320,7 @@ function SearchField<T,>({
       </span>
 
       {showDropdown ? (
-        <div className="absolute z-[70] mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[#DDE3EC] bg-white py-1 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+        <div className="absolute z-[70] mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-white py-1 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
           {results.length > 0
             ? results.map((item, index) => (
                 <button
@@ -336,14 +330,14 @@ function SearchField<T,>({
                   onClick={() => selectItem(item)}
                   className={cn(
                     "block w-full px-3.5 py-2.5 text-left transition-colors",
-                    index === activeIndex ? "bg-[#EEF2F6]" : "hover:bg-[#F8FAFC]",
+                    index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50",
                   )}
                 >
                   {renderItem(item)}
                 </button>
               ))
             : (
-                <p className="px-3.5 py-3 text-sm font-medium text-[#7689A5]">{emptyLabel}</p>
+                <p className="px-3.5 py-3 text-sm font-medium text-slate-500">{emptyLabel}</p>
               )}
         </div>
       ) : null}
@@ -412,11 +406,8 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
   const validateForm = () => {
     if (!formData.patientName.trim()) return "Search for and select the patient.";
     if (!selectedPatientId) return "Select a patient from the search results.";
-    if (!formData.phoneNumber.trim()) return "Enter the patient's phone number.";
-    if (!/^\+?[0-9\s()-]{7,20}$/.test(formData.phoneNumber.trim())) return "Enter a valid phone number.";
     if (!formData.clinicianName.trim()) return "Search for and select the clinician.";
     if (!selectedClinicianId) return "Select a clinician from the search results.";
-    if (!formData.consultationDate) return "Select the consultation date.";
     if (!formData.diagnosis.trim()) return "Enter a diagnosis.";
     if (!formData.clinicianNotes.trim()) return "Enter the clinician notes.";
     if (formData.reasons.length === 0) return "Select at least one reason for the care episode.";
@@ -437,7 +428,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
     setError("");
 
     try {
-      await addPatientToQueue({
+      const created = await addPatientToQueue({
         patientId: selectedPatientId,
         facilityId,
         diagnosis: formData.diagnosis.trim(),
@@ -450,13 +441,16 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
         expectedDurationDays: FOLLOW_UP_DURATION_DAYS[formData.followUpDuration],
         clinicianNotes: formData.clinicianNotes.trim(),
       });
+      capturePostHogEvent("care_episode_created", {
+        episode_id: created.id,
+        source: "manual_patient_entry",
+      });
       toast.success("Patient added to the care queue.");
       onCreated();
       resetForm();
       onOpenChange(false);
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Failed to add patient. Please try again.";
-      setError(message);
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -466,10 +460,10 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#111827]/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-[900px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.36)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
-          <div className="flex h-[76px] shrink-0 items-center justify-between border-b border-[#E5EAF0] bg-[#FBFCFE] px-5 sm:px-8">
-            <DialogPrimitive.Title className="text-lg font-bold text-[#151D2C] sm:text-xl">
+          <div className="flex h-[76px] shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-5 sm:px-8">
+            <DialogPrimitive.Title className="text-lg font-bold text-slate-900 sm:text-xl">
               Manual Patient Entry
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">
@@ -479,7 +473,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
               type="button"
               aria-label="Close manual patient entry"
               disabled={isSubmitting}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#344054] transition-colors hover:bg-[#EEF2F6] disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X className="h-5 w-5" />
             </DialogPrimitive.Close>
@@ -509,8 +503,8 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   getItemKey={(patient) => patient.id}
                   renderItem={(patient) => (
                     <>
-                      <span className="block text-sm font-bold text-[#172033]">{patient.name}</span>
-                      <span className="mt-0.5 block text-xs font-medium text-[#7689A5]">
+                      <span className="block text-sm font-bold text-slate-900">{patient.name}</span>
+                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
                         {patient.tracmedyPatientId || "No Tracmedy ID on file"}
                       </span>
                     </>
@@ -520,12 +514,11 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   <FieldLabel>Phone Number</FieldLabel>
                   <Input
                     value={formData.phoneNumber}
-                    onChange={(event) => updateFormData("phoneNumber", event.target.value)}
-                    placeholder="+2348108390949"
-                    className={fieldClassName}
+                    placeholder="Auto-filled after selecting a patient"
+                    className={cn(fieldClassName, "text-slate-500")}
                     inputMode="tel"
                     autoComplete="tel"
-                    required
+                    readOnly
                   />
                 </label>
                 <label className="block">
@@ -533,7 +526,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   <Input
                     value={formData.tracmedyPatientId}
                     placeholder="Auto-filled after selecting a patient"
-                    className={cn(fieldClassName, "text-[#7689A5]")}
+                    className={cn(fieldClassName, "text-slate-500")}
                     readOnly
                   />
                 </label>
@@ -551,8 +544,8 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   getItemKey={(clinician) => clinician.id}
                   renderItem={(clinician) => (
                     <>
-                      <span className="block text-sm font-bold text-[#172033]">{clinician.name}</span>
-                      <span className="mt-0.5 block text-xs font-medium text-[#7689A5]">
+                      <span className="block text-sm font-bold text-slate-900">{clinician.name}</span>
+                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
                         {clinician.department || "No department on file"}
                       </span>
                     </>
@@ -565,13 +558,11 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
               </div>
               <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
                 <label className="block">
-                  <FieldLabel>Consultation Date</FieldLabel>
+                  <FieldLabel>Queue Date</FieldLabel>
                   <Input
-                    type="date"
-                    value={formData.consultationDate}
-                    onChange={(event) => updateFormData("consultationDate", event.target.value)}
-                    className={cn(fieldClassName, "text-[#7689A5]")}
-                    required
+                    value="Set automatically"
+                    className={cn(fieldClassName, "text-slate-500")}
+                    readOnly
                   />
                 </label>
                 <FormSelect
@@ -580,17 +571,15 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   options={ENCOUNTER_TYPES}
                   onChange={(value) => updateFormData("encounterType", value as AddPatientFormData["encounterType"])}
                 />
+                <label className="block">
+                  <FieldLabel>Initial Status</FieldLabel>
+                  <Input value="Pending Review" className={cn(fieldClassName, "text-slate-500")} readOnly />
+                </label>
                 <FormSelect
-                  label="Discharge Status"
-                  value={formData.dischargeStatus}
-                  options={DISCHARGE_STATUSES}
-                  onChange={(value) => updateFormData("dischargeStatus", value as AddPatientFormData["dischargeStatus"])}
-                />
-                <FormSelect
-                  label="Follow-up Trigger"
-                  value={formData.followUpTrigger}
-                  options={FOLLOW_UP_TRIGGERS}
-                  onChange={(value) => updateFormData("followUpTrigger", value as AddPatientFormData["followUpTrigger"])}
+                  label="Follow-up Duration"
+                  value={formData.followUpDuration}
+                  options={FOLLOW_UP_DURATIONS}
+                  onChange={(value) => updateFormData("followUpDuration", value as AddPatientFormData["followUpDuration"])}
                 />
               </div>
 
@@ -640,7 +629,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
 
               <div className="mt-8 grid items-start gap-6 sm:grid-cols-2">
                 <fieldset>
-                  <legend className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#182132]">
+                  <legend className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">
                     Reason For Care Episode
                   </legend>
                   <div className="space-y-2">
@@ -649,20 +638,15 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                       return (
                         <label
                           key={reason}
-                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-[#E7F2FF] px-3 py-2.5 text-sm font-medium text-[#172033]"
+                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-blue-50 px-3 py-2.5 text-sm font-medium text-slate-900"
                         >
                           <Checkbox
                             checked={checked}
                             onCheckedChange={(nextChecked) => toggleReason(reason, nextChecked === true)}
                             className={cn(
-                              "border-[#7892B2] data-[state=checked]:border-[#034B9A] data-[state=checked]:bg-[#034B9A]",
-                              checked && "border-[#034B9A] text-white",
+                              "border-slate-400 data-[state=checked]:border-primary data-[state=checked]:bg-primary",
+                              checked && "border-primary text-white",
                             )}
-                            style={
-                              checked
-                                ? { backgroundColor: "#034B9A", borderColor: "#034B9A", color: "#FFFFFF" }
-                                : undefined
-                            }
                           />
                           {reason}
                         </label>
@@ -672,18 +656,12 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                 </fieldset>
 
                 <div className="min-w-0 space-y-7">
-                  <FormSelect
-                    label="Follow-up Duration"
-                    value={formData.followUpDuration}
-                    options={FOLLOW_UP_DURATIONS}
-                    onChange={(value) => updateFormData("followUpDuration", value as AddPatientFormData["followUpDuration"])}
-                  />
-
-                  <div className="w-full min-w-0 rounded-xl border border-[#B9D8FF] bg-[#F0F6FF] p-4 text-[#034B9A]">
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-[#172033]">Quick Summary</p>
+                  <div className="w-full min-w-0 rounded-xl border border-blue-200 bg-blue-50 p-4 text-primary">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-900">Quick Summary</p>
                     <p className="mt-2 text-sm leading-5">
-                      Patient will be added to the <strong>{formData.encounterType}</strong> queue with a{" "}
-                      <strong>{formData.conditionSeverity} Risk</strong> flag. Initial follow-up scheduled for{" "}
+                      Patient will be added to the <strong>pending review</strong> queue for a{" "}
+                      <strong>{formData.encounterType}</strong> encounter with a{" "}
+                      <strong>{formData.clinicalConcern} concern</strong> flag. Expected follow-up is{" "}
                       <strong>{formData.followUpDuration} from today.</strong>
                     </p>
                   </div>
@@ -691,20 +669,20 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
               </div>
             </div>
 
-            <div className="flex items-stretch justify-end gap-3 border-t border-[#E5EAF0] bg-[#FBFCFE] px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+            <div className="flex items-stretch justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => handleOpenChange(false)}
                 disabled={isSubmitting}
-                className="h-11 px-4 text-sm font-bold text-[#344054] hover:bg-[#EEF2F6]"
+                className="h-11 px-4 text-sm font-bold text-slate-700 hover:bg-slate-100"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="h-12 rounded-xl bg-[#064B91] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#023E8A]"
+                className="h-12 rounded-xl bg-primary px-5 text-sm font-bold text-white shadow-sm hover:bg-primary/90"
               >
                 {isSubmitting ? (
                   <>

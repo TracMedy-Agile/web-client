@@ -1,3 +1,5 @@
+import type { components } from "@/docs/types/api";
+
 export type Medication = { id: string; name: string; dosage: string; frequency: string; duration: string; instructions: string };
 export type CarePlanTask = { title: string; dueDate: string; status: string; type?: string; priority?: string; instructions?: string };
 export type LabTest = { id: string; name: string; priority: "Urgent" | "Routine"; purpose: string; date: string };
@@ -9,7 +11,7 @@ export type HomeCareOrder = {
   frequency: string;
   startDate: string;
   duration: number;
-  numberOfWeeks: number;
+  numberOfVisits: number;
   instructions: string;
   fulfillmentMethod: "hospital" | "network";
   clinicianId: string;
@@ -18,20 +20,22 @@ export type Recommendation = { id: string; title: string; summary: string; descr
 export type WarningSign = { id: string; title: string; detail: string; response: string };
 export type Clinician = { id: string; name: string; role: string };
 
-export type CarePlan = {
-  id: string;
-  version: number;
-  medications: { name: string; dosage: string; frequency: string; duration: string; instructions?: string }[];
-  tasks: CarePlanTask[];
-  lifestyleRecommendations: string[] | { title: string; description: string }[];
-  monitoringFrequency: string;
-  episodeDuration: string;
-  changeReason: string;
-  isActive: boolean;
-  createdAt: string;
+type GeneratedCarePlan = components["schemas"]["CarePlanDto"];
+type GeneratedCreateCarePlan = components["schemas"]["CreateCarePlanDto"];
+
+// The generated schema currently describes these JSON-array fields as opaque
+// objects/string arrays. These refinements mirror the backend DTO while keeping
+// the API type as the source of every other field.
+export type CarePlan = Omit<GeneratedCarePlan, "tasks" | "medications" | "lifestyleRecommendations"> & {
+  tasks?: CarePlanTask[];
+  medications?: Omit<Medication, "id">[];
+  lifestyleRecommendations?: Array<string | { title: string; description: string }>;
 };
 
-export type CarePlanPayload = Omit<CarePlan, "id" | "version" | "createdAt"> & { notifyPatient?: boolean };
+export type CarePlanPayload = Omit<GeneratedCreateCarePlan, "tasks" | "medications"> & {
+  tasks?: CarePlanTask[];
+  medications?: Omit<Medication, "id">[];
+};
 
 export type CarePlanForm = {
   id: string;

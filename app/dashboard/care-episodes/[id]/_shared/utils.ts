@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import type { CareEpisodeDetail } from "@/lib/api/care-episodes";
+import type { CareEpisodeDetail, DailyVitalsRecord } from "@/lib/api/care-episodes";
 
 export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
   return {
@@ -28,6 +28,7 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     recentTimeline: [],
     riskData: null,
     dayProgress: null,
+    facility: null,
   };
 }
 
@@ -41,7 +42,7 @@ export function getInitials(name: string) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
-const AVATAR_COLORS = ["#023E8A", "#0F9D6C", "#B45309", "#7C3AED", "#B91C1C", "#0369A1"];
+const AVATAR_COLORS = ["var(--color-primary)", "var(--color-emerald-600)", "var(--color-amber-700)", "var(--color-violet-600)", "var(--color-red-700)", "var(--color-sky-700)"];
 
 export function getAvatarColor(seed: string) {
   let hash = 0;
@@ -56,10 +57,10 @@ export function getProgressPercent(dayStart: number | null, expectedDurationDays
 
 export function getHeaderRiskBadge(riskCategory: string | null) {
   const value = (riskCategory ?? "").toLowerCase();
-  if (value === "high") return { label: "High", className: "bg-[#FFECEC] text-[#EF4444]" };
-  if (value === "medium") return { label: "Moderate", className: "bg-[#FFF4E5] text-[#F59E0B]" };
-  if (value === "low") return { label: "Low", className: "bg-[#DFFBF0] text-[#10B981]" };
-  return { label: "Unrated", className: "bg-[#F3F4F6] text-[#71809B]" };
+  if (value === "high") return { label: "High", className: "bg-red-50 text-red-500" };
+  if (value === "medium") return { label: "Moderate", className: "bg-amber-50 text-amber-500" };
+  if (value === "low") return { label: "Low", className: "bg-emerald-50 text-emerald-500" };
+  return { label: "Unrated", className: "bg-slate-100 text-slate-500" };
 }
 
 export function formatLongDate(value: string | null | undefined) {
@@ -101,12 +102,12 @@ export function humanizeSlug(value: string) {
 export function getTrendMeta(trend: string | null) {
   const value = (trend ?? "").toLowerCase();
   if (value.includes("up") || value.includes("increas") || value.includes("improv")) {
-    return { label: "Increase", className: "bg-[#DFFBF0] text-[#10B981]", Icon: ArrowUp };
+    return { label: "Increase", className: "bg-emerald-50 text-emerald-500", Icon: ArrowUp };
   }
   if (value.includes("down") || value.includes("decreas") || value.includes("declin") || value.includes("worsen")) {
-    return { label: "Decrease", className: "bg-[#FFECEC] text-[#EF4444]", Icon: ArrowDown };
+    return { label: "Decrease", className: "bg-red-50 text-red-500", Icon: ArrowDown };
   }
-  return { label: "Stable", className: "bg-[#E7F2FF] text-[#023E8A]", Icon: Minus };
+  return { label: "Stable", className: "bg-blue-50 text-primary", Icon: Minus };
 }
 
 export type BiometricMetric = "Blood Pressure" | "Heart Rate" | "SpO2";
@@ -118,10 +119,10 @@ export type BiometricPoint = {
   abnormal: boolean;
 };
 
-export const BIOMETRIC_METRICS: { label: BiometricMetric; unit: string; base: number; spread: number }[] = [
-  { label: "Blood Pressure", unit: "MMHG", base: 118, spread: 18 },
-  { label: "Heart Rate", unit: "BPM", base: 78, spread: 14 },
-  { label: "SpO2", unit: "%", base: 96, spread: 3 },
+export const BIOMETRIC_METRICS: { label: BiometricMetric; unit: string }[] = [
+  { label: "Blood Pressure", unit: "MMHG" },
+  { label: "Heart Rate", unit: "BPM" },
+  { label: "SpO2", unit: "%" },
 ];
 
 export const BIOMETRIC_RANGES: { key: BiometricRange; days: number }[] = [
@@ -130,31 +131,27 @@ export const BIOMETRIC_RANGES: { key: BiometricRange; days: number }[] = [
   { key: "30d", days: 30 },
 ];
 
-function seededRandom(seed: number) {
-  const value = Math.sin(seed) * 10000;
-  return value - Math.floor(value);
-}
+export function buildBiometricData(metric: BiometricMetric, records: DailyVitalsRecord[]): BiometricPoint[] {
+  return records.flatMap((record) => {
+    let value: number | null = null;
+    let abnormal = false;
 
-export function buildBiometricData(metric: BiometricMetric, range: BiometricRange, episodeId: string): BiometricPoint[] {
-  const config = BIOMETRIC_METRICS.find((item) => item.label === metric) ?? BIOMETRIC_METRICS[0];
-  const days = BIOMETRIC_RANGES.find((item) => item.key === range)?.days ?? 7;
-  const seedBase = episodeId.length + metric.length + range.length;
-  const points: BiometricPoint[] = [];
-  const abnormalIndex = Math.floor(seededRandom(seedBase) * days);
+    if (metric === "Blood Pressure") {
+      value = record.vitals.bloodPressureSystolic;
+      abnormal = value !== null && (value < 90 || value >= 130);
+    } else if (metric === "Heart Rate") {
+      value = record.vitals.heartRate;
+      abnormal = value !== null && (value < 60 || value > 100);
+    } else {
+      value = record.vitals.spo2;
+      abnormal = value !== null && value < 95;
+    }
 
-  for (let index = 0; index < days; index += 1) {
-    const noise = (seededRandom(seedBase + index * 3.17) - 0.5) * config.spread;
-    const wave = Math.sin(index / 2.4) * (config.spread / 2.2);
-    const value = Math.round(config.base + wave + noise);
-    const date = new Date();
-    date.setDate(date.getDate() - (days - index - 1));
-
-    points.push({
-      date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date).toUpperCase(),
-      value,
-      abnormal: index === abnormalIndex,
-    });
-  }
-
-  return points;
+    if (!record.hasEntry || value === null) return [];
+    const parsed = Date.parse(record.date);
+    const date = Number.isFinite(parsed)
+      ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(parsed)).toUpperCase()
+      : record.date;
+    return [{ date, value, abnormal }];
+  });
 }

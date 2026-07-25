@@ -328,8 +328,8 @@ export default function AppointmentCalendarDaily({
       {!isLoading && !error && appointments.length === 0 ? (
         <AppointmentEmptyState onRefresh={() => setRefreshKey((key) => key + 1)} />
       ) : (
-      <div className="overflow-x-auto">
-        <div className="relative min-w-[1040px] bg-white pb-3 pl-4 pr-6">
+      <div className="w-full overflow-hidden">
+        <div className="relative w-full bg-white pb-3 pl-4 pr-6">
           <div className="relative ml-20 border-l border-[#CBD5E1]" style={{ height: timelineHeight }}>
             {timeSlots.map((slot, index) => (
               <div key={slot} className="absolute left-[-78px] right-0 h-px" style={{ top: index * HOUR_HEIGHT }}>

@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -44,6 +45,7 @@ type ClinicianSuggestion = {
   isTopMatch: boolean;
   isFull: boolean;
   tone: "blue" | "green" | "red";
+  avatarUrl: string;
   initials: string;
 };
 
@@ -161,6 +163,7 @@ function normalizeClinicianSuggestion(record: ApiRecord, index: number): Clinici
     isFull,
     tone: isFull ? "red" : index === 0 ? "blue" : "green",
     initials: getInitials(name),
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
@@ -236,16 +239,19 @@ function ClinicianCard({
       ) : null}
 
       <div className="flex items-start gap-4">
-        <div
-          className={cn(
-            "mt-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-sm font-bold ring-4 ring-white",
-            clinician.tone === "blue" && "bg-[#DDE7F5] text-[#023E8A]",
-            clinician.tone === "green" && "bg-[#DDF5EC] text-[#047857]",
-            clinician.tone === "red" && "bg-[#FFF1E8] text-[#B91C1C]",
-          )}
-        >
-          {clinician.initials}
-        </div>
+        <Avatar className="mt-4 h-14 w-14 shrink-0 ring-4 ring-white">
+          {clinician.avatarUrl ? <AvatarImage src={clinician.avatarUrl} alt={clinician.name} className="object-cover" /> : null}
+          <AvatarFallback
+            className={cn(
+              "text-sm font-bold",
+              clinician.tone === "blue" && "bg-[#DDE7F5] text-[#023E8A]",
+              clinician.tone === "green" && "bg-[#DDF5EC] text-[#047857]",
+              clinician.tone === "red" && "bg-[#FFF1E8] text-[#B91C1C]",
+            )}
+          >
+            {clinician.initials}
+          </AvatarFallback>
+        </Avatar>
 
         <div className="min-w-0 flex-1 pt-4">
           <div className="flex items-start justify-between gap-3">
@@ -331,8 +337,6 @@ export default function AssignAppointmentDrawer({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [assigningId, setAssigningId] = useState("");
-  const [assignError, setAssignError] = useState("");
-  const [capacityWarning, setCapacityWarning] = useState<{ id: string; name: string } | null>(null);
 
   const [showAll, setShowAll] = useState(false);
 
@@ -369,8 +373,6 @@ export default function AssignAppointmentDrawer({
 
   const resetDrawerState = () => {
     setShowAll(false);
-    setCapacityWarning(null);
-    setAssignError("");
   };
 
   const handleClose = () => {
@@ -380,11 +382,20 @@ export default function AssignAppointmentDrawer({
 
   const handleAssign = async (clinician: ClinicianSuggestion, force = false) => {
     if (!appointmentId) return;
-    if (clinician.isFull && !force && !window.confirm(`${clinician.name} is at capacity. Assign anyway?`)) return;
+    if (clinician.isFull && !force) {
+      toast.warning(`${clinician.name} is at capacity`, {
+        id: `assign-capacity-${clinician.id}`,
+        description: "Assigning anyway may exceed the daily threshold and trigger overtime approval.",
+        duration: 8000,
+        action: {
+          label: "Assign anyway",
+          onClick: () => void handleAssign(clinician, true),
+        },
+      });
+      return;
+    }
 
     setAssigningId(clinician.id);
-    setAssignError("");
-    setCapacityWarning(null);
 
     try {
       await assignAppointment(appointmentId, clinician.id, force || clinician.isFull);
@@ -394,9 +405,18 @@ export default function AssignAppointmentDrawer({
       handleClose();
     } catch (requestError) {
       if (isCapacityError(requestError)) {
-        setCapacityWarning({ id: clinician.id, name: clinician.name });
+        toast.warning(`${clinician.name} is at capacity`, {
+          id: `assign-capacity-${clinician.id}`,
+          description: "Assigning anyway may exceed the daily threshold and trigger overtime approval.",
+          duration: 8000,
+          action: {
+            label: "Assign anyway",
+            onClick: () => void handleAssign(clinician, true),
+          },
+        });
       } else {
-        setAssignError(requestError instanceof Error ? requestError.message : "Failed to assign clinician.");
+        const message = requestError instanceof Error ? requestError.message : "Failed to assign clinician.";
+        toast.error(message);
       }
     } finally {
       setAssigningId("");
@@ -477,13 +497,6 @@ export default function AssignAppointmentDrawer({
                   ) : null}
                 </div>
 
-                {assignError ? (
-                  <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500">
-                    <AlertCircle className="h-4 w-4" />
-                    {assignError}
-                  </p>
-                ) : null}
-
                 <div className="mt-4 space-y-4 pb-4">
                   {clinicians.map((clinician) => (
                     <ClinicianCard
@@ -500,30 +513,6 @@ export default function AssignAppointmentDrawer({
               </div>
             ) : null}
 
-            {capacityWarning ? (
-              <div className="sticky bottom-0 border-t border-[#FECACA] bg-[#FFE8E5] px-4 sm:px-6 py-5">
-                <div className="flex gap-3 text-sm font-medium leading-5 text-[#FF1F1F]">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div className="flex-1">
-                    <p>
-                      Assigning to {capacityWarning.name} will exceed their daily capacity threshold. Overtime
-                      approvals may be triggered and medical director notification will be sent.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={Boolean(assigningId)}
-                      onClick={() => {
-                        const clinician = clinicians.find((item) => item.id === capacityWarning.id);
-                        if (clinician) void handleAssign(clinician, true);
-                      }}
-                      className="mt-3 text-sm font-bold text-[#FF1F1F] underline disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Assign anyway
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </DialogPrimitive.Content>
         </SheetPortal>
       </Sheet>
