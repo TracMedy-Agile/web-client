@@ -1,7 +1,9 @@
 import type { Clinician } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
+import type { components } from "@/docs/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 type UnknownRecord = Record<string, unknown>;
+type ApiClinicianListItem = components["schemas"]["ClinicianListItemDto"];
 
 function asRecord(value: unknown): UnknownRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
@@ -47,6 +49,29 @@ export type ClinicianSearchResult = {
   name: string;
   department: string;
 };
+
+export type ClinicianDirectoryEntry = Pick<
+  ApiClinicianListItem,
+  "id" | "name" | "email" | "department" | "status"
+>;
+
+export async function getFacilityClinicians(params?: {
+  q?: string;
+  department?: string;
+  limit?: number;
+}): Promise<ClinicianDirectoryEntry[]> {
+  const query = new URLSearchParams({ limit: String(params?.limit ?? 100) });
+  if (params?.q?.trim()) query.set("q", params.q.trim());
+  if (params?.department && params.department !== "all") query.set("department", params.department);
+  const list = await fetchClinicianList(query);
+  return list.map((item) => ({
+    id: value(item, ["id"]),
+    name: value(item, ["name"], "Unnamed clinician"),
+    email: value(item, ["email"]),
+    department: value(item, ["department"]) || null,
+    status: (value(item, ["status"], "available") as ApiClinicianListItem["status"]),
+  })).filter((item) => item.id);
+}
 
 export async function searchClinicians(query: string): Promise<ClinicianSearchResult[]> {
   const q = query.trim();

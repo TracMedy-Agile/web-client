@@ -3,17 +3,15 @@
 import { useState } from "react";
 import { Pill, Trash2 } from "lucide-react";
 import type { Medication } from "../types";
-import { AddMedicationModal } from "./AddMedicationModal";
 import { AddRowButton, areaClass, DeleteDialog, fieldClass, SectionFrame } from "./SectionFrame";
 
 export function MedicationSection({ items, onChange }: { items: Medication[]; onChange: (items: Medication[]) => void }) {
-  const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<Medication | null>(null);
   const update = (index: number, patch: Partial<Medication>) => onChange(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   return (
     <SectionFrame icon={<Pill className="h-4 w-4" />} title="Assigned Medications" subtitle="Active prescriptions linked to this care plan">
       <div className="space-y-4">
-        {items.map((item, index) => <div key={item.id} className="rounded-xl bg-[#F1F3F5] p-3">
+        {items.map((item, index) => <div key={item.id} className="rounded-xl bg-muted/60 p-3">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-[1.1fr_.8fr_.9fr_.9fr_auto]">
             <input aria-label="Medication" className={fieldClass} value={item.name} onChange={(event) => update(index, { name: event.target.value })} />
             <input aria-label="Dosage" className={fieldClass} value={item.dosage} onChange={(event) => update(index, { dosage: event.target.value })} />
@@ -24,8 +22,14 @@ export function MedicationSection({ items, onChange }: { items: Medication[]; on
           <textarea aria-label={`${item.name} instructions`} className={`${areaClass} mt-2`} value={item.instructions} onChange={(event) => update(index, { instructions: event.target.value })} />
         </div>)}
       </div>
-      <AddRowButton onClick={() => setAdding(true)}>Add medication</AddRowButton>
-      <AddMedicationModal open={adding} onClose={() => setAdding(false)} onAdd={(medication) => onChange([...items, { id: crypto.randomUUID(), ...medication }])} />
+      <AddRowButton onClick={() => onChange([...items, {
+        id: crypto.randomUUID(),
+        name: "",
+        dosage: "",
+        frequency: "",
+        duration: "",
+        instructions: "",
+      }])}>Add medication</AddRowButton>
       <DeleteDialog label={deleting?.name ?? "medication"} open={Boolean(deleting)} onOpenChange={(open) => { if (!open) setDeleting(null); }} onConfirm={() => { if (deleting) onChange(items.filter((item) => item.id !== deleting.id)); setDeleting(null); }} />
     </SectionFrame>
   );

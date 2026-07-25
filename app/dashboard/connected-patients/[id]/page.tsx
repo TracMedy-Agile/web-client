@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, MessageSquare, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CalendarDays, ChevronLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { cn } from "@/lib/utils";
 import {
   getHospitalFacilityId,
@@ -14,7 +14,7 @@ import {
   type PatientProfileResponse,
 } from "@/lib/api/connected-patients";
 
-type EpisodeStatus = "active" | "completed";
+type EpisodeStatus = "active" | "completed" | "pending";
 type AppointmentStatus = "completed" | "cancelled" | "scheduled";
 type HistoryTone = "positive" | "negative" | "neutral";
 
@@ -35,20 +35,21 @@ type AppointmentEntry = {
 };
 
 const episodeStatusClasses: Record<EpisodeStatus, string> = {
-  active: "bg-[#DFFBF0] text-[#10B981]",
-  completed: "bg-[#F3F4F6] text-[#71809B]",
+  active: "bg-emerald-50 text-emerald-600",
+  completed: "bg-slate-100 text-slate-500",
+  pending: "bg-amber-50 text-amber-700",
 };
 
 const appointmentStatusClasses: Record<AppointmentStatus, string> = {
-  completed: "bg-[#DFFBF0] text-[#10B981]",
-  cancelled: "bg-[#FFECEC] text-[#EF4444]",
-  scheduled: "bg-[#E7F2FF] text-[#023E8A]",
+  completed: "bg-emerald-50 text-emerald-600",
+  cancelled: "bg-red-50 text-red-500",
+  scheduled: "bg-blue-50 text-primary",
 };
 
 const historyToneClasses: Record<HistoryTone, string> = {
-  positive: "bg-[#10B981] ring-[#DFFBF0]",
-  negative: "bg-[#EF4444] ring-[#FFECEC]",
-  neutral: "bg-[#71809B] ring-[#F3F4F6]",
+  positive: "bg-emerald-500 ring-emerald-100",
+  negative: "bg-red-500 ring-red-100",
+  neutral: "bg-slate-500 ring-slate-100",
 };
 
 function getString(record: ApiRecord, keys: string[], fallback = "--") {
@@ -81,7 +82,10 @@ function formatAppointmentDateTime(value: string) {
 }
 
 function normalizeEpisodeStatus(value: string): EpisodeStatus {
-  return value.toLowerCase() === "active" ? "active" : "completed";
+  const normalized = value.toLowerCase();
+  if (normalized === "active") return "active";
+  if (normalized === "pending") return "pending";
+  return "completed";
 }
 
 function normalizeAppointmentStatus(value: string): AppointmentStatus {
@@ -103,17 +107,25 @@ function normalizeCareEpisodeRow(record: ApiRecord): CareEpisodeRow {
     id: getString(record, ["id"], ""),
     name: getString(record, ["diagnosis", "name", "title"], "Care Episode"),
     clinician: getString(record, ["clinicianName", "clinician"]),
-    startDate: getString(record, ["createdAt", "startDate"], ""),
+    startDate: getString(record, ["openedAt", "createdAt", "startDate"], ""),
     status: normalizeEpisodeStatus(getString(record, ["status"], "")),
   };
 }
 
 function normalizeAppointmentEntry(record: ApiRecord): AppointmentEntry {
+  const date = getString(record, ["date", "dateTime"], "");
+  const time = getString(record, ["time"], "");
+  const dateTime = date && time && !date.includes("T")
+    ? date + "T" + time
+    : date && time
+      ? date.slice(0, 10) + "T" + time
+      : date;
+
   return {
     id: getString(record, ["id"], ""),
     type: normalizeAppointmentType(getString(record, ["type"], "in_person")),
     status: normalizeAppointmentStatus(getString(record, ["status"], "scheduled")),
-    dateTime: getString(record, ["date", "dateTime"], ""),
+    dateTime,
     clinicianName: getString(record, ["clinicianName", "clinician"]),
   };
 }
@@ -136,8 +148,8 @@ function historyTone(type: string): HistoryTone {
 function InfoField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-bold tracking-[0.05em] text-[#71809B]">{label}</p>
-      <p className="mt-1.5 text-sm font-bold text-[#111827]">{value}</p>
+      <p className="text-xs font-bold tracking-[0.05em] text-slate-500">{label}</p>
+      <p className="mt-1.5 text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -145,11 +157,11 @@ function InfoField({ label, value }: { label: string; value: string }) {
 function ProfileSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-5 w-40 animate-pulse rounded bg-[#E5E7EB]" />
-      <div className="h-24 animate-pulse rounded-xl bg-[#F3F4F6]" />
+      <div className="h-5 w-40 animate-pulse rounded bg-slate-200" />
+      <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="h-64 animate-pulse rounded-xl bg-[#F3F4F6] lg:col-span-2" />
-        <div className="h-64 animate-pulse rounded-xl bg-[#F3F4F6]" />
+        <div className="h-64 animate-pulse rounded-xl bg-slate-100 lg:col-span-2" />
+        <div className="h-64 animate-pulse rounded-xl bg-slate-100" />
       </div>
     </div>
   );
@@ -162,6 +174,12 @@ export default function ConnectedPatientProfilePage() {
   const [profile, setProfile] = useState<PatientProfileResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (patientId) {
+      capturePostHogEvent("patient_profile_viewed", { patient_id: patientId });
+    }
+  }, [patientId]);
 
   useEffect(() => {
     if (!patientId) return;
@@ -203,7 +221,7 @@ export default function ConnectedPatientProfilePage() {
       <div className="space-y-6">
         <Link
           href="/dashboard/connected-patients"
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] hover:text-[#111827]"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
         >
           <ChevronLeft className="h-4 w-4" />
           Back to Connected Patients
@@ -217,12 +235,11 @@ export default function ConnectedPatientProfilePage() {
 
   const { patient, connection, connectionHistory } = profile;
   const name = patient.name || "Unknown Patient";
-
   return (
     <div className="space-y-6">
       <Link
         href="/dashboard/connected-patients"
-        className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] hover:text-[#111827]"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
       >
         <ChevronLeft className="h-4 w-4" />
         Back to Connected Patients
@@ -234,89 +251,70 @@ export default function ConnectedPatientProfilePage() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={patient.avatarUrl} alt={name} className="h-16 w-16 shrink-0 rounded-full object-cover" />
           ) : (
-            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#023E8A] text-xl font-bold text-white">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white">
               {getInitials(name)}
             </span>
           )}
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-bold text-[#111827] md:text-xl">{name}</h1>
+              <h1 className="text-lg font-bold text-slate-900 md:text-xl">{name}</h1>
               <span
                 className={cn(
                   "inline-flex rounded-full px-3 py-1 text-xs font-bold",
-                  connection.status === "active" ? "bg-[#DFFBF0] text-[#10B981]" : "bg-[#FFECEC] text-[#EF4444]",
+                  connection.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500",
                 )}
               >
                 {connection.status === "active" ? "Connected" : "Disconnected"}
               </span>
             </div>
-            <p className="mt-1.5 flex items-center gap-1.5 text-sm font-medium text-[#71809B]">
+            <p className="mt-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-500">
               <CalendarDays className="h-4 w-4" />
               Connected since {formatLongDate(connection.connectedAt || null)}
             </p>
           </div>
         </div>
-        <div className="flex w-full gap-3 sm:w-auto">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 flex-1 gap-2 rounded-xl border-[#DDE3EC] bg-white px-5 text-sm font-bold text-[#111827] hover:bg-[#F8FAFC] sm:flex-none"
-          >
-            <Share2 className="h-4 w-4" />
-            Share Profile
-          </Button>
-          <Button
-            type="button"
-            className="h-11 flex-1 gap-2 rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575] sm:flex-none"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Message Patient
-          </Button>
-        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="p-4 sm:p-6">
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-base font-bold text-[#111827]">Patient Information</h2>
+                <h2 className="text-base font-bold text-slate-900">Patient Information</h2>
               </div>
-              <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
                 <InfoField label="TRACMEDY ID" value={patient.tracmedyPatientId || "--"} />
                 <InfoField label="HOSPITAL ID" value={connection.externalPatientId || "--"} />
-                <InfoField label="DATE OF BIRTH" value={formatLongDate(patient.dateOfBirth || null)} />
                 <InfoField label="AGE" value={patient.age !== null ? `${patient.age} Years` : "--"} />
                 <InfoField label="GENDER" value={patient.gender || "--"} />
-                <InfoField label="BLOOD GROUP" value={patient.bloodGroup || "--"} />
                 <InfoField label="PHONE NUMBER" value={patient.phone || "--"} />
                 <InfoField label="EMAIL ADDRESS" value={patient.email || "--"} />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="p-4 sm:p-6">
-              <h2 className="mb-4 text-base font-bold text-[#111827]">Care Episodes</h2>
+              <h2 className="mb-4 text-base font-bold text-slate-900">Care Episodes</h2>
               {careEpisodes.length === 0 ? (
-                <p className="py-6 text-center text-sm font-medium text-[#71809B]">No care episodes found for this patient.</p>
+                <p className="py-6 text-center text-sm font-medium text-slate-500">No care episodes found for this patient.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-150 border-collapse text-sm">
                     <thead>
-                      <tr className="border-b border-[#E5E7EB] text-left">
-                        <th className="pb-3 pr-4 text-xs font-bold text-[#71809B]">EPISODE NAME</th>
-                        <th className="pb-3 pr-4 text-xs font-bold text-[#71809B]">CLINICIAN</th>
-                        <th className="pb-3 pr-4 text-xs font-bold text-[#71809B]">START DATE</th>
-                        <th className="pb-3 text-xs font-bold text-[#71809B]">STATUS</th>
+                      <tr className="border-b border-slate-200 text-left">
+                        <th className="pb-3 pr-4 text-xs font-bold text-slate-500">EPISODE NAME</th>
+                        <th className="pb-3 pr-4 text-xs font-bold text-slate-500">CLINICIAN</th>
+                        <th className="pb-3 pr-4 text-xs font-bold text-slate-500">START DATE</th>
+                        <th className="pb-3 text-xs font-bold text-slate-500">STATUS</th>
                       </tr>
                     </thead>
                     <tbody>
                       {careEpisodes.map((episode) => (
-                        <tr key={episode.id} className="border-b border-[#E5E7EB] last:border-0">
-                          <td className="py-4 pr-4 font-bold text-[#111827]">{episode.name}</td>
-                          <td className="py-4 pr-4 text-[#344054]">{episode.clinician}</td>
-                          <td className="py-4 pr-4 text-[#344054]">{formatLongDate(episode.startDate || null)}</td>
+                        <tr key={episode.id} className="border-b border-slate-200 last:border-0">
+                          <td className="py-4 pr-4 font-bold text-slate-900">{episode.name}</td>
+                          <td className="py-4 pr-4 text-slate-700">{episode.clinician}</td>
+                          <td className="py-4 pr-4 text-slate-700">{formatLongDate(episode.startDate || null)}</td>
                           <td className="py-4">
                             <span
                               className={cn(
@@ -338,17 +336,17 @@ export default function ConnectedPatientProfilePage() {
         </div>
 
         <div className="space-y-6">
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="p-4 sm:p-6">
-              <h2 className="mb-5 text-base font-bold text-[#111827]">Connection History</h2>
+              <h2 className="mb-5 text-base font-bold text-slate-900">Connection History</h2>
               {connectionHistory.length === 0 ? (
-                <p className="text-sm font-medium text-[#71809B]">No connection history available.</p>
+                <p className="text-sm font-medium text-slate-500">No connection history available.</p>
               ) : (
                 <ol className="space-y-6">
                   {connectionHistory.map((event, index) => (
                     <li key={event.id || index} className="relative flex gap-3 pl-1">
                       {index < connectionHistory.length - 1 ? (
-                        <span className="absolute left-[7px] top-4 h-full w-px bg-[#E5E7EB]" />
+                        <span className="absolute left-[7px] top-4 h-full w-px bg-slate-200" />
                       ) : null}
                       <span
                         className={cn(
@@ -357,9 +355,9 @@ export default function ConnectedPatientProfilePage() {
                         )}
                       />
                       <div>
-                        <p className="text-sm font-bold text-[#111827]">{historyTypeLabel(event.type)}</p>
-                        <p className="text-xs font-medium text-[#71809B]">{formatLongDate(event.occurredAt || null)}</p>
-                        {event.note ? <p className="mt-1 text-xs font-medium italic text-[#71809B]">{event.note}</p> : null}
+                        <p className="text-sm font-bold text-slate-900">{historyTypeLabel(event.type)}</p>
+                        <p className="text-xs font-medium text-slate-500">{formatLongDate(event.occurredAt || null)}</p>
+                        {event.note ? <p className="mt-1 text-xs font-medium italic text-slate-500">{event.note}</p> : null}
                       </div>
                     </li>
                   ))}
@@ -368,19 +366,25 @@ export default function ConnectedPatientProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="p-4 sm:p-6">
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-base font-bold text-[#111827]">Appointments</h2>
+                <h2 className="text-base font-bold text-slate-900">Appointments</h2>
+                <Link
+                  href={"/dashboard/appointments?patientId=" + encodeURIComponent(patient.id)}
+                  className="text-sm font-bold text-primary hover:underline"
+                >
+                  See All
+                </Link>
               </div>
               <div className="space-y-5">
                 {appointments.length === 0 ? (
-                  <p className="text-sm font-medium text-[#71809B]">No appointments found for this patient.</p>
+                  <p className="text-sm font-medium text-slate-500">No appointments found for this patient.</p>
                 ) : (
                   appointments.map((appointment) => (
-                    <div key={appointment.id} className="border-b border-[#E5E7EB] pb-5 last:border-0 last:pb-0">
+                    <div key={appointment.id} className="border-b border-slate-200 pb-5 last:border-0 last:pb-0">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-[#111827]">{appointment.type}</p>
+                        <p className="text-sm font-bold text-slate-900">{appointment.type}</p>
                         <span
                           className={cn(
                             "inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase",
@@ -390,9 +394,9 @@ export default function ConnectedPatientProfilePage() {
                           {appointment.status}
                         </span>
                       </div>
-                      <p className="mt-1.5 text-xs font-medium text-[#71809B]">{formatAppointmentDateTime(appointment.dateTime)}</p>
+                      <p className="mt-1.5 text-xs font-medium text-slate-500">{formatAppointmentDateTime(appointment.dateTime)}</p>
                       {appointment.clinicianName !== "--" ? (
-                        <p className="mt-2 text-xs font-medium text-[#344054]">{appointment.clinicianName}</p>
+                        <p className="mt-2 text-xs font-medium text-slate-700">{appointment.clinicianName}</p>
                       ) : null}
                     </div>
                   ))

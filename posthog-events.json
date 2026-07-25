@@ -1,0 +1,72 @@
+{
+  "events": {
+    "landing": {
+      "landing_page_viewed": "User viewed the landing page",
+      "waitlist_submitted": "User submitted the waitlist form",
+      "hero_signup_clicked": "User clicked Sign Up in hero section",
+      "waitlist_cta_clicked": "User clicked Join Waitlist in navbar"
+    },
+    "auth": {
+      "hospital_registered": "Hospital staff completed registration",
+      "user_logged_in": "User logged in successfully",
+      "user_logged_out": "User logged out"
+    },
+    "appointments": {
+      "appointment_booked": "New appointment created",
+      "appointment_confirmed": "Appointment confirmed by staff",
+      "appointment_cancelled": "Appointment cancelled",
+      "appointment_rescheduled": "Appointment rescheduled"
+    },
+    "alerts": {
+      "alerts_viewed": "User viewed active clinical alerts",
+      "alerts_history_viewed": "User viewed alert history",
+      "alerts_exported": "User exported the current alert view",
+      "alerts_reloaded": "User reloaded alert data",
+      "alert_review_opened": "User opened an alert review"
+    },
+    "care_episodes": {
+      "care_episode_created": "New care episode created",
+      "care_episode_closed": "Care episode closed",
+      "care_episode_viewed": "Care episode detail viewed",
+      "patient_insights_opened": "User opened patient insights from a care episode",
+      "patient_insights_viewed": "User viewed patient insights",
+      "care_episode_message_opened": "User opened messaging from a care episode",
+      "care_episode_close_opened": "User opened care episode closure",
+      "clinical_media_viewed": "User viewed clinical media details",
+      "clinical_media_downloaded": "User downloaded clinical media",
+      "care_team_viewed": "User viewed a care episode team",
+      "add_clinician_opened": "User opened the add clinician directory",
+      "assessment_history_viewed": "User viewed clinical assessment history",
+      "assessment_history_exported": "User exported clinical assessment history",
+      "clinical_assessment_viewed": "User opened the clinical assessment workspace",
+      "clinical_assessment_saved": "User saved a clinical assessment",
+      "care_episodes_viewed": "User viewed care episode management",
+      "care_episode_queue_opened": "User opened manual patient entry",
+      "care_episodes_exported": "User exported a care episode table",
+      "pending_review_viewed": "User viewed a pending episode review",
+      "pending_episode_opened": "User opened a pending care episode",
+      "pending_episode_dismissed": "User marked a pending episode as no further action",
+      "recovery_outcomes_viewed": "User viewed recovery and outcomes",
+      "recovery_action_opened": "User opened an action from recovery and outcomes",
+      "recovery_alert_impact_opened": "User reviewed an alert's supporting evidence",
+      "care_plan_adjust_viewed": "User viewed the care plan adjustment workspace",
+      "care_plan_save_opened": "User opened care plan save confirmation",
+      "care_plan_updated": "User updated the active care plan",
+      "care_plan_version_created": "User created a new care plan version",
+      "care_timeline_viewed": "User viewed a care episode timeline",
+      "care_timeline_filtered": "User filtered a care episode timeline",
+      "closed_episode_summary_viewed": "User viewed a closed episode summary",
+      "care_episode_empty_state_viewed": "User viewed an empty care episode tab"
+    },
+    "connected_patients": {
+      "connected_patients_viewed": "User viewed the connected patients page",
+      "connected_patients_exported": "User exported the connected patient table",
+      "patient_profile_viewed": "User viewed a connected patient profile",
+      "connection_code_modal_opened": "User opened the patient connection code flow",
+      "connection_code_generated": "User generated a patient connection code",
+      "connection_code_copied": "User copied a patient connection code",
+      "connection_code_sent_sms": "User opened an SMS containing a patient connection code",
+      "connection_code_sent_email": "User opened an email containing a patient connection code"
+    }
+  }
+}

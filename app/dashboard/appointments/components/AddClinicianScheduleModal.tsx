@@ -423,7 +423,8 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
       window.dispatchEvent(new CustomEvent("clinicians:refresh"));
       onClose();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to save schedule.");
+      const message = requestError instanceof Error ? requestError.message : "Failed to save schedule.";
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }

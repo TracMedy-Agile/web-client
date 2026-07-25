@@ -129,18 +129,18 @@ function WeekAppointmentCard({ appointment }: { appointment: CalendarAppointment
   const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
 
   return (
-    <div className={cn("mx-1 mt-1 rounded-xl px-3 py-3 text-xs shadow-sm", weekCardStyles[appointment.status])}>
-      <p className="font-bold leading-tight">{appointment.patientName}</p>
-      <p className="mt-1 font-medium text-[#71809B]">{appointment.type}</p>
-      <p className="mt-0.5 flex items-center gap-1 font-medium text-[#71809B]">
-        <Clock3 className="h-3 w-3" />
-        {appointment.startTime}
+    <div className={cn("mx-1 mt-1 min-w-0 overflow-hidden rounded-xl px-2 py-3 text-xs shadow-sm xl:px-3", weekCardStyles[appointment.status])}>
+      <p className="truncate font-bold leading-tight">{appointment.patientName}</p>
+      <p className="mt-1 truncate font-medium text-[#71809B]">{appointment.type}</p>
+      <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium text-[#71809B]">
+        <Clock3 className="h-3 w-3 shrink-0" />
+        <span className="truncate">{appointment.startTime}</span>
       </p>
-      <p className="mt-0.5 flex items-center gap-1 font-medium text-[#71809B]">
-        {isTeleconsultation ? <Video className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
-        {appointment.doctor}
+      <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium text-[#71809B]">
+        {isTeleconsultation ? <Video className="h-3 w-3 shrink-0" /> : <MapPin className="h-3 w-3 shrink-0" />}
+        <span className="truncate">{appointment.doctor}</span>
       </p>
-      <p className="mt-1 font-bold">{appointment.status}</p>
+      <p className="mt-1 truncate font-bold">{appointment.status}</p>
     </div>
   );
 }
@@ -293,9 +293,9 @@ function WeekCalendar({
       {!isLoading && !error && appointments.length === 0 ? (
         <AppointmentEmptyState onRefresh={() => setRefreshKey((key) => key + 1)} />
       ) : (
-      <div className="overflow-x-auto">
-        <div className="relative min-w-[1040px] overflow-hidden rounded-lg border border-border bg-white">
-          <div className="grid grid-cols-[80px_repeat(7,minmax(136px,1fr))] border-b border-border">
+      <div className="w-full overflow-hidden">
+        <div className="relative w-full overflow-hidden rounded-lg border border-border bg-white">
+          <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-border sm:grid-cols-[64px_repeat(7,minmax(0,1fr))] xl:grid-cols-[80px_repeat(7,minmax(0,1fr))]">
             <div className="h-16 border-r border-border bg-white" />
             {days.map((day) => (
               <div
@@ -327,7 +327,7 @@ function WeekCalendar({
             {weekSlots.map((slot, slotIndex) => {
               if (slot === "LUNCH") {
                 return (
-                  <div key={slot} className="grid min-h-24 grid-cols-[80px_repeat(7,minmax(136px,1fr))] border-b border-border">
+                  <div key={slot} className="grid min-h-24 grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-border sm:grid-cols-[64px_repeat(7,minmax(0,1fr))] xl:grid-cols-[80px_repeat(7,minmax(0,1fr))]">
                     <div className="border-r border-border px-4 py-3 text-xs font-bold text-[#71809B]">LUNCH</div>
                     <div className="col-span-7 flex items-center justify-center bg-white text-xs font-bold tracking-[0.14em] text-[#71809B]">
                       <Utensils className="mr-2 h-4 w-4" />
@@ -338,7 +338,7 @@ function WeekCalendar({
               }
 
               return (
-                <div key={slot} className="grid min-h-24 grid-cols-[80px_repeat(7,minmax(136px,1fr))] border-b border-border last:border-b-0">
+                <div key={slot} className="grid min-h-24 grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-border last:border-b-0 sm:grid-cols-[64px_repeat(7,minmax(0,1fr))] xl:grid-cols-[80px_repeat(7,minmax(0,1fr))]">
                   <div className="border-r border-border px-4 py-3 text-xs font-medium text-[#5F708D]">{slot}</div>
                   {days.map((day) => {
                     const dayAppointments = appointments.filter(

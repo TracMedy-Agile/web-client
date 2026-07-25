@@ -1,5 +1,6 @@
-﻿"use client";
+"use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -542,6 +543,14 @@ export default function AvailabilityManagementPage() {
 
   return (
     <div className="space-y-7">
+      <Link
+        href="/dashboard/appointments"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] transition-colors hover:text-[#111827]"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Back to Appointments
+      </Link>
+
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Availability Management</h1>
@@ -592,7 +601,7 @@ export default function AvailabilityManagementPage() {
           </CardHeader>
           <CardContent className="px-4 pb-4 sm:px-5 sm:pb-5">
             {pendingError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{pendingError}</span><button type="button" onClick={refreshAll} className="text-[#023E8A]">Retry</button></div> : null}
-            <Table className="min-w-205">
+            <Table className="w-full table-fixed">
               <TableHeader className="bg-[#EFF5FF]">
                 <TableRow className="border-0 hover:bg-[#EFF5FF]">
                   {["PATIENT NAME", "APPOINTMENT Type", "DEPARTMENT", "REQUESTED DATE", "PRIORITY", "STATUS", "ACTION"].map(
@@ -714,7 +723,7 @@ export default function AvailabilityManagementPage() {
           </div>
 
           {cliniciansError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{cliniciansError}</span><button type="button" onClick={refreshAll} className="text-[#023E8A]">Retry</button></div> : null}
-          <Table className="min-w-190">
+          <Table className="w-full table-fixed">
             <TableHeader className="bg-[#EFF5FF]">
               <TableRow className="border-0 hover:bg-[#EFF5FF]">
                 {["CLINICIAN", "SPECIALITY", "SCHEDULE", "CAPACITY UTILIZATION", "STATUS", "ACTION"].map((heading) => (
@@ -736,7 +745,7 @@ export default function AvailabilityManagementPage() {
                     <TableCell className="px-6 py-5 text-[#344054]">{clinician.schedule}</TableCell>
                     <TableCell className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-45 overflow-hidden rounded-full bg-[#E5E7EB]">
+                        <div className="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-[#E5E7EB]">
                           <div
                             className={cn("h-full rounded-full", utilizationClasses[tone].bar)}
                             style={{ width: `${clinician.utilization}%` }}

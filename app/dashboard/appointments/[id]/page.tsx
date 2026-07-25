@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -382,8 +382,6 @@ export default function AppointmentDetailsPage() {
   const [appointment, setAppointment] = useState<AppointmentDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [actionError, setActionError] = useState("");
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
@@ -448,15 +446,12 @@ export default function AppointmentDetailsPage() {
 
   const runAction = async (label: string, action: () => Promise<unknown>) => {
     setActiveAction(label);
-    setActionError("");
-    setNotice("");
-
     try {
       await action();
-      setNotice(`${label} successfully.`);
+      toast.success(`${label} successfully.`);
       await loadAppointment();
     } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : `${label} failed.`);
+      toast.error(requestError instanceof Error ? requestError.message : `${label} failed.`);
     } finally {
       setActiveAction(null);
       setIsActionsOpen(false);
@@ -523,7 +518,6 @@ export default function AppointmentDetailsPage() {
     }
 
     toast.success("Doctor assigned successfully.");
-    setNotice("Doctor assigned successfully.");
     setIsDoctorSelectorOpen(false);
     setClinicianUnavailableError("");
     setPendingClinicianId(null);
@@ -548,7 +542,6 @@ export default function AppointmentDetailsPage() {
     }
 
     toast.success("Doctor assigned successfully.");
-    setNotice("Doctor assigned successfully.");
     setIsDoctorSelectorOpen(false);
     setClinicianUnavailableError("");
     setPendingClinicianId(null);
@@ -634,9 +627,6 @@ export default function AppointmentDetailsPage() {
             ) : null}
           </div>
         </div>
-
-        {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600">{notice}</div> : null}
-        {actionError ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{actionError}</div> : null}
 
         {isLoading ? <DetailsSkeleton /> : null}
 
@@ -806,14 +796,17 @@ export default function AppointmentDetailsPage() {
       </div>
 
       <RescheduleAppointmentModal
+        key={isRescheduleOpen ? "reschedule-open" : "reschedule-closed"}
         isOpen={isRescheduleOpen}
         appointmentId={appointment?.id ?? appointmentId}
         patientName={appointment?.patient.name}
         appointmentReason={appointment?.notes.reason}
+        appointmentDate={appointment?.details.dateTime}
+        appointmentTime={appointment?.details.dateTime}
         hospitalId={appointment?.patient.hospitalId}
         onClose={() => setIsRescheduleOpen(false)}
         onSuccess={() => {
-          setNotice("Appointment rescheduled successfully.");
+          toast.success("Appointment rescheduled successfully.");
           void loadAppointment();
         }}
       />
@@ -822,7 +815,7 @@ export default function AppointmentDetailsPage() {
         appointmentId={appointment?.id ?? appointmentId}
         onClose={() => setIsCancelOpen(false)}
         onSuccess={() => {
-          setNotice("Appointment cancelled successfully.");
+          toast.success("Appointment cancelled successfully.");
           void loadAppointment();
         }}
       />

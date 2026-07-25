@@ -71,7 +71,7 @@ export type AssessmentSource = {
 
 export type AssessmentIntelligenceCard = {
   title: string;
-  confidencePercent: number;
+  confidencePercent: number | null;
   summary: string;
   sources: AssessmentSource[];
 };
@@ -86,9 +86,9 @@ export type AssessmentWorkspaceEntry = {
   assessmentNumber: number;
   clinicalStatus: AssessmentIntelligenceCard;
   carePlanAdherence: AssessmentIntelligenceCard & {
-    adherencePercent: number;
+    adherencePercent: number | null;
     trendLabel: string;
-    trendDeltaPercent: number;
+    trendDeltaPercent: number | null;
     breakdown: CarePlanAdherenceBreakdownItem[];
   };
   outcomeOptions: AssessmentOutcome[];
