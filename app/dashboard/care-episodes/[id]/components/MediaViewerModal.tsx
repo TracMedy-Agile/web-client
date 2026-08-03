@@ -3,6 +3,7 @@
 import { useLayoutEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Download, FileText, Image as ImageIcon, X, ZoomIn, ZoomOut } from "lucide-react";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { cn } from "@/lib/utils";
 
 export type MediaViewerData = {
@@ -16,7 +17,7 @@ export type MediaViewerData = {
   uploadTimestamp: string;
   patientId: string;
   patientDescription: string;
-  imageUrl?: string;
+  imageUrl: string;
 };
 
 type MediaViewerModalProps = {
@@ -30,43 +31,12 @@ const MAX_ZOOM = 200;
 const ZOOM_STEP = 25;
 
 const STATUS_BADGE: Record<MediaViewerData["status"], string> = {
-  Reviewed: "bg-[#DFFBF0] text-[#10B981]",
-  "Pending review": "bg-[#FFF4E5] text-[#F59E0B]",
+  Reviewed: "bg-emerald-50 text-emerald-500",
+  "Pending review": "bg-amber-50 text-amber-500",
 };
 
-function downloadPlaceholderImage(media: MediaViewerData) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 800;
-  canvas.height = 600;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  ctx.fillStyle = "#0F172A";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "bold 28px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(media.title, canvas.width / 2, canvas.height / 2 - 16);
-  ctx.font = "16px sans-serif";
-  ctx.fillStyle = "#94A3B8";
-  ctx.fillText(media.captureContext, canvas.width / 2, canvas.height / 2 + 16);
-
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${media.title.replace(/\s+/g, "-").toLowerCase()}.png`;
-    link.click();
-    URL.revokeObjectURL(url);
-  });
-}
 
 function downloadMedia(media: MediaViewerData) {
-  if (!media.imageUrl) {
-    downloadPlaceholderImage(media);
-    return;
-  }
   const link = document.createElement("a");
   link.href = media.imageUrl;
   link.download = `${media.title.replace(/\s+/g, "-").toLowerCase()}`;
@@ -82,6 +52,7 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setZoom(100);
+      capturePostHogEvent("clinical_media_viewed", { media_title: media?.title });
     }
   }, [open, media]);
 
@@ -91,52 +62,58 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:inset-8">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-[1180px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden bg-white shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
           <DialogPrimitive.Title className="sr-only">{media.title}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">Clinical media viewer for {media.title}</DialogPrimitive.Description>
 
-          <div className="flex items-center justify-end gap-1 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="flex items-center justify-end gap-1 border-b border-slate-200 bg-slate-50 px-4 py-3">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
+              aria-label="Zoom out"
               disabled={zoom <= MIN_ZOOM}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#71809B] hover:bg-[#F3F4F6] disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-40"
             >
               <ZoomOut className="h-4.5 w-4.5" />
             </button>
-            <span className="w-14 text-center text-sm font-bold text-[#111827]">{zoom}%</span>
+            <span className="w-14 text-center text-sm font-bold text-slate-900">{zoom}%</span>
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
+              aria-label="Zoom in"
               disabled={zoom >= MAX_ZOOM}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#71809B] hover:bg-[#F3F4F6] disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-40"
             >
               <ZoomIn className="h-4.5 w-4.5" />
             </button>
             <button
               type="button"
-              onClick={() => downloadMedia(media)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#71809B] hover:bg-[#F3F4F6]"
+              onClick={() => {
+                capturePostHogEvent("clinical_media_downloaded", { media_title: media.title });
+                downloadMedia(media);
+              }}
+              aria-label="Download clinical media"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
             >
               <Download className="h-4.5 w-4.5" />
             </button>
-            <span className="mx-1 h-6 w-px bg-[#E5E7EB]" />
-            <DialogPrimitive.Close className="flex h-9 w-9 items-center justify-center rounded-lg text-[#71809B] hover:bg-[#F3F4F6]">
+            <span className="mx-1 h-6 w-px bg-slate-200" />
+            <DialogPrimitive.Close aria-label="Close clinical media viewer" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
               <X className="h-4.5 w-4.5" />
             </DialogPrimitive.Close>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <div className="relative flex flex-1 items-center justify-center overflow-auto bg-[#0F172A] p-8">
-              <span className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-bold text-[#111827]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#023E8A]" />
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-blue-50 p-5 lg:flex-row">
+            <div className="relative flex min-h-96 flex-1 items-center justify-center overflow-auto rounded-xl bg-slate-900 p-6">
+              <span className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-900">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                 CURRENT: {media.currentLabel.toUpperCase()}
               </span>
               <div
-                className="flex aspect-square w-full max-w-md items-center justify-center overflow-hidden rounded-lg bg-linear-to-br from-[#3B2A24] via-[#8A5A45] to-[#C89B7B] shadow-xl transition-transform duration-150"
+                className="flex aspect-square w-full max-w-md items-center justify-center overflow-hidden rounded-lg bg-linear-to-br from-slate-900 via-slate-800 to-slate-700 shadow-xl transition-transform duration-150"
                 style={{ transform: `scale(${zoom / 100})` }}
               >
-                {media.imageUrl && media.kind === "image" ? (
+                {media.kind === "image" ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={media.imageUrl} alt={media.title} className="h-full w-full object-contain" />
                 ) : media.kind === "pdf" ? (
@@ -147,47 +124,49 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
               </div>
             </div>
 
-            <div className="w-full shrink-0 overflow-y-auto border-t border-[#E5E7EB] bg-white p-6 lg:w-90 lg:border-l lg:border-t-0">
+            <div className="w-full shrink-0 space-y-5 lg:w-90">
+              <section className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-[#111827]">{media.title}</h2>
+                <h2 className="text-lg font-bold text-slate-900">{media.title}</h2>
                 <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_BADGE[media.status])}>
                   {media.status}
                 </span>
               </div>
               {media.priority ? (
-                <span className="mt-2 inline-flex rounded-full bg-[#FFECEC] px-2.5 py-0.5 text-xs font-bold uppercase text-[#EF4444]">
+                <span className="mt-2 inline-flex rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-bold uppercase text-red-500">
                   {media.priority}
                 </span>
               ) : null}
 
-              <dl className="mt-5 space-y-3 border-t border-[#E5E7EB] pt-5">
+              <dl className="mt-5 space-y-3 border-t border-slate-200 pt-5">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Capture Context</dt>
-                  <dd className="text-sm font-bold text-[#111827]">{media.captureContext}</dd>
+                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Capture Context</dt>
+                  <dd className="text-sm font-bold text-slate-900">{media.captureContext}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Date Captured</dt>
-                  <dd className="text-sm font-bold text-[#111827]">{media.dateCaptured}</dd>
+                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Date Captured</dt>
+                  <dd className="text-sm font-bold text-slate-900">{media.dateCaptured}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Upload Timestamp</dt>
-                  <dd className="text-sm font-bold text-[#111827]">{media.uploadTimestamp}</dd>
+                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Upload Timestamp</dt>
+                  <dd className="text-sm font-bold text-slate-900">{media.uploadTimestamp}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Patient ID</dt>
-                  <dd className="text-sm font-bold text-[#023E8A]">{media.patientId}</dd>
+                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Patient ID</dt>
+                  <dd className="text-sm font-bold text-primary">{media.patientId}</dd>
                 </div>
               </dl>
+              </section>
 
-              <div className="mt-5 rounded-lg border border-[#E5E7EB] p-4">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.04em] text-[#023E8A]">
+              <section className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.04em] text-primary">
                   <FileText className="h-3.5 w-3.5" />
                   Patient Description
                 </p>
-                <div className="rounded-lg bg-[#EFF5FF] p-3">
-                  <p className="text-sm font-medium italic text-[#344054]">{media.patientDescription}</p>
+                <div className="rounded-lg bg-blue-50 p-3">
+                  <p className="text-sm font-medium italic text-slate-700">{media.patientDescription}</p>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </DialogPrimitive.Content>

@@ -1,10 +1,24 @@
+import type { components, operations } from "@/docs/types/api";
+
+type ApiCareEpisodeSummary = components["schemas"]["CareEpisodeSummaryDto"];
+export type AddPatientToQueuePayload = components["schemas"]["CreateCareEpisodeDto"];
+type OpenPendingEpisodePayload = components["schemas"]["OpenPendingEpisodeDto"];
+type DismissPendingEpisodePayload = components["schemas"]["DismissPendingEpisodeDto"];
+type CloseEpisodePayload = components["schemas"]["CloseEpisodeDto"];
+type DailyVitalsApiResponse =
+  operations["CareEpisodesController_getDailyVitals"]["responses"][200]["content"]["application/json"];
+type MedicationAdherenceApiRecord = components["schemas"]["MedicationAdherenceDto"];
+type CreateTimelineEventPayload = Omit<components["schemas"]["CreateTimelineEventDto"], "payload"> & {
+  payload?: Record<string, unknown>;
+};
+
 export type CareEpisodeRecord = {
-  id: string;
-  patientId: string;
-  facilityId: string;
+  id: ApiCareEpisodeSummary["id"];
+  patientId: ApiCareEpisodeSummary["patientId"];
+  facilityId: ApiCareEpisodeSummary["facilityId"];
   clinicianId: string;
   diagnosis: string;
-  status: string;
+  status: ApiCareEpisodeSummary["status"];
   carePhase: string | null;
   dayStart: number | null;
   expectedDurationDays: number | null;
@@ -13,8 +27,14 @@ export type CareEpisodeRecord = {
   riskTrend: string | null;
   closureReason: string | null;
   outcomeStatus: string | null;
+  finalNotes?: string | null;
   encounterType: string | null;
   conditionSeverity: string | null;
+  tracmedyPatientId?: string | null;
+  clinicalConcern?: string | null;
+  clinicianNotes?: string | null;
+  clinicianName?: string | null;
+  closedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,22 +69,6 @@ export type PatientSearchResult = {
   phone: string;
 };
 
-// Matches CreateCareEpisodeDto in Back-end/openapi.yaml (POST /care-episodes/pending).
-// Only patientId and facilityId are required server-side.
-export type AddPatientToQueuePayload = {
-  patientId: string;
-  facilityId: string;
-  diagnosis?: string;
-  clinicianId?: string;
-  tracmedyPatientId?: string;
-  encounterType?: string;
-  conditionSeverity?: string;
-  clinicalConcern?: string;
-  followUpReasons?: string[];
-  expectedDurationDays?: number;
-  clinicianNotes?: string;
-};
-
 export type ApiRecord = Record<string, unknown>;
 
 export type CareEpisodePatient = {
@@ -83,6 +87,7 @@ export type CareTeamMember = {
   clinicianId: string;
   name: string;
   role: string;
+  assignedAt: string;
 };
 
 export type CareEpisodeDetail = CareEpisodeRecord & {
@@ -93,6 +98,7 @@ export type CareEpisodeDetail = CareEpisodeRecord & {
   recentTimeline: ApiRecord[];
   riskData: ApiRecord | null;
   dayProgress: number | null;
+  facility: { id: string; name: string; tracId: string } | null;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -165,6 +171,35 @@ export function getNumber(record: ApiRecord | null, keys: string[]): number | nu
   return null;
 }
 
+function normalizeCareEpisodeSummary(record: ApiRecord): CareEpisodeRecord {
+  return {
+    id: getString(record, ["id"]),
+    patientId: getString(record, ["patientId"]),
+    facilityId: getString(record, ["facilityId"]),
+    clinicianId: getString(record, ["clinicianId"]),
+    diagnosis: getString(record, ["diagnosis"]),
+    status: getString(record, ["status"]),
+    carePhase: getString(record, ["carePhase"]) || null,
+    dayStart: getNumber(record, ["dayStart"]),
+    expectedDurationDays: getNumber(record, ["expectedDurationDays"]),
+    riskScore: getNumber(record, ["riskScore"]),
+    riskCategory: getString(record, ["riskCategory"]) || null,
+    riskTrend: getString(record, ["riskTrend"]) || null,
+    closureReason: getString(record, ["closureReason"]) || null,
+    outcomeStatus: getString(record, ["outcomeStatus"]) || null,
+    finalNotes: getString(record, ["finalNotes"]) || null,
+    encounterType: getString(record, ["encounterType"]) || null,
+    conditionSeverity: getString(record, ["conditionSeverity"]) || null,
+    tracmedyPatientId: getString(record, ["tracmedyPatientId"]) || null,
+    clinicalConcern: getString(record, ["clinicalConcern"]) || null,
+    clinicianNotes: getString(record, ["clinicianNotes"]) || null,
+    clinicianName: getString(record, ["clinicianName"]) || null,
+    closedAt: getString(record, ["closedAt"]) || null,
+    createdAt: getString(record, ["createdAt"]),
+    updatedAt: getString(record, ["updatedAt"]),
+  };
+}
+
 function unwrapData(payload: unknown) {
   const record = asRecord(payload);
   return record && "data" in record ? record.data : payload;
@@ -191,12 +226,16 @@ export async function getCareEpisodes(params?: CareEpisodesQueryParams): Promise
   const payload = await request("/care-episodes", undefined, query);
   const body = asRecord(payload) ?? {};
   const nested = asRecord(body.data);
-  const list = Array.isArray(body.data)
-    ? (body.data as CareEpisodeRecord[])
+  const rawList = Array.isArray(body.data)
+    ? body.data
     : Array.isArray(nested?.data)
-      ? (nested?.data as CareEpisodeRecord[])
+      ? nested.data
       : [];
   const source = Array.isArray(body.data) ? body : (nested ?? body);
+  const list = rawList
+    .map(asRecord)
+    .filter((item): item is ApiRecord => Boolean(item))
+    .map(normalizeCareEpisodeSummary);
 
   return {
     data: list,
@@ -217,8 +256,57 @@ export async function addPatientToQueue(payload: AddPatientToQueuePayload): Prom
     method: "POST",
     body: JSON.stringify(payload),
   });
-  const record = asRecord(response) ?? asRecord(unwrapData(response));
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
   return { id: getString(record, ["id"]) };
+}
+
+export async function getCurrentUserId(): Promise<string> {
+  const payload = await request("/auth/me");
+  const root = asRecord(unwrapData(payload));
+  const user = asRecord(root?.user) ?? root;
+  const id = getString(user, ["id"]);
+  if (!id) throw new Error("Unable to determine the current clinician.");
+  return id;
+}
+
+export type CurrentUserIdentity = { id: string; name: string };
+
+export async function getCurrentUserIdentity(): Promise<CurrentUserIdentity> {
+  const payload = await request("/auth/me");
+  const root = asRecord(unwrapData(payload));
+  const user = asRecord(root?.user) ?? root;
+  const id = getString(user, ["id"]);
+  if (!id) throw new Error("Unable to determine the current clinician.");
+  return { id, name: getString(user, ["name"], "Current clinician") };
+}
+
+export async function openPendingCareEpisode(
+  id: string,
+  clinicianId?: string | null,
+): Promise<CareEpisodeRecord> {
+  const resolvedClinicianId = clinicianId || await getCurrentUserId();
+  const payload: OpenPendingEpisodePayload = { clinicianId: resolvedClinicianId };
+  const response = await request("/care-episodes/pending/" + encodeURIComponent(id) + "/open", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The opened care episode response was invalid.");
+  return normalizeCareEpisodeSummary(record);
+}
+
+export async function dismissPendingCareEpisode(
+  id: string,
+  reason = "No further action required after clinical review",
+): Promise<CareEpisodeRecord> {
+  const payload: DismissPendingEpisodePayload = { reason };
+  const response = await request("/care-episodes/pending/" + encodeURIComponent(id) + "/dismiss", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The dismissed care episode response was invalid.");
+  return normalizeCareEpisodeSummary(record);
 }
 
 function getPatientItems(payload: unknown): ApiRecord[] {
@@ -267,11 +355,11 @@ function normalizeCareTeamMember(record: ApiRecord): CareTeamMember {
     clinicianId: getString(record, ["clinicianId"]),
     name: getString(record, ["name", "fullName", "clinicianName"]),
     role: getString(record, ["role", "title", "specialty", "specialization"]),
+    assignedAt: getString(record, ["assignedAt", "createdAt"]),
   };
 }
 
-// The care episode detail endpoint does not embed patient demographics (only patientId).
-// Real name/phone/email/age/gender/etc. come from the facility-scoped patient profile endpoint.
+// Normalizes the patient summary embedded by GET /care-episodes/{id}.
 function normalizePatientIdentity(record: ApiRecord | null): CareEpisodePatient | null {
   if (!record) return null;
 
@@ -281,17 +369,19 @@ function normalizePatientIdentity(record: ApiRecord | null): CareEpisodePatient 
     email: getString(record, ["email"]),
     age: getNumber(record, ["age"]),
     gender: getString(record, ["gender"]),
-    hospitalId: getString(record, ["tracmedyPatientId"]),
+    hospitalId: getString(record, ["tracmedyPatientId", "hospitalId"]),
     emergencyContactName: "",
     emergencyContactPhone: "",
   };
 }
 
-export async function getFacilityPatient(facilityId: string, patientId: string): Promise<CareEpisodePatient | null> {
+async function getFacilityPatient(facilityId: string, patientId: string): Promise<CareEpisodePatient | null> {
   if (!facilityId || !patientId) return null;
-  const payload = await request(`/facilities/${encodeURIComponent(facilityId)}/patients/${encodeURIComponent(patientId)}`);
-  const body = asRecord(unwrapData(payload)) ?? {};
-  return normalizePatientIdentity(asRecord(body.patient));
+  const payload = await request(
+    "/facilities/" + encodeURIComponent(facilityId) + "/patients/" + encodeURIComponent(patientId),
+  );
+  const root = asRecord(unwrapData(payload)) ?? {};
+  return normalizePatientIdentity(asRecord(root.patient));
 }
 
 export type ClinicianSummary = { id: string; name: string; department: string };
@@ -328,52 +418,46 @@ async function enrichCareTeamNames(careTeam: CareTeamMember[]): Promise<CareTeam
 
 function normalizeCareEpisodeDetail(payload: unknown): CareEpisodeDetail {
   const body = asRecord(unwrapData(payload)) ?? {};
+  const summary = normalizeCareEpisodeSummary(body);
 
   return {
-    id: getString(body, ["id", "_id"]),
-    patientId: getString(body, ["patientId"]),
-    facilityId: getString(body, ["facilityId"]),
-    clinicianId: getString(body, ["clinicianId"]),
-    diagnosis: getString(body, ["diagnosis"]),
-    status: getString(body, ["status"]),
-    carePhase: getString(body, ["carePhase"]) || null,
-    dayStart: getNumber(body, ["dayStart"]),
-    expectedDurationDays: getNumber(body, ["expectedDurationDays"]),
-    riskScore: getNumber(body, ["riskScore"]),
-    riskCategory: getString(body, ["riskCategory"]) || null,
-    riskTrend: getString(body, ["riskTrend"]) || null,
-    closureReason: getString(body, ["closureReason"]) || null,
-    outcomeStatus: getString(body, ["outcomeStatus"]) || null,
-    encounterType: getString(body, ["encounterType"]) || null,
-    conditionSeverity: getString(body, ["conditionSeverity"]) || null,
-    createdAt: getString(body, ["createdAt"]),
-    updatedAt: getString(body, ["updatedAt"]),
+    ...summary,
     currentCarePlan: asRecord(body.currentCarePlan),
-    patient: null,
+    patient: normalizePatientIdentity(asRecord(body.patient)),
     careTeam: getRecordArray(body, ["careTeam"]).map(normalizeCareTeamMember),
     latestCheckin: asRecord(body.latestCheckIn ?? body.latestCheckin),
     recentTimeline: getRecordArray(body, ["recentTimelineEvents", "recentTimeline"]),
     riskData: asRecord(body.riskData),
     dayProgress: getNumber(body, ["dayProgress"]),
+    facility: (() => {
+      const facility = asRecord(body.facility);
+      return facility ? { id: getString(facility, ["id"]), name: getString(facility, ["name"]), tracId: getString(facility, ["tracId"]) } : null;
+    })(),
   };
 }
 
 export async function getCareEpisodeById(id: string): Promise<CareEpisodeDetail> {
   const payload = await request(`/care-episodes/${encodeURIComponent(id)}`);
   const detail = normalizeCareEpisodeDetail(payload);
-
-  const [patient, careTeam] = await Promise.all([
-    getFacilityPatient(detail.facilityId, detail.patientId).catch(() => null),
+  const [patient, careTeam, clinician] = await Promise.all([
+    getFacilityPatient(detail.facilityId, detail.patientId).catch(() => detail.patient),
     enrichCareTeamNames(detail.careTeam).catch(() => detail.careTeam),
+    detail.clinicianName || !detail.clinicianId
+      ? Promise.resolve(null)
+      : getClinicianSummary(detail.clinicianId).catch(() => null),
   ]);
-
-  return { ...detail, patient, careTeam };
+  return {
+    ...detail,
+    patient: patient ?? detail.patient,
+    careTeam,
+    clinicianName: detail.clinicianName || clinician?.name || null,
+  };
 }
 
-export async function closeCareEpisode(id: string, payload?: { closureReason?: string; outcomeStatus?: string }) {
+export async function closeCareEpisode(id: string, payload: CloseEpisodePayload) {
   return request(`/care-episodes/${encodeURIComponent(id)}/close`, {
     method: "PATCH",
-    body: JSON.stringify(payload ?? {}),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -383,14 +467,47 @@ export async function completeCareEpisodeTask(episodeId: string, taskId: string)
   });
 }
 
-export type MedicationAdherenceRecord = {
-  medicationId: string;
-  name: string;
-  dosageStrength: string;
-  totalDoses: number;
-  takenCount: number;
-  missedCount: number;
-  adherencePercentage: number;
+export type DailyVitalValues = {
+  bloodPressureSystolic: number | null;
+  bloodPressureDiastolic: number | null;
+  heartRate: number | null;
+  temperature: number | null;
+  spo2: number | null;
+  weight: number | null;
+  bloodSugar: number | null;
+};
+
+export type DailyVitalsRecord = {
+  date: string;
+  vitals: DailyVitalValues;
+  hasEntry: boolean;
+};
+
+function normalizeDailyVitals(record: ApiRecord): DailyVitalsRecord {
+  const vitals = asRecord(record.vitals);
+  return {
+    date: getString(record, ["date"]),
+    hasEntry: record.hasEntry === true,
+    vitals: {
+      bloodPressureSystolic: getNumber(vitals, ["bp_systolic"]),
+      bloodPressureDiastolic: getNumber(vitals, ["bp_diastolic"]),
+      heartRate: getNumber(vitals, ["heart_rate"]),
+      temperature: getNumber(vitals, ["temperature"]),
+      spo2: getNumber(vitals, ["spo2"]),
+      weight: getNumber(vitals, ["weight"]),
+      bloodSugar: getNumber(vitals, ["blood_sugar"]),
+    },
+  };
+}
+
+export async function getCareEpisodeDailyVitals(id: string, days = 7): Promise<DailyVitalsRecord[]> {
+  const query = new URLSearchParams({ days: String(Math.min(Math.max(Math.trunc(days), 1), 30)) });
+  const payload = await request(`/care-episodes/${encodeURIComponent(id)}/vitals/daily`, undefined, query);
+  const body = asRecord(unwrapData(payload)) as (ApiRecord & DailyVitalsApiResponse) | null;
+  return getRecordArray(body, ["days"]).map(normalizeDailyVitals);
+}
+
+export type MedicationAdherenceRecord = Omit<MedicationAdherenceApiRecord, "lastTakenAt"> & {
   lastTakenAt: string | null;
 };
 
@@ -444,6 +561,19 @@ function normalizeTimelineEvent(record: ApiRecord, index: number): TimelineEvent
   };
 }
 
+export async function createCareEpisodeTimelineEvent(
+  id: string,
+  payload: CreateTimelineEventPayload,
+): Promise<TimelineEventRecord> {
+  const response = await request(`/care-episodes/${encodeURIComponent(id)}/timeline`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The timeline event response was invalid.");
+  return normalizeTimelineEvent(record, 0);
+}
+
 export type TimelineQueryParams = {
   page?: number;
   limit?: number;
@@ -483,5 +613,30 @@ export async function getCareEpisodeTimelinePage(
     page: getNumber(source, ["page"]) ?? params?.page ?? 1,
     limit: getNumber(source, ["limit"]) ?? clampLimit(params?.limit ?? 100),
     totalPages: getNumber(source, ["totalPages"]) ?? 1,
+  };
+}
+
+export type CareEpisodeSyncResponse = {
+  hasMore: boolean;
+  syncToken: string;
+  events: TimelineEventRecord[];
+  carePlan: ApiRecord | null;
+  lastCheckIn: ApiRecord | null;
+  riskScore: number | null;
+};
+
+export async function getCareEpisodeSync(id: string, since: string): Promise<CareEpisodeSyncResponse> {
+  const query = new URLSearchParams({ since });
+  const payload = await request(`/care-episodes/${encodeURIComponent(id)}/sync`, undefined, query);
+  const body = asRecord(unwrapData(payload)) ?? {};
+  const events = getRecordArray(body, ["events"]);
+
+  return {
+    hasMore: body.hasMore === true,
+    syncToken: getString(body, ["syncToken"]),
+    events: events.map((event, index) => normalizeTimelineEvent(event, index)),
+    carePlan: asRecord(body.carePlan),
+    lastCheckIn: asRecord(body.lastCheckIn),
+    riskScore: getNumber(body, ["riskScore"]),
   };
 }

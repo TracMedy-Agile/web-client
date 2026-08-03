@@ -15,6 +15,17 @@
 
 ---
 
+## MANDATORY — Read Before Any Action
+
+Before making ANY edit, creation, or deletion:
+
+1. Read this entire AGENTS.md file
+2. Read docs/phases/phase-XX/web-client-task.md for current phase
+3. Read ../Back-end/openapi.yaml for API reference
+4. Read design files in docs/designs/phase-XX/ if doing UI work
+
+Never skip this step. If you have not read these files, stop and read them first.
+
 ## Architecture Rules
 
 ### Auth
@@ -138,3 +149,100 @@ Also create these additional files:
    npx openapi-typescript ../Back-end/openapi.yaml -o docs/types/api.ts
 
 Do NOT change any other files.
+
+## Common Tasks
+
+## Design Files Location
+
+Designs are organized by phase:
+docs/designs/
+├── phase-01/ ← Auth pages designs
+├── phase-02/ ← Landing page designs
+├── phase-05/ ← Appointments designs
+├── phase-06/ ← Connected Patients designs
+├── phase-07/ ← Care Episodes designs
+├── phase-09/ ← Alerts designs
+├── phase-10/ ← Messaging designs
+└── phase-14/ ← Reports designs
+
+## Design Consistency Audit
+
+When asked to audit design consistency for a phase:
+
+1. Read phase task file: docs/phases/phase-XX/web-client-task.md
+2. Read all screenshots from docs/designs/phase-XX/
+3. Compare each design against the built page
+4. Check: colors, typography, layout, spacing, components, icons
+5. Report inconsistencies without fixing
+6. Format: File | Issue | Design | Current
+
+When asked to fix inconsistencies:
+
+1. Read the design file for the specific page
+2. Fix only the reported inconsistencies
+3. Do NOT change working functionality
+4. Run npm run build after
+
+### Check New Backend Endpoints
+
+When asked to "check new endpoints" or "sync with backend":
+
+1. Read ../Back-end/openapi.yaml (pull latest first)
+2. Compare with all files in lib/api/
+3. Find endpoints in openapi.yaml NOT yet connected in web-client
+4. Check docs/phases/\*/web-client-task.md for endpoints marked ❌
+5. Report:
+   ✅ New endpoint available — not yet connected: GET /endpoint
+   📝 File to update: lib/api/xxx.ts
+   📋 Task file to update: docs/phases/phase-XX/web-client-task.md
+   Do NOT change any files — report only unless told to connect.
+
+### Fix Design Issues
+
+When asked to "fix design" for a page:
+
+1. Read the design file for that page
+2. Read the current page code
+3. Fix only visual inconsistencies
+4. Do NOT change API connections or logic
+5. Run npm run build after
+
+### Build a Feature
+
+When asked to "build [feature]":
+
+1. Read docs/build-plan.md to find the phase
+2. Read docs/phases/phase-XX/web-client-task.md
+3. Read docs/designs/phase-XX/ for designs
+4. Read ../Back-end/openapi.yaml for endpoints
+5. Follow all rules in AGENTS.md
+6. Run npm run build after
+
+### API Audit
+
+When asked to audit API connections:
+
+1. Read ../Back-end/openapi.yaml
+2. Check all pages for missing Authorization headers
+3. Check response parsing (json.data.data for lists)
+4. Check for mock/hardcoded data
+5. Report without fixing
+
+### Lint Fix
+
+When asked to fix lint errors:
+
+1. Run npm run lint
+2. Fix all errors (not warnings unless asked)
+3. Run npm run build
+4. Confirm both pass
+
+### PR Preparation
+
+When asked to prepare a PR:
+
+1. Run npm run lint — fix all errors
+2. Run npm run build — fix all errors
+3. Remove unused imports
+4. Remove console.logs
+5. git add . && git commit && git push

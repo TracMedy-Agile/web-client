@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -391,7 +391,8 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
       toast.success("Appointment added successfully.");
       router.refresh();
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Network error. Please check your connection.");
+      const message = error instanceof Error ? error.message : "Network error. Please check your connection.";
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -606,7 +607,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                   Adding...
                 </>
               ) : (
-                "Add Appointment"
+                "Schedule Appointment"
               )}
             </button>
           </div>

@@ -236,7 +236,7 @@ function VerifyEmailContent() {
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-center items-center relative overflow-hidden">
         <Image 
           src="/forgot_password.png" 
-          alt="Forgot Password" 
+          alt="Account security illustration"
           fill
           className="object-cover"
         />

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AlertCircle, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 type CancelAppointmentModalProps = {
   isOpen: boolean;
@@ -48,11 +49,9 @@ export default function CancelAppointmentModal({
   onSuccess,
 }: CancelAppointmentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
 
   const handleClose = () => {
     if (isSubmitting) return;
-    setError("");
     onClose();
   };
 
@@ -60,14 +59,14 @@ export default function CancelAppointmentModal({
     if (!appointmentId || isSubmitting) return;
 
     setIsSubmitting(true);
-    setError("");
 
     try {
       await cancelAppointmentRequest(appointmentId);
       onSuccess?.();
       onClose();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to cancel appointment.");
+      const message = requestError instanceof Error ? requestError.message : "Failed to cancel appointment.";
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -94,12 +93,6 @@ export default function CancelAppointmentModal({
             of the change.
           </p>
         </div>
-
-        {error ? (
-          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
-            {error}
-          </div>
-        ) : null}
 
         <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <button

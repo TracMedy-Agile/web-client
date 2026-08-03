@@ -1,17 +1,20 @@
-// NOTE: GET /facilities/{facilityId}/patients and GET /facilities/{facilityId}/patients/{patientId}
-// are not present in Back-end/openapi.yaml or the FacilitiesController source as of this checkout
-// (last backend commit 2026-07-03). This file is written against the contract the caller supplied;
-// until the backend ships these routes, every call here will fail with a 404.
+import type { components } from "@/docs/types/api";
+
+// Facility-scoped patient list, profile, and invite endpoints are defined in Back-end/openapi.yaml.
+type ApiConnectedPatient = components["schemas"]["ConnectedPatientResponseDto"];
+export type CreatePatientInviteInput = components["schemas"]["CreatePatientInviteDto"];
+export type PatientInvite = components["schemas"]["PatientInviteResponseDto"];
+
 export type ConnectedPatientRecord = {
-  patientId: string;
+  patientId: ApiConnectedPatient["patientId"];
   name: string;
-  email: string;
+  email: ApiConnectedPatient["email"];
   phone: string;
   tracmedyPatientId: string;
   externalPatientId: string;
-  status: string;
-  connectedAt: string;
-  preferred: boolean;
+  status: ApiConnectedPatient["status"];
+  connectedAt: ApiConnectedPatient["connectedAt"];
+  preferred: ApiConnectedPatient["preferred"];
 };
 
 export type ConnectedPatientsMeta = {
@@ -70,6 +73,11 @@ export type PatientProfileResponse = {
   connectionHistory: PatientConnectionHistoryEntry[];
   careEpisodes: ApiRecord[];
   appointments: ApiRecord[];
+};
+
+export type HospitalFacility = {
+  id: string;
+  name: string;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -145,13 +153,20 @@ function getRecordArray(value: unknown): ApiRecord[] {
   return value.map(asRecord).filter((item): item is ApiRecord => Boolean(item));
 }
 
-export async function getHospitalFacilityId(): Promise<string> {
+export async function getHospitalFacility(): Promise<HospitalFacility> {
   const payload = await request("/auth/hospital");
-  const data = payload && typeof payload === "object" ? (payload as Record<string, unknown>).data : null;
-  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  const outer = asRecord(payload);
+  const record = asRecord(outer?.data) ?? outer;
   const facility = record?.facility && typeof record.facility === "object" ? (record.facility as Record<string, unknown>) : null;
-  const id = facility?.id;
-  return typeof id === "string" ? id : "";
+  return {
+    id: getStringField(facility, "id"),
+    name: getStringField(facility, "name", "Healthcare Facility"),
+  };
+}
+
+export async function getHospitalFacilityId(): Promise<string> {
+  const facility = await getHospitalFacility();
+  return facility.id;
 }
 
 function normalizeConnectedPatient(record: ApiRecord): ConnectedPatientRecord {
@@ -182,7 +197,8 @@ export async function getConnectedPatients(
   const payload = await request(`/facilities/${encodeURIComponent(facilityId)}/patients`, undefined, query);
   // Responses are wrapped as { statusCode, message, data }, and for this endpoint `data` is
   // itself the paginated { data: [...], meta: {...} } shape — patients/meta live two levels deep.
-  const body = asRecord(asRecord(payload)?.data);
+  const outer = asRecord(payload);
+  const body = asRecord(outer?.data) ?? outer;
   const data = getRecordArray(body?.data).map(normalizeConnectedPatient);
   const metaRecord = asRecord(body?.meta);
 
@@ -194,6 +210,38 @@ export async function getConnectedPatients(
   };
 
   return { data, meta };
+}
+
+// POST /facilities/{facilityId}/patient-invites
+export async function createPatientInvite(
+  facilityId: string,
+  input: CreatePatientInviteInput,
+): Promise<PatientInvite> {
+  const payload = await request("/facilities/" + encodeURIComponent(facilityId) + "/patient-invites", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  const outer = asRecord(payload);
+  const root = asRecord(outer?.data) ?? outer;
+
+  const id = getStringField(root, "id");
+  const email = getStringField(root, "email");
+  const status = getStringField(root, "status");
+  const expiresAt = getStringField(root, "expiresAt");
+  const code = getStringField(root, "code");
+
+  if (!id || !email || !status || !expiresAt || !code) {
+    throw new Error("The connection code response was incomplete. Please try again.");
+  }
+
+  return {
+    id,
+    email,
+    existingUser: getBooleanField(root, "existingUser"),
+    status,
+    expiresAt,
+    code,
+  };
 }
 
 function normalizePatientDetail(record: ApiRecord | null): PatientProfileDetail {

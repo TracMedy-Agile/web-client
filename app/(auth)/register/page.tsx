@@ -177,7 +177,7 @@ export default function RegisterPage() {
   {/* Dashboard mockup */}
   <div className="flex-1 flex items-end justify-center overflow-hidden pr-8">
     <Image
-      src="/dashboard.png"
+      src="/Dashboard.png"
       alt="Dashboard Mockup"
       width={600}
       height={500}

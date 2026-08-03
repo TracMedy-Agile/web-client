@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Eye } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getAppointments } from "@/lib/api/appointments";
 import { cn } from "@/lib/utils";
 import type { AppointmentListFilters } from "./AppointmentFilters";
@@ -29,6 +29,15 @@ type AppointmentTableProps = {
 type AppointmentRecord = Record<string, unknown>;
 
 const PAGE_LIMIT = 20;
+const tableColumnVisibility = [
+  "",
+  "hidden xl:table-cell",
+  "",
+  "hidden lg:table-cell",
+  "hidden xl:table-cell",
+  "",
+  "",
+] as const;
 
 const statusStyles: Record<AppointmentStatus, string> = {
   Confirmed: "text-emerald-500 before:bg-emerald-500",
@@ -196,8 +205,8 @@ function AppointmentTableSkeleton() {
     <tbody>
       {Array.from({ length: 5 }, (_, index) => (
         <tr key={index} className="text-sm text-[#344054]">
-          {Array.from({ length: 7 }, (_item, cellIndex) => (
-            <td key={cellIndex} className="px-6 py-4">
+          {tableColumnVisibility.map((visibility, cellIndex) => (
+            <td key={cellIndex} className={cn("px-2 py-4 sm:px-3 xl:px-4", visibility)}>
               <div className="h-4 w-full max-w-[150px] animate-pulse rounded bg-[#EEF2F7]" />
             </td>
           ))}
@@ -313,17 +322,17 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse text-left">
+      <div className="w-full overflow-hidden">
+        <table className="w-full table-fixed border-collapse text-left">
           <thead>
             <tr className="bg-[#EEF4FF] text-xs font-semibold uppercase text-[#71809B]">
-              <th className="rounded-l-sm px-4 sm:px-6 py-4">Patient Name</th>
-              <th className="px-6 py-4">Appointment ID</th>
-              <th className="px-6 py-4">Date &amp; Time</th>
-              <th className="px-6 py-4">Appointment Type</th>
-              <th className="px-6 py-4">Department / Service</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="rounded-r-sm px-4 sm:px-6 py-4">Action</th>
+              <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:px-4">Patient Name</th>
+              <th className="hidden px-4 py-4 xl:table-cell">Appointment ID</th>
+              <th className="px-2 py-4 sm:px-3 xl:px-4">Date &amp; Time</th>
+              <th className="hidden px-3 py-4 lg:table-cell xl:px-4">Appointment Type</th>
+              <th className="hidden px-4 py-4 xl:table-cell">Department / Service</th>
+              <th className="px-2 py-4 sm:px-3 xl:px-4">Status</th>
+              <th className="rounded-r-sm px-2 py-4 sm:px-3 xl:px-4">Action</th>
             </tr>
           </thead>
           {isLoading ? (
@@ -332,27 +341,34 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
             <tbody>
               {appointments.map((appointment) => (
                 <tr key={appointment.id} className="text-sm text-[#344054]">
-                  <td className="px-6 py-3 font-semibold text-[#111827]">{appointment.patientName}</td>
-                  <td className="px-6 py-3 font-medium text-[#344054]">{appointment.id}</td>
-                  <td className="px-6 py-3">
-                    <p className="font-bold">{appointment.date}</p>
-                    <p>{appointment.time}</p>
+                  <td className="px-2 py-3 font-semibold text-[#111827] sm:px-3 xl:px-4">
+                    <p className="truncate" title={appointment.patientName}>{appointment.patientName}</p>
                   </td>
-                  <td className="px-6 py-3 font-medium">{appointment.type}</td>
-                  <td className="px-6 py-3 font-semibold">{appointment.department}</td>
-                  <td className="px-6 py-3">
+                  <td className="hidden px-4 py-3 font-medium text-[#344054] xl:table-cell">
+                    <p className="truncate" title={appointment.id}>{appointment.id}</p>
+                  </td>
+                  <td className="px-2 py-3 sm:px-3 xl:px-4">
+                    <p className="truncate font-bold">{appointment.date}</p>
+                    <p className="truncate">{appointment.time}</p>
+                  </td>
+                  <td className="hidden px-3 py-3 font-medium lg:table-cell xl:px-4">
+                    <p className="truncate" title={appointment.type}>{appointment.type}</p>
+                  </td>
+                  <td className="hidden px-4 py-3 font-semibold xl:table-cell">
+                    <p className="truncate" title={appointment.department}>{appointment.department}</p>
+                  </td>
+                  <td className="px-2 py-3 sm:px-3 xl:px-4">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-2 font-semibold before:h-1.5 before:w-1.5 before:rounded-full before:content-['']",
+                        "inline-flex max-w-full items-center gap-2 font-semibold before:h-1.5 before:w-1.5 before:shrink-0 before:rounded-full before:content-['']",
                         statusStyles[appointment.status],
                       )}
                     >
-                      {appointment.status}
+                      <span className="truncate">{appointment.status}</span>
                     </span>
                   </td>
-                  <td className="px-6 py-3">
-                    <Link href={`/dashboard/appointments/${encodeURIComponent(appointment.routeId)}`} className="flex items-center gap-1.5 text-sm font-bold text-primary">
-                      <Eye className="h-5 w-5" />
+                  <td className="px-2 py-3 sm:px-3 xl:px-4">
+                    <Link href={`/dashboard/appointments/${encodeURIComponent(appointment.routeId)}`} className="text-sm font-bold text-primary">
                       View
                     </Link>
                   </td>

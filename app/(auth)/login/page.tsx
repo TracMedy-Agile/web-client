@@ -244,7 +244,7 @@ export default function LoginPage() {
 
   <div className="flex-1 flex items-end overflow-hidden">
     <Image
-      src="/dashboard_mockup.png"
+      src="/Dashboard_mockup.png"
       alt="Dashboard Mockup"
       width={600}
       height={500}

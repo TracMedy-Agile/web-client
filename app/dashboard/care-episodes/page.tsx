@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -9,12 +9,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Eye,
+
   FolderOpen,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AddPatientModal } from "./components/AddPatientModal";
 import { PatientReviewModal } from "./components/PatientReviewModal";
 import {
@@ -48,25 +51,25 @@ const DEFAULT_COUNTS: Counts = { activeCount: 0, pendingCount: 0, closedCount: 0
 const PAGE_LIMIT = 5;
 
 const TABS: { key: TabKey; label: string; dotClassName: string; borderClassName: string; countKey: keyof Counts }[] = [
-  { key: "active", label: "Active Episodes", dotClassName: "bg-[#023E8A]", borderClassName: "border-[#023E8A]", countKey: "activeCount" },
-  { key: "pending", label: "Pending Review", dotClassName: "bg-[#EF4444]", borderClassName: "border-[#EF4444]", countKey: "pendingCount" },
-  { key: "closed", label: "Closed Episode", dotClassName: "bg-[#10B981]", borderClassName: "border-[#10B981]", countKey: "closedCount" },
+  { key: "active", label: "Active Episodes", dotClassName: "bg-primary", borderClassName: "border-primary", countKey: "activeCount" },
+  { key: "pending", label: "Pending Review", dotClassName: "bg-red-500", borderClassName: "border-red-500", countKey: "pendingCount" },
+  { key: "closed", label: "Closed Episode", dotClassName: "bg-emerald-500", borderClassName: "border-emerald-500", countKey: "closedCount" },
 ];
 
 const EMPTY_STATE_COPY: Record<TabKey, { title: string; description: string }> = {
   active: {
     title: "No Active Care Episodes.",
     description:
-      "Episodes will appear automatically once patients register and begin logging data on the Tracmedy mobile app, their clinical profiles will appear here automatically in real-time.",
+      "Episodes will appear automatically once patients register and begin logging data on the Tracmedy mobile app. Their clinical profiles will appear here in real time.",
   },
   pending: {
     title: "No Episodes Pending Review.",
-    description: "Great job!! You are all caught up. New reviews will be generated based on clinical thresholds",
+    description: "Great job! You are all caught up. New reviews will be generated based on clinical thresholds.",
   },
   closed: {
     title: "No Closed Episodes Found.",
     description:
-      "Once an episode is marked as complete, it will be automatically logged here for long time storage and audit trailing",
+      "Once an episode is marked as complete, it will be automatically logged here for long-term storage and audit tracking.",
   },
 };
 
@@ -77,6 +80,15 @@ function formatDate(value?: string | null) {
   const date = new Date(parsed);
   const month = date.toLocaleString("en-US", { month: "short" });
   return `${date.getDate()} ${month}, ${date.getFullYear()}`;
+}
+
+function getEpisodeDuration(createdAt: string, closedAt: string | null | undefined, fallback: number | null) {
+  const created = Date.parse(createdAt);
+  const closed = closedAt ? Date.parse(closedAt) : Number.NaN;
+  if (Number.isFinite(created) && Number.isFinite(closed)) {
+    return Math.max(1, Math.ceil((closed - created) / 86_400_000));
+  }
+  return fallback ?? 0;
 }
 
 // CareEpisodeSummaryDto only exposes patientId/clinicianId — names are resolved from a
@@ -101,19 +113,19 @@ function getPatientTracmedyCode(directory: Record<string, ConnectedPatientRecord
 
 function getCarePhaseBadge(carePhase: string | null) {
   const value = (carePhase ?? "").toLowerCase();
-  if (value === "alert") return { label: "Alert", className: "bg-[#FFECEC] text-[#EF4444]" };
-  if (value.startsWith("monitor")) return { label: "Monitoring", className: "bg-[#FFF4E5] text-[#F59E0B]" };
-  if (value === "stable") return { label: "Stable", className: "bg-[#DFFBF0] text-[#10B981]" };
-  return { label: "Stable", className: "bg-[#DFFBF0] text-[#10B981]" };
+  if (value === "alert") return { label: "Alert", className: "bg-red-50 text-red-500" };
+  if (value.startsWith("monitor")) return { label: "Monitoring", className: "bg-amber-50 text-amber-500" };
+  if (value === "stable") return { label: "Stable", className: "bg-emerald-50 text-emerald-500" };
+  return { label: "Stable", className: "bg-emerald-50 text-emerald-500" };
 }
 
 function getRiskBadge(riskCategory: string | null) {
-  if (!riskCategory) return { label: "Unrated", className: "bg-[#F3F4F6] text-[#6B7280]" };
+  if (!riskCategory) return { label: "Unrated", className: "bg-slate-100 text-slate-500" };
   const value = riskCategory.toLowerCase();
-  if (value === "high") return { label: "High Risk", className: "bg-[#FFECEC] text-[#EF4444]" };
-  if (value === "medium") return { label: "Moderate", className: "bg-[#FFF4E5] text-[#F59E0B]" };
-  if (value === "low") return { label: "Low Risk", className: "bg-[#DFFBF0] text-[#10B981]" };
-  return { label: "Unrated", className: "bg-[#F3F4F6] text-[#6B7280]" };
+  if (value === "high") return { label: "High Risk", className: "bg-red-50 text-red-500" };
+  if (value === "medium") return { label: "Moderate", className: "bg-amber-50 text-amber-500" };
+  if (value === "low") return { label: "Low Risk", className: "bg-emerald-50 text-emerald-500" };
+  return { label: "Unrated", className: "bg-slate-100 text-slate-500" };
 }
 
 function getRecommendation(riskCategory: string | null) {
@@ -128,8 +140,8 @@ function getClosureInfo(closureReason: string | null) {
   const value = (closureReason ?? "").toLowerCase();
   const isNegative = ["lost", "drop", "abandon", "deceas", "fail", "transfer"].some((keyword) => value.includes(keyword));
   return isNegative
-    ? { label: "Lost to Follow-up", dotClassName: "bg-[#EF4444]", textClassName: "text-[#EF4444]" }
-    : { label: "Recovery Completed", dotClassName: "bg-[#10B981]", textClassName: "text-[#10B981]" };
+    ? { label: "Lost to Follow-up", dotClassName: "bg-red-500", textClassName: "text-red-500" }
+    : { label: "Recovery Completed", dotClassName: "bg-emerald-500", textClassName: "text-emerald-500" };
 }
 
 function getProgressPercent(dayStart: number | null, expectedDurationDays: number | null) {
@@ -158,14 +170,14 @@ function StatCard({
   isLoading?: boolean;
 }) {
   return (
-    <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+    <Card className="rounded-xl border-border bg-white shadow-sm">
       <CardContent className="p-4 sm:p-5">
         {note ? (
           <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", noteClassName)}>{note}</span>
         ) : null}
-        <p className="mt-3 text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">{label}</p>
-        <p className="mt-1 text-2xl font-bold text-[#111827] sm:text-3xl">
-          {isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-[#F3F4F6]" /> : value}
+        <p className="mt-3 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">{label}</p>
+        <p className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">
+          {isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-100" /> : value}
         </p>
       </CardContent>
     </Card>
@@ -173,20 +185,23 @@ function StatCard({
 }
 
 function SelectFilter({
+  label,
   value,
   onChange,
   options,
 }: {
+  label: string;
   value: string;
   onChange: (value: string) => void;
   options: { label: string; value: string }[];
 }) {
   return (
-    <div className="relative w-full sm:w-40">
+    <div className="relative w-full shrink-0 sm:w-40 lg:w-32 xl:w-40">
       <select
+        aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-lg border border-[#DDE3EC] bg-white px-4 pr-9 text-sm font-medium text-[#71809B] outline-none hover:bg-[#F8FAFC]"
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-white px-4 pr-9 text-sm font-medium text-slate-500 outline-none hover:bg-slate-50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -194,7 +209,7 @@ function SelectFilter({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
+      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
     </div>
   );
 }
@@ -208,7 +223,7 @@ function PageButton({ page, active, onClick }: { page: number | string; active: 
       onClick={onClick}
       className={cn(
         "h-8 min-w-8 shrink-0 rounded-lg px-3 text-sm font-bold disabled:cursor-default disabled:opacity-100",
-        active ? "bg-[#023E8A] text-white hover:bg-[#023575]" : "text-[#111827] hover:bg-[#F3F4F6]",
+        active ? "bg-primary text-white hover:bg-primary/90" : "text-slate-900 hover:bg-slate-100",
       )}
     >
       {page}
@@ -219,15 +234,15 @@ function PageButton({ page, active, onClick }: { page: number | string; active: 
 function EmptyState({ tab }: { tab: TabKey }) {
   const copy = EMPTY_STATE_COPY[tab];
   return (
-    <div className="flex flex-col items-center px-4 py-16 text-center">
-      <span className="relative flex h-28 w-28 items-center justify-center rounded-full bg-[#EFF5FF]">
-        <FolderOpen className="h-9 w-9 text-[#023E8A]" />
-        <span className="absolute -right-1 bottom-1 flex h-7 w-7 items-center justify-center rounded-lg bg-white text-[#023E8A] shadow-[0_2px_8px_rgba(15,23,42,0.16)]">
+    <div className="flex min-h-[560px] flex-col items-center justify-center px-4 py-16 text-center">
+      <span className="relative flex h-28 w-28 items-center justify-center rounded-full bg-blue-50">
+        <FolderOpen className="h-9 w-9 text-primary" />
+        <span className="absolute -right-1 bottom-1 flex h-7 w-7 items-center justify-center rounded-lg bg-white text-primary shadow-[0_2px_8px_rgba(15,23,42,0.16)]">
           <ArrowDownToLine className="h-3.5 w-3.5" />
         </span>
       </span>
-      <h2 className="mt-6 text-lg font-bold text-[#111827]">{copy.title}</h2>
-      <p className="mt-2 max-w-120 text-sm font-medium leading-6 text-[#71809B]">{copy.description}</p>
+      <h2 className="mt-6 text-lg font-bold text-slate-900">{copy.title}</h2>
+      <p className="mt-2 max-w-120 text-sm font-medium leading-6 text-slate-500">{copy.description}</p>
     </div>
   );
 }
@@ -357,6 +372,15 @@ export default function CareEpisodesPage() {
   const rangeEnd = (page - 1) * PAGE_LIMIT + episodes.length;
   const tabNoun = activeTab === "active" ? "Active Episodes" : activeTab === "pending" ? "Pending Reviews" : "Closed Episodes";
 
+  useEffect(() => {
+    if (!isEmpty) return;
+    capturePostHogEvent("care_episode_empty_state_viewed", {
+      tab: activeTab,
+      risk_filter: riskFilter,
+      has_date_filter: Boolean(dateFrom || dateTo),
+    });
+  }, [activeTab, dateFrom, dateTo, isEmpty, riskFilter]);
+
   const csvRows = useMemo(() => {
     if (activeTab === "active") {
       const header = ["Patient", "Diagnosis", "Assigned Clinician", "Status", "Progress", "Risk Level"];
@@ -383,8 +407,8 @@ export default function CareEpisodesPage() {
     const header = ["Patient", "Closed Date", "Episode Duration", "Closure Reason"];
     const rows = episodes.map((episode) => [
       getPatientName(patientDirectory, episode.patientId),
-      formatDate(episode.updatedAt),
-      `${episode.expectedDurationDays ?? 0} days`,
+      formatDate(episode.closedAt || episode.updatedAt),
+      getEpisodeDuration(episode.createdAt, episode.closedAt, episode.expectedDurationDays) + " days",
       getClosureInfo(episode.closureReason).label,
     ]);
     return [header, ...rows];
@@ -401,20 +425,29 @@ export default function CareEpisodesPage() {
     link.download = `care-episodes-${activeTab}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    capturePostHogEvent("care_episodes_exported", {
+      tab: activeTab,
+      row_count: episodes.length,
+    });
   };
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Care Episode Management</h1>
-          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-[#71809B]">
+          <h1 className="text-lg font-bold text-slate-900 md:text-2xl">Care Episode Management</h1>
+          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-slate-500">
             Operational summaries and episode workspace
           </p>
         </div>
         <Button
-          onClick={() => setIsModalOpen(true)}
-          className="h-11 w-full rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575] sm:w-auto"
+          type="button"
+          onClick={() => {
+            capturePostHogEvent("care_episode_queue_opened");
+            setIsModalOpen(true);
+          }}
+          disabled={!facilityId}
+          className="h-11 w-full rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90 sm:w-auto"
         >
           <Plus className="h-4 w-4" />
           New Patient To Queue
@@ -432,36 +465,36 @@ export default function CareEpisodesPage() {
           label="Active Episodes"
           value={counts.activeCount.toLocaleString()}
           note=""
-          noteClassName="bg-[#DFFBF0] text-[#10B981]"
+          noteClassName="bg-emerald-50 text-emerald-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
           label="Pending Reviews"
           value={counts.pendingCount.toLocaleString()}
           note=""
-          noteClassName="bg-[#FFECEC] text-[#EF4444]"
+          noteClassName="bg-red-50 text-red-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
           label="High-Risk Patients"
           value={counts.highRiskCount.toLocaleString()}
           note=""
-          noteClassName="bg-[#FFECEC] text-[#EF4444]"
+          noteClassName="bg-red-50 text-red-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
-          label="Closed (Month)"
+          label="Closed Episodes"
           value={counts.closedCount.toLocaleString()}
           note=""
-          noteClassName="bg-[#DFFBF0] text-[#10B981]"
+          noteClassName="bg-emerald-50 text-emerald-500"
           isLoading={isLoading && episodes.length === 0}
         />
       </section>
 
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-5 lg:p-6">
-          <div className="mb-6 flex flex-col gap-4 border-b border-[#E5E7EB] pb-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-5">
+          <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between lg:gap-3">
+            <div className="flex min-w-0 flex-nowrap items-center gap-2 xl:gap-5">
               {TABS.map((tab) => (
                 <button
                   key={tab.key}
@@ -470,22 +503,24 @@ export default function CareEpisodesPage() {
                     setActiveTab(tab.key);
                     setPage(1);
                   }}
+                  aria-pressed={activeTab === tab.key}
                   className={cn(
-                    "flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-bold transition-colors",
-                    activeTab === tab.key ? cn(tab.borderClassName, "text-[#111827]") : "border-transparent text-[#71809B] hover:text-[#111827]",
+                    "flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 pb-3 text-xs font-bold transition-colors xl:gap-2 xl:px-1 xl:text-sm",
+                    activeTab === tab.key ? cn(tab.borderClassName, "text-slate-900") : "border-transparent text-slate-500 hover:text-slate-900",
                   )}
                 >
                   <span className={cn("h-2 w-2 rounded-full", tab.dotClassName)} />
                   {tab.label}
-                  <span className="rounded-md bg-[#F3F4F6] px-2 py-0.5 text-xs font-bold text-[#71809B]">
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
                     {counts[tab.countKey]}
                   </span>
                 </button>
               ))}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex shrink-0 items-center gap-2 xl:gap-3">
               <SelectFilter
+                label="Filter care episodes by risk"
                 value={riskFilter}
                 onChange={(value) => {
                   setRiskFilter(value);
@@ -498,42 +533,65 @@ export default function CareEpisodesPage() {
                   { label: "Low Risk", value: "low" },
                 ]}
               />
-              <div className="relative w-full sm:w-40">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 w-full justify-between rounded-lg border-[#DDE3EC] bg-white px-4 text-sm font-medium text-[#71809B] hover:bg-[#F8FAFC]"
-                >
-                  Date Range
-                  <CalendarDays className="h-4 w-4" />
-                </Button>
-                <div className="absolute inset-0 flex opacity-0">
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(event) => {
-                      setDateFrom(event.target.value);
-                      setPage(1);
-                    }}
-                    className="w-1/2 cursor-pointer"
-                  />
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(event) => {
-                      setDateTo(event.target.value);
-                      setPage(1);
-                    }}
-                    className="w-1/2 cursor-pointer"
-                  />
-                </div>
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 w-full shrink-0 justify-between rounded-lg border-border bg-white px-3 text-sm font-medium text-slate-500 hover:bg-slate-50 sm:w-40 lg:w-32 xl:w-40 xl:px-4"
+                  >
+                    Date Range
+                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="episode-date-from">Created from</Label>
+                    <Input
+                      id="episode-date-from"
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => {
+                        setDateFrom(event.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="episode-date-to">Created to</Label>
+                    <Input
+                      id="episode-date-to"
+                      type="date"
+                      min={dateFrom || undefined}
+                      value={dateTo}
+                      onChange={(event) => {
+                        setDateTo(event.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  {dateFrom || dateTo ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setDateFrom("");
+                        setDateTo("");
+                        setPage(1);
+                      }}
+                      className="w-full"
+                    >
+                      Clear date range
+                    </Button>
+                  ) : null}
+                </PopoverContent>
+              </Popover>
               <Button
                 type="button"
                 variant="ghost"
                 onClick={exportCsv}
                 disabled={episodes.length === 0}
-                className="h-10 gap-2 px-2 text-sm font-medium text-[#111827] hover:bg-[#F8FAFC]"
+                className="h-10 shrink-0 gap-1.5 whitespace-nowrap px-1 text-xs font-medium text-slate-900 hover:bg-slate-50 xl:gap-2 xl:px-2 xl:text-sm"
               >
                 <Download className="h-4 w-4" />
                 Export
@@ -547,10 +605,10 @@ export default function CareEpisodesPage() {
             <>
               {activeTab === "active" ? (
                 <Table className="min-w-230">
-                  <TableHeader className="bg-[#EFF5FF]">
-                    <TableRow className="border-0 hover:bg-[#EFF5FF]">
+                  <TableHeader className="bg-blue-50">
+                    <TableRow className="border-0 hover:bg-blue-50">
                       {["PATIENT NAME", "DIAGNOSIS", "ASSIGNED CLINICIAN", "STATUS", "PROGRESS", "RISK LEVEL", "ACTION"].map((heading) => (
-                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-[#71809B] sm:px-6">
+                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-slate-500 sm:px-6">
                           {heading}
                         </TableHead>
                       ))}
@@ -561,7 +619,7 @@ export default function CareEpisodesPage() {
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
                           <TableCell colSpan={7} className="px-4 py-5 sm:px-6">
-                            <div className="h-5 w-full animate-pulse rounded bg-[#F3F4F6]" />
+                            <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
                       ))
@@ -573,11 +631,11 @@ export default function CareEpisodesPage() {
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                             <TableCell className="px-4 py-5 sm:px-6">
-                              <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
-                              <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                              <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
-                            <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.diagnosis || "--"}</TableCell>
-                            <TableCell className="px-4 py-5 text-[#344054] sm:px-6">
+                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{episode.diagnosis || "--"}</TableCell>
+                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">
                               {getClinicianLabel(clinicianDirectory, episode.clinicianId)}
                             </TableCell>
                             <TableCell className="px-4 py-5 sm:px-6">
@@ -587,13 +645,13 @@ export default function CareEpisodesPage() {
                             </TableCell>
                             <TableCell className="px-4 py-5 sm:px-6">
                               <div className="flex items-center gap-2">
-                                <span className="whitespace-nowrap text-xs font-semibold text-[#344054]">
+                                <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
                                   Day {episode.dayStart ?? 0}/{episode.expectedDurationDays ?? 0}
                                 </span>
-                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-[#E5E7EB]">
-                                  <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${percent}%` }} />
+                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200">
+                                  <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
                                 </div>
-                                <span className="text-xs font-semibold text-[#344054]">{percent}%</span>
+                                <span className="text-xs font-semibold text-slate-700">{percent}%</span>
                               </div>
                             </TableCell>
                             <TableCell className="px-4 py-5 sm:px-6">
@@ -604,9 +662,8 @@ export default function CareEpisodesPage() {
                             <TableCell className="px-4 py-5 sm:px-6">
                               <Link
                                 href={`/dashboard/care-episodes/${encodeURIComponent(episode.id)}`}
-                                className="inline-flex items-center gap-1.5 text-sm font-bold text-[#023E8A]"
+                                className="text-sm font-bold text-primary"
                               >
-                                <Eye className="h-4 w-4" />
                                 View
                               </Link>
                             </TableCell>
@@ -620,10 +677,10 @@ export default function CareEpisodesPage() {
 
               {activeTab === "pending" ? (
                 <Table className="min-w-190">
-                  <TableHeader className="bg-[#EFF5FF]">
-                    <TableRow className="border-0 hover:bg-[#EFF5FF]">
-                      {["PATIENT NAME", "DIAGNOSIS", "CONSULTATION DATE", "RECOMMENDATION", "ACTION"].map((heading) => (
-                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-[#71809B] sm:px-6">
+                  <TableHeader className="bg-blue-50">
+                    <TableRow className="border-0 hover:bg-blue-50">
+                      {["PATIENT NAME", "DIAGNOSIS", "CREATED DATE", "RECOMMENDATION", "ACTION"].map((heading) => (
+                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-slate-500 sm:px-6">
                           {heading}
                         </TableHead>
                       ))}
@@ -634,7 +691,7 @@ export default function CareEpisodesPage() {
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
                           <TableCell colSpan={5} className="px-4 py-5 sm:px-6">
-                            <div className="h-5 w-full animate-pulse rounded bg-[#F3F4F6]" />
+                            <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
                       ))
@@ -642,12 +699,12 @@ export default function CareEpisodesPage() {
                       episodes.map((episode) => (
                         <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                           <TableCell className="px-4 py-5 sm:px-6">
-                            <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
-                            <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                            <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
+                            <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                           </TableCell>
-                          <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.diagnosis || "--"}</TableCell>
-                          <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{formatDate(episode.createdAt)}</TableCell>
-                          <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{getRecommendation(episode.riskCategory)}</TableCell>
+                          <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{episode.diagnosis || "--"}</TableCell>
+                          <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{formatDate(episode.createdAt)}</TableCell>
+                          <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{getRecommendation(episode.riskCategory)}</TableCell>
                           <TableCell className="px-4 py-5 sm:px-6">
                             <button
                               type="button"
@@ -655,10 +712,9 @@ export default function CareEpisodesPage() {
                                 setReviewEpisodeId(episode.id);
                                 setIsReviewModalOpen(true);
                               }}
-                              className="inline-flex items-center gap-1.5 text-sm font-bold text-[#023E8A]"
+                              className="text-sm font-bold text-primary"
                             >
-                              <Eye className="h-4 w-4" />
-                              View
+                              Review
                             </button>
                           </TableCell>
                         </TableRow>
@@ -670,10 +726,10 @@ export default function CareEpisodesPage() {
 
               {activeTab === "closed" ? (
                 <Table className="min-w-190">
-                  <TableHeader className="bg-[#EFF5FF]">
-                    <TableRow className="border-0 hover:bg-[#EFF5FF]">
+                  <TableHeader className="bg-blue-50">
+                    <TableRow className="border-0 hover:bg-blue-50">
                       {["PATIENT NAME", "CLOSED DATE", "EPISODE DURATION", "CLOSURE REASON", "ACTION"].map((heading) => (
-                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-[#71809B] sm:px-6">
+                        <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-slate-500 sm:px-6">
                           {heading}
                         </TableHead>
                       ))}
@@ -684,7 +740,7 @@ export default function CareEpisodesPage() {
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
                           <TableCell colSpan={5} className="px-4 py-5 sm:px-6">
-                            <div className="h-5 w-full animate-pulse rounded bg-[#F3F4F6]" />
+                            <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
                       ))
@@ -694,11 +750,13 @@ export default function CareEpisodesPage() {
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
                             <TableCell className="px-4 py-5 sm:px-6">
-                              <span className="block font-bold text-[#111827]">{getPatientName(patientDirectory, episode.patientId)}</span>
-                              <span className="mt-1 block text-xs font-medium text-[#71809B]">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                              <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
-                            <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{formatDate(episode.updatedAt)}</TableCell>
-                            <TableCell className="px-4 py-5 text-[#344054] sm:px-6">{episode.expectedDurationDays ?? 0} days</TableCell>
+                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{formatDate(episode.closedAt || episode.updatedAt)}</TableCell>
+                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">
+                              {getEpisodeDuration(episode.createdAt, episode.closedAt, episode.expectedDurationDays)} days
+                            </TableCell>
                             <TableCell className="px-4 py-5 sm:px-6">
                               <span className={cn("inline-flex items-center gap-2 text-sm font-semibold", closure.textClassName)}>
                                 <span className={cn("h-1.5 w-1.5 rounded-full", closure.dotClassName)} />
@@ -708,9 +766,8 @@ export default function CareEpisodesPage() {
                             <TableCell className="px-4 py-5 sm:px-6">
                               <Link
                                 href={`/dashboard/care-episodes/${encodeURIComponent(episode.id)}/closed-summary`}
-                                className="inline-flex items-center gap-1.5 text-sm font-bold text-[#023E8A]"
+                                className="text-sm font-bold text-primary"
                               >
-                                <Eye className="h-4 w-4" />
                                 View Summary
                               </Link>
                             </TableCell>
@@ -726,17 +783,19 @@ export default function CareEpisodesPage() {
         </CardContent>
 
         {!isEmpty && episodes.length > 0 ? (
-          <div className="flex flex-col items-center gap-4 border-t border-[#E5E7EB] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 lg:px-6">
-            <p className="text-center text-xs font-medium text-[#71809B] sm:text-left sm:text-sm">
+          <div className="flex flex-col items-center gap-4 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 lg:px-6">
+            <p className="text-center text-xs font-medium text-slate-500 sm:text-left sm:text-sm">
               Showing {rangeStart}-{rangeEnd} of {total} {tabNoun}
             </p>
             <div className="flex max-w-full items-center gap-2 overflow-x-auto py-1">
               <Button
+                type="button"
+                aria-label="Previous page"
                 variant="outline"
                 size="icon"
                 disabled={page <= 1}
                 onClick={() => setPage((current) => Math.max(current - 1, 1))}
-                className="h-8 w-8 shrink-0 rounded-lg border-[#E5E7EB] text-[#71809B]"
+                className="h-8 w-8 shrink-0 rounded-lg border-slate-200 text-slate-500"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -748,11 +807,13 @@ export default function CareEpisodesPage() {
                 ),
               )}
               <Button
+                type="button"
+                aria-label="Next page"
                 variant="outline"
                 size="icon"
                 disabled={page >= totalPages}
                 onClick={() => setPage((current) => Math.min(current + 1, totalPages))}
-                className="h-8 w-8 shrink-0 rounded-lg border-[#023E8A] text-[#023E8A]"
+                className="h-8 w-8 shrink-0 rounded-lg border-primary text-primary"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>

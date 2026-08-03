@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { logout } from "@/lib/api/auth";
 import MobileSidebarButton from "@/components/dashboard/MobileSidebarButton";
 import { Bell, ChevronDown, LogOut, Search } from "lucide-react";
@@ -52,8 +52,27 @@ interface NavbarProps {
   title?: string;
 }
 
+const DASHBOARD_ROUTE_TITLES = [
+  { href: "/dashboard/connected-patients", title: "Connected Patients" },
+  { href: "/dashboard/care-episodes", title: "Care Episodes" },
+  { href: "/dashboard/appointments", title: "Appointments" },
+  { href: "/dashboard/alerts", title: "Alerts" },
+  { href: "/dashboard/messages", title: "Messages" },
+  { href: "/dashboard/reports", title: "Report & Analytics" },
+  { href: "/dashboard/team", title: "Team" },
+  { href: "/dashboard/audit", title: "Audit" },
+  { href: "/dashboard/settings", title: "Settings" },
+] as const;
+
+function getDashboardRouteTitle(pathname: string) {
+  return DASHBOARD_ROUTE_TITLES.find(
+    ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
+  )?.title ?? "Dashboard";
+}
+
 export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -84,6 +103,7 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
 
   const name = user?.name ?? "User";
   const role = user?.specialty ?? user?.role ?? "";
+  const resolvedTitle = title === "Dashboard" ? getDashboardRouteTitle(pathname) : title;
 
   async function handleLogout() {
     setIsLoggingOut(true);
@@ -97,10 +117,10 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   }
 
   return (
-    <header className="flex h-18 items-center justify-between border-b border-border bg-card px-3 py-3 md:px-6 lg:px-8">
+    <header className="flex h-22 items-center justify-between border-b border-border bg-card px-3 py-3 md:px-6 lg:px-8">
       <div className="flex items-center gap-3">
         <MobileSidebarButton />
-        <h1 className="text-lg font-semibold text-foreground md:text-xl">{title}</h1>
+        <h1 className="text-lg font-semibold text-foreground md:text-xl">{resolvedTitle}</h1>
       </div>
 
       <div className="flex items-center gap-4">
