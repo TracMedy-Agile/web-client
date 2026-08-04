@@ -27,8 +27,10 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     latestCheckin: null,
     recentTimeline: [],
     riskData: null,
+    riskHistory: [],
     dayProgress: null,
     facility: null,
+    closure: null,
   };
 }
 

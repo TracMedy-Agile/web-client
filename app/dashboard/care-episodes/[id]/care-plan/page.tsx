@@ -16,10 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createCarePlanVersion, getCarePlan } from "@/lib/api/care-plan";
+import { createCarePlanVersion, getCarePlan, type CarePlanWithVersions } from "@/lib/api/care-plan";
 import { getCareEpisodeById, type CareEpisodeDetail } from "@/lib/api/care-episodes";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import type { CarePlan } from "../recovery/adjust-plan/types";
 import type { CareTaskCategory } from "../_shared/careTeamTypes";
 import { carePlanToTasks, tasksToCarePlanPayload, type CareTask } from "./types";
 import { SaveCarePlanModal } from "./components/SaveCarePlanModal";
@@ -39,7 +38,7 @@ export default function AdjustCarePlanPage() {
   const episodeId = params?.id ?? "";
 
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
-  const [plan, setPlan] = useState<CarePlan | null>(null);
+  const [plan, setPlan] = useState<CarePlanWithVersions | null>(null);
   const [loadError, setLoadError] = useState("");
   const [tasks, setTasks] = useState<CareTask[]>([]);
   const [initialTasks, setInitialTasks] = useState("[]");
@@ -123,7 +122,8 @@ export default function AdjustCarePlanPage() {
     try {
       const payload = tasksToCarePlanPayload(tasks, plan, changeReason.trim());
       const saved = await createCarePlanVersion(episodeId, payload);
-      setPlan(saved);
+      const refreshed = await getCarePlan(episodeId);
+      setPlan(refreshed);
       const nextTasks = carePlanToTasks(saved);
       setTasks(nextTasks);
       setInitialTasks(JSON.stringify(nextTasks));
@@ -317,15 +317,16 @@ export default function AdjustCarePlanPage() {
                 Version history
               </h2>
               <div className="mt-4 space-y-4">
-                <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-xs text-foreground">Version {version}.0</strong>
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">ACTIVE</span>
+                {plan.versions.map((item) => (
+                  <div key={item.id} className={item.isActive ? "rounded-lg border border-primary/40 bg-primary/5 p-3" : "rounded-lg border border-border p-3"}>
+                    <div className="flex items-center justify-between">
+                      <strong className="text-xs text-foreground">Version {item.version}.0</strong>
+                      {item.isActive ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">ACTIVE</span> : null}
+                    </div>
+                    <p className="mt-2 text-xs leading-4 text-muted-foreground">{item.changeReason || "Care plan updated."}</p>
+                    <p className="mt-2 text-right text-[10px] font-bold text-muted-foreground">{item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "--"}</p>
                   </div>
-                  <p className="mt-2 text-xs leading-4 text-muted-foreground">{plan.changeReason || "Care plan updated."}</p>
-                  <p className="mt-2 text-right text-[10px] font-bold text-muted-foreground">{plan.createdAt ? new Date(plan.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "--"}</p>
-                </div>
-                <p className="text-[11px] leading-4 text-muted-foreground">Prior versions are not exposed by the current API.</p>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -337,10 +338,10 @@ export default function AdjustCarePlanPage() {
                   <Bell className="h-4 w-4 text-primary" />
                   Patient notification
                 </h2>
-                <Switch checked={false} disabled aria-describedby="care-plan-notification-unavailable" />
+                <Switch checked disabled aria-describedby="care-plan-notification-status" />
               </div>
-              <p id="care-plan-notification-unavailable" className="mt-3 text-xs leading-5 text-muted-foreground">
-                Patient notifications are not available in the current care-plan API. Saving creates a new plan version only.
+              <p id="care-plan-notification-status" className="mt-3 text-xs leading-5 text-muted-foreground">
+                The backend automatically notifies the patient when this care plan is created or updated.
               </p>
             </CardContent>
           </Card>

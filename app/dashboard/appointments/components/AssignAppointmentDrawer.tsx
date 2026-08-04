@@ -143,38 +143,66 @@ function normalizeAppointmentSummary(payload: unknown, fallbackId: string): Appo
   };
 }
 
-function normalizeClinicianSuggestion(record: ApiRecord, index: number): ClinicianSuggestion {
+function normalizeDepartment(value: string) {
+  return value.toLowerCase().trim();
+}
+
+function normalizeClinicianSuggestion(record: ApiRecord, index: number, requestedDepartment: string): ClinicianSuggestion {
   const status = normalizeStatusKey(getString(record, ["status"], "available"));
   const isFull = status === "full" || status === "unavailable";
   const capacity = getNumber(record, ["dailyCapacity"], 0);
   const assigned = getNumber(record, ["assignedAppointments", "assignedToday"], 0);
   const utilization = Math.min(Math.max(Math.round(getNumber(record, ["capacityUtilization", "utilizationPercentage"], 0)), 0), 100);
   const name = formatDoctorName(getString(record, ["name", "fullName", "displayName"], "Unknown Clinician"));
+  const department = getString(record, ["department", "speciality", "specialty"], "--");
+  const isRequestedDepartment = requestedDepartment !== "--" && normalizeDepartment(department) === normalizeDepartment(requestedDepartment);
+  const isTopMatch = index === 0 && isRequestedDepartment && !isFull;
 
   return {
     id: getString(record, ["id", "clinicianId", "_id"]),
     name,
-    department: getString(record, ["department", "speciality", "specialty"], "--"),
+    department,
     status,
     assigned,
     capacity,
     utilization,
-    isTopMatch: index === 0 && !isFull,
+    isTopMatch,
     isFull,
-    tone: isFull ? "red" : index === 0 ? "blue" : "green",
+    tone: isFull ? "red" : isTopMatch ? "blue" : "green",
     initials: getInitials(name),
     avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
-function sortClinicians(items: ApiRecord[]) {
-  const rank = (status: string) => (status === "available" ? 0 : status === "near_capacity" ? 1 : 2);
+function sortClinicians(items: ApiRecord[], requestedDepartment: string) {
+  const statusRank = (status: string) => (status === "available" ? 0 : status === "near_capacity" ? 1 : 2);
+  const normalizedRequestedDepartment = normalizeDepartment(requestedDepartment);
 
   return [...items].sort((a, b) => {
-    const rankDiff = rank(normalizeStatusKey(getString(a, ["status"], "available"))) - rank(normalizeStatusKey(getString(b, ["status"], "available")));
+    const aDepartment = normalizeDepartment(getString(a, ["department", "speciality", "specialty"], "--"));
+    const bDepartment = normalizeDepartment(getString(b, ["department", "speciality", "specialty"], "--"));
+    const departmentRank = Number(bDepartment === normalizedRequestedDepartment) - Number(aDepartment === normalizedRequestedDepartment);
+    if (departmentRank !== 0) return departmentRank;
+
+    const rankDiff = statusRank(normalizeStatusKey(getString(a, ["status"], "available"))) - statusRank(normalizeStatusKey(getString(b, ["status"], "available")));
     if (rankDiff !== 0) return rankDiff;
     return getNumber(a, ["capacityUtilization", "utilizationPercentage"], 0) - getNumber(b, ["capacityUtilization", "utilizationPercentage"], 0);
   });
+}
+
+async function getAllClinicianRecords() {
+  const firstPage = await getClinicians({ page: 1, limit: 100 });
+  const firstPageRecord = asRecord(firstPage);
+  const meta = asRecord(firstPageRecord?.meta);
+  const totalPages = Math.max(1, Math.trunc(getNumber(meta, ["totalPages"], 1)));
+
+  if (totalPages === 1) return getItems(firstPage);
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) => getClinicians({ page: index + 2, limit: 100 })),
+  );
+
+  return [firstPage, ...remainingPages].flatMap(getItems);
 }
 
 async function getAccessToken(): Promise<string | null> {
@@ -339,6 +367,7 @@ export default function AssignAppointmentDrawer({
   const [assigningId, setAssigningId] = useState("");
 
   const [showAll, setShowAll] = useState(false);
+  const visibleClinicians = showAll ? clinicians : clinicians.slice(0, 5);
 
   const loadData = useCallback(async () => {
     if (!appointmentId) return;
@@ -349,13 +378,13 @@ export default function AssignAppointmentDrawer({
     try {
       const appointmentPayload = await getAppointmentById(appointmentId);
       const summary = normalizeAppointmentSummary(appointmentPayload, appointmentId);
-      const cliniciansPayload = await getClinicians({
-        department: summary.department === "--" ? undefined : summary.department,
-        limit: showAll ? 50 : 5,
-      });
+      const clinicianRecords = await getAllClinicianRecords();
+      const rankedClinicians = sortClinicians(clinicianRecords, summary.department)
+        .map((clinician, index) => normalizeClinicianSuggestion(clinician, index, summary.department))
+        .filter((clinician) => clinician.id);
 
       setAppointment(summary);
-      setClinicians(sortClinicians(getItems(cliniciansPayload)).map(normalizeClinicianSuggestion));
+      setClinicians(rankedClinicians);
     } catch (requestError) {
       setAppointment(null);
       setClinicians([]);
@@ -363,7 +392,7 @@ export default function AssignAppointmentDrawer({
     } finally {
       setIsLoading(false);
     }
-  }, [appointmentId, showAll]);
+  }, [appointmentId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -490,7 +519,7 @@ export default function AssignAppointmentDrawer({
 
                 <div className="mt-8 flex items-center justify-between border-b border-[#DDE3EC] pb-3">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#344054]">Suggested Clinicians</p>
-                  {!showAll ? (
+                  {clinicians.length > visibleClinicians.length ? (
                     <button type="button" onClick={() => setShowAll(true)} className="text-sm font-bold text-[#023E8A]">
                       View All
                     </button>
@@ -498,7 +527,7 @@ export default function AssignAppointmentDrawer({
                 </div>
 
                 <div className="mt-4 space-y-4 pb-4">
-                  {clinicians.map((clinician) => (
+                  {visibleClinicians.map((clinician) => (
                     <ClinicianCard
                       key={clinician.id}
                       clinician={clinician}
@@ -506,8 +535,8 @@ export default function AssignAppointmentDrawer({
                       onAssign={(selected) => void handleAssign(selected)}
                     />
                   ))}
-                  {clinicians.length === 0 ? (
-                    <p className="py-6 text-center text-sm font-medium text-[#71809B]">No clinicians found for this department.</p>
+                  {visibleClinicians.length === 0 ? (
+                    <p className="py-6 text-center text-sm font-medium text-[#71809B]">No clinicians available for assignment.</p>
                   ) : null}
                 </div>
               </div>

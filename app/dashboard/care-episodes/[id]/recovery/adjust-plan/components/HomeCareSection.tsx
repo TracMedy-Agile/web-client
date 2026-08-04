@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { Info, Home, Trash2 } from "lucide-react";
+import type { HomeCareService } from "@/lib/api/home-care";
 import type { Clinician, HomeCareOrder } from "../types";
 import { AddRowButton, areaClass, DeleteDialog, fieldClass, FieldLabel, SectionFrame } from "./SectionFrame";
 
 const SERVICE_OPTIONS = ["Vitals Monitoring", "In-home Nursing", "Wound Care", "Physiotherapy", "Community Health Visit"];
 
-function newHomeCareOrder(): HomeCareOrder {
+function newHomeCareOrder(services: HomeCareService[]): HomeCareOrder {
+  const firstService = services[0];
   return {
     id: crypto.randomUUID(),
-    service: "Vitals Monitoring",
+    serviceId: firstService?.id ?? "",
+    service: firstService?.name ?? "Vitals Monitoring",
     priority: "Routine",
     frequency: "Daily",
     startDate: "",
@@ -19,19 +22,25 @@ function newHomeCareOrder(): HomeCareOrder {
     instructions: "",
     fulfillmentMethod: "network",
     clinicianId: "",
+    isNew: true,
   };
 }
 
 export function HomeCareSection({
   items,
   clinicians,
+  services,
   onChange,
 }: {
   items: HomeCareOrder[];
   clinicians: Clinician[];
+  services: HomeCareService[];
   onChange: (items: HomeCareOrder[]) => void;
 }) {
   const [deleting, setDeleting] = useState<HomeCareOrder | null>(null);
+  const serviceOptions = services.length > 0
+    ? services
+    : SERVICE_OPTIONS.map((name) => ({ id: "", name }));
   const update = (index: number, patch: Partial<HomeCareOrder>) =>
     onChange(items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
 
@@ -48,11 +57,21 @@ export function HomeCareSection({
               <select
                 aria-label="Home care service"
                 className={fieldClass}
-                value={item.service}
-                onChange={(event) => update(index, { service: event.target.value })}
+                value={item.serviceId || item.service}
+                onChange={(event) => {
+                  const selected = serviceOptions.find((service) => (service.id || service.name) === event.target.value);
+                  update(index, {
+                    serviceId: selected?.id ?? "",
+                    service: selected?.name ?? event.target.value,
+                  });
+                }}
               >
-                {!SERVICE_OPTIONS.includes(item.service) && item.service ? <option>{item.service}</option> : null}
-                {SERVICE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                {!serviceOptions.some((service) => service.name === item.service) && item.service
+                  ? <option value={item.serviceId || item.service}>{item.service}</option>
+                  : null}
+                {serviceOptions.map((service) => (
+                  <option key={service.id || service.name} value={service.id || service.name}>{service.name}</option>
+                ))}
               </select>
               <select aria-label="Priority" className={fieldClass} value={item.priority} onChange={(event) => update(index, { priority: event.target.value })}>
                 <option>Routine</option>
@@ -114,14 +133,14 @@ export function HomeCareSection({
             ) : (
               <div className="mt-3 flex gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[10px] leading-4 text-destructive">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <p>The care-plan API records this network preference, but provider assignment and patient notification require a separate operations endpoint that is not currently available.</p>
+                <p>The request will be submitted to the Tracmedy care network when this care-plan change is saved.</p>
               </div>
             )}
           </div>
         ))}
       </div>
 
-      <AddRowButton onClick={() => onChange([...items, newHomeCareOrder()])}>Add home care order</AddRowButton>
+      <AddRowButton onClick={() => onChange([...items, newHomeCareOrder(services)])}>Add home care order</AddRowButton>
       <DeleteDialog
         label={deleting?.service ?? "home care order"}
         open={Boolean(deleting)}

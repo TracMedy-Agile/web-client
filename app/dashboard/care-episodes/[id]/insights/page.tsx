@@ -30,14 +30,20 @@ import { cn } from "@/lib/utils";
 import {
   asRecord,
   getCareEpisodeById,
+  getCareEpisodeCheckins,
   getCareEpisodeDailyVitals,
+  getCareEpisodeMedia,
   getCareEpisodeMedicationAdherence,
+  getCareEpisodeMedicationLogs,
   getNumber,
   getString,
   type ApiRecord,
   type CareEpisodeDetail,
+  type CheckInHistoryRecord,
   type DailyVitalsRecord,
+  type EpisodeMediaItem,
   type MedicationAdherenceRecord,
+  type MedicationLogHistory,
 } from "@/lib/api/care-episodes";
 import { CareEpisodeSubHeader, SubHeaderSkeleton } from "../_shared/SubHeader";
 import { MediaViewerModal, type MediaViewerData } from "../components/MediaViewerModal";
@@ -325,6 +331,27 @@ function buildClinicalMedia(checkin: ApiRecord | null, patientCode: string): Cli
     }));
 }
 
+function buildMediaHistory(items: EpisodeMediaItem[], patientCode: string): ClinicalMediaItem[] {
+  return items
+    .filter((item) => Boolean(item.url))
+    .map((item, index) => ({
+      id: `${item.checkInId}-${index}`,
+      title: item.caption || `Check-in Upload ${index + 1}`,
+      type: item.type || "Check-in Image",
+      status: "Pending review" as const,
+      priority: null,
+      uploadedAt: formatDateTimeLabel(item.submittedAt),
+      kind: "image" as const,
+      captureContext: item.type || "Check-in Image",
+      dateCaptured: formatDateTimeLabel(item.submittedAt),
+      capturedAt: item.submittedAt,
+      uploadTimestamp: formatTime(item.submittedAt),
+      patientId: patientCode,
+      patientDescription: item.caption || "No description provided by patient.",
+      imageUrl: item.url ?? "",
+    }));
+}
+
 function formatCurrentLabel(capturedAt: string): string {
   const parsed = capturedAt ? Date.parse(capturedAt) : NaN;
   if (!Number.isFinite(parsed)) return "--";
@@ -405,14 +432,28 @@ export default function CareEpisodeInsightsPage() {
   const [medsLoading, setMedsLoading] = useState(true);
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
   const [vitalsLoading, setVitalsLoading] = useState(true);
+  const [checkins, setCheckins] = useState<CheckInHistoryRecord[]>([]);
+  const [mediaHistory, setMediaHistory] = useState<EpisodeMediaItem[]>([]);
 
   const [biometricMetric, setBiometricMetric] = useState<BiometricMetric>("Blood Pressure");
   const [biometricRange, setBiometricRange] = useState<BiometricRange>("14d");
   const [metricMenuOpen, setMetricMenuOpen] = useState(false);
 
   const [expandedMedicationId, setExpandedMedicationId] = useState<string | null>(null);
+  const [medicationLogs, setMedicationLogs] = useState<Record<string, MedicationLogHistory | "loading" | "error">>({});
   const [notesTab, setNotesTab] = useState<"All" | NoteType>("All");
   const [activeMedia, setActiveMedia] = useState<ClinicalMediaItem | null>(null);
+
+  function toggleMedication(medicationId: string) {
+    const nextExpanded = expandedMedicationId === medicationId ? null : medicationId;
+    setExpandedMedicationId(nextExpanded);
+    if (nextExpanded && !medicationLogs[nextExpanded]) {
+      setMedicationLogs((current) => ({ ...current, [nextExpanded]: "loading" }));
+      getCareEpisodeMedicationLogs(episodeId, nextExpanded)
+        .then((history) => setMedicationLogs((current) => ({ ...current, [nextExpanded]: history })))
+        .catch(() => setMedicationLogs((current) => ({ ...current, [nextExpanded]: "error" })));
+    }
+  }
 
   useEffect(() => {
     capturePostHogEvent("patient_insights_viewed", { episode_id: episodeId });
@@ -438,6 +479,22 @@ export default function CareEpisodeInsightsPage() {
       }
     })();
 
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    Promise.allSettled([
+      getCareEpisodeCheckins(episodeId),
+      getCareEpisodeMedia(episodeId),
+    ]).then(([checkinResult, mediaResult]) => {
+      if (ignore) return;
+      setCheckins(checkinResult.status === "fulfilled" ? checkinResult.value : []);
+      setMediaHistory(mediaResult.status === "fulfilled" ? mediaResult.value : []);
+    });
     return () => {
       ignore = true;
     };
@@ -496,12 +553,24 @@ export default function CareEpisodeInsightsPage() {
   );
 
   const clinicalMedia = useMemo(
-    () => buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? ""),
-    [episode],
+    () => mediaHistory.length
+      ? buildMediaHistory(mediaHistory, episode?.patient?.hospitalId ?? "")
+      : buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? ""),
+    [episode, mediaHistory],
   );
-  const patientNotes = useMemo(() => buildPatientNotes(episode?.latestCheckin ?? null), [episode]);
+  const patientNotes = useMemo(
+    () => checkins.length
+      ? checkins.flatMap((checkin) => buildPatientNotes(checkin as unknown as ApiRecord))
+      : buildPatientNotes(episode?.latestCheckin ?? null),
+    [checkins, episode],
+  );
   const filteredNotes = notesTab === "All" ? patientNotes : patientNotes.filter((note) => note.type === notesTab);
-  const symptoms = useMemo(() => buildSymptoms(episode?.latestCheckin ?? null), [episode]);
+  const symptoms = useMemo(
+    () => checkins.length
+      ? checkins.flatMap((checkin) => buildSymptoms(checkin as unknown as ApiRecord))
+      : buildSymptoms(episode?.latestCheckin ?? null),
+    [checkins, episode],
+  );
 
   const severeCount = symptoms.filter((symptom) => symptom.severity >= 7).length;
   const worseningCount = symptoms.filter((symptom) => symptom.trend === "Worsening").length;
@@ -788,7 +857,7 @@ export default function CareEpisodeInsightsPage() {
                     <div key={medication.medicationId} className="rounded-lg border border-slate-200">
                       <button
                         type="button"
-                        onClick={() => setExpandedMedicationId(isExpanded ? null : medication.medicationId)}
+                        onClick={() => toggleMedication(medication.medicationId)}
                         className="flex w-full flex-col gap-2 p-4 text-left"
                       >
                         <div className="flex items-center justify-between">
@@ -817,13 +886,46 @@ export default function CareEpisodeInsightsPage() {
                       {isExpanded ? (
                         <div className="border-t border-slate-200 px-4 py-3">
                           <p className="mb-2 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">
-                            Patient-Reported Side Effects
+                            Dose Log History
                           </p>
-                          <p className="text-sm font-medium text-slate-500">
-                            {medication.missedCount > 0
-                              ? `${medication.missedCount} missed dose${medication.missedCount === 1 ? "" : "s"} logged. No side effects reported.`
-                              : "No side effects reported."}
-                          </p>
+                          {(() => {
+                            const logState = medicationLogs[medication.medicationId];
+                            if (!logState || logState === "loading") {
+                              return <p className="text-sm font-medium text-slate-500">Loading dose history…</p>;
+                            }
+                            if (logState === "error") {
+                              return <p className="text-sm font-medium text-red-500">Unable to load dose history.</p>;
+                            }
+                            if (logState.logs.length === 0) {
+                              return <p className="text-sm font-medium text-slate-500">No doses logged yet.</p>;
+                            }
+                            return (
+                              <ul className="space-y-2">
+                                {logState.logs.map((log) => (
+                                  <li key={log.id} className="flex items-start justify-between gap-3 text-sm">
+                                    <div>
+                                      <span className="font-semibold text-slate-900">{formatDateTimeLabel(log.loggedAt)}</span>
+                                      {log.notes ? (
+                                        <p className="mt-0.5 text-xs font-medium italic text-slate-500">{log.notes}</p>
+                                      ) : null}
+                                    </div>
+                                    <span
+                                      className={cn(
+                                        "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase",
+                                        log.action === "TAKEN"
+                                          ? "bg-emerald-50 text-emerald-600"
+                                          : log.action === "MISSED"
+                                            ? "bg-red-50 text-red-500"
+                                            : "bg-amber-50 text-amber-700",
+                                      )}
+                                    >
+                                      {log.action}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            );
+                          })()}
                         </div>
                       ) : null}
                     </div>

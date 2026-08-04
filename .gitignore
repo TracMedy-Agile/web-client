@@ -51,6 +51,7 @@ add-patient-scroll-fix.patch
 .agents/
 AGENTS.md
 docs/*
+!docs/backend.md
 !docs/types/
 docs/types/*
 !docs/types/api.ts

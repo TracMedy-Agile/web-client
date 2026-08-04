@@ -15,6 +15,7 @@ import {
 
   FolderOpen,
   History,
+  Search,
 } from "lucide-react";
 import {
   getAlertReviewImpact,
@@ -28,9 +29,10 @@ import {
   ReviewImpactModal,
   type ReviewImpactData,
 } from "@/app/dashboard/care-episodes/[id]/components/ReviewImpactModal";
-import { EscalateCaseModal } from "@/components/dashboard/EscalateCaseModal";
+import { RoleGate } from "@/components/auth/RoleGate";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 
+const CLINICIAN_ROLE = ["clinician"] as const;
 const EMPTY_SNAPSHOT: AlertsSnapshot = { active: [], history: [] };
 const ALERT_TAB_LABELS = { all: "All Alert", critical: "Critical", moderate: "Moderate", low: "Low" } as const;
 
@@ -95,7 +97,7 @@ function downloadCsv(alerts: ClinicalAlert[], filename: string) {
 
 function SeverityBadge({ severity }: { severity: AlertSeverity }) {
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${severityStyles[severity]}`}>
+    <span className={`inline-flex min-w-[90px] justify-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${severityStyles[severity]}`}>
       {severity === "low" ? "Low Risk" : severity}
     </span>
   );
@@ -103,15 +105,14 @@ function SeverityBadge({ severity }: { severity: AlertSeverity }) {
 
 function getReviewImpactData(alert: ClinicalAlert, impact: AlertReviewImpact | null): ReviewImpactData {
   const severity = alert.severity.toUpperCase();
-  const riskScore = impact?.riskScore ?? alert.riskScore;
   return {
     title: `${alert.triggerSource} - ${alert.reason}`,
     subtitle: "Reviewing 72-hour clinical trajectory",
-    expectedLabel: "Alert trigger",
-    expected: alert.triggerSource,
-    actualLabel: "Current risk score",
-    actual: riskScore === null ? "Not recorded" : `${Math.round(riskScore)}/100`,
-    trend: impact?.riskTrend ?? alert.riskTrend ?? "No trend supplied",
+    expectedLabel: impact?.expectedLabel ?? "Alert trigger",
+    expected: impact?.expected ?? alert.triggerSource,
+    actualLabel: impact?.actualLabel ?? "Current risk score",
+    actual: impact?.actual ?? (alert.riskScore === null ? "Not recorded" : `${Math.round(alert.riskScore)}/100`),
+    trend: impact?.trend ?? alert.riskTrend ?? "No trend supplied",
     evidence: impact?.evidence ?? [
       { label: "Patient reference", value: alert.patientCode, status: "RECORDED" },
       { label: "Risk category", value: alert.riskCategory || alert.severity, status: severity },
@@ -233,6 +234,7 @@ export default function AlertsScreen() {
   const isHistory = searchParams.get("view") === "history";
   const [snapshot, setSnapshot] = useState<AlertsSnapshot>(EMPTY_SNAPSHOT);
   const [severity, setSeverity] = useState<"all" | AlertSeverity>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState("30");
   const [source, setSource] = useState("all");
   const [clinician, setClinician] = useState("all");
@@ -243,7 +245,6 @@ export default function AlertsScreen() {
   const [reviewAlert, setReviewAlert] = useState<ClinicalAlert | null>(null);
   const [reviewImpact, setReviewImpact] = useState<AlertReviewImpact | null>(null);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
-  const [escalationAlert, setEscalationAlert] = useState<ClinicalAlert | null>(null);
   const reviewRequestId = useRef(0);
 
   useEffect(() => {
@@ -313,13 +314,14 @@ export default function AlertsScreen() {
             ? alert.acknowledgedBy
             : alert.assignedClinician;
         return (
+          (!searchQuery.trim() || [alert.patientName, alert.patientCode, alert.reason].some((value) => value.toLowerCase().includes(searchQuery.trim().toLowerCase()))) &&
           (severity === "all" || alert.severity === severity) &&
           (source === "all" || alert.triggerSource === source) &&
           (clinician === "all" || alertClinician === clinician) &&
           isWithinRange(alert.timestamp, dateRange)
         );
       }),
-    [clinician, dateRange, severity, source, sourceAlerts],
+    [clinician, dateRange, searchQuery, severity, source, sourceAlerts],
   );
 
   const totalPages = Math.max(
@@ -343,6 +345,7 @@ export default function AlertsScreen() {
 
   const resetFilters = () => {
     setSeverity("all");
+    setSearchQuery("");
     setDateRange("30");
     setSource("all");
     setClinician("all");
@@ -484,8 +487,19 @@ export default function AlertsScreen() {
         <section className="overflow-hidden rounded-xl bg-card shadow-sm">
           {isHistory ? (
             <div className="p-4 pb-0">
-              <div className="flex flex-wrap items-end gap-6 rounded-lg border border-border px-4 py-4">
-                <label className="block">
+              <div className="flex flex-wrap items-end gap-4 rounded-lg border border-border px-4 py-4 xl:flex-nowrap">
+                <label className="relative block min-w-[240px] flex-1 self-end xl:max-w-[300px]">
+                  <span className="sr-only">Search alert history</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => { setSearchQuery(event.target.value); setPage(1); }}
+                    placeholder="Search by name, email, or ID..."
+                    className="h-10 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
+                <label className="block sm:border-l sm:border-border sm:pl-4">
                   <span className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Date Range</span>
                   <span className="relative block">
                     <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -497,7 +511,7 @@ export default function AlertsScreen() {
                     </select>
                   </span>
                 </label>
-                <label className="block">
+                <label className="block sm:border-l sm:border-border sm:pl-4">
                   <span className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Severity</span>
                   <select value={severity} onChange={(event) => { setSeverity(event.target.value as "all" | AlertSeverity); setPage(1); }} className="h-10 min-w-32 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
                     <option value="all">All Severity</option>
@@ -506,21 +520,21 @@ export default function AlertsScreen() {
                     <option value="low">Low Risk</option>
                   </select>
                 </label>
-                <label className="block">
+                <label className="block sm:border-l sm:border-border sm:pl-4">
                   <span className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Trigger Source</span>
                   <select value={source} onChange={(event) => { setSource(event.target.value); setPage(1); }} className="h-10 min-w-36 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
                     <option value="all">All Sources</option>
                     {sources.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
-                <label className="block">
+                <label className="block sm:border-l sm:border-border sm:pl-4">
                   <span className="mb-2 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Clinician</span>
                   <select value={clinician} onChange={(event) => { setClinician(event.target.value); setPage(1); }} className="h-10 min-w-36 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
                     <option value="all">All Clinician</option>
                     {clinicians.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </label>
-                <button type="button" onClick={resetFilters} className="ml-auto h-10 px-1 text-sm font-semibold text-primary hover:text-primary/80">
+                <button type="button" onClick={resetFilters} className="ml-auto h-10 shrink-0 px-1 text-sm font-semibold text-primary hover:text-primary/80">
                   Clear all filters
                 </button>
               </div>
@@ -558,8 +572,17 @@ export default function AlertsScreen() {
             </div>
           )}
 
-          <div className={isHistory ? "mt-4 px-4" : ""}>
-            <table className="w-full table-fixed text-left text-sm">
+          <div className={isHistory ? "mt-4 overflow-x-auto px-4" : "overflow-x-auto"}>
+            <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+              {isHistory ? (
+                <colgroup>
+                  <col className="w-[17%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[19%]" />
+                </colgroup>
+              ) : null}
               <thead className="border-y border-border bg-primary/5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-6 py-4">Patient Name</th>
@@ -571,7 +594,7 @@ export default function AlertsScreen() {
                   {!isHistory ? <th className="px-6 py-4 text-right">Action</th> : null}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className={isHistory ? "" : "divide-y divide-border"}>
                 {visibleAlerts.length === 0 ? (
                   <tr><td colSpan={isHistory ? 5 : 7} className="px-6 py-16 text-center text-sm font-medium text-muted-foreground">No alerts match the selected filters.</td></tr>
                 ) : null}
@@ -585,7 +608,12 @@ export default function AlertsScreen() {
                     <td className="px-6 py-3.5 text-muted-foreground">{formatTimestamp(alert.timestamp)}</td>
                     {!isHistory ? (
                       <td className="px-6 py-3.5 text-right">
-                        <button type="button" onClick={() => openReview(alert)} className="font-semibold text-primary hover:underline">Review</button>
+                        <RoleGate
+                          allowedRoles={CLINICIAN_ROLE}
+                          fallback={<span className="text-xs font-medium text-muted-foreground">Read only</span>}
+                        >
+                          <button type="button" onClick={() => openReview(alert)} className="font-semibold text-primary hover:underline">Review</button>
+                        </RoleGate>
                       </td>
                     ) : null}
                   </tr>
@@ -612,37 +640,9 @@ export default function AlertsScreen() {
           }
         }}
         onAcknowledge={() => undefined}
-        onEscalate={() => {
-          if (reviewAlert) {
-            setEscalationAlert(reviewImpact ? {
-              ...reviewAlert,
-              patientName: reviewImpact.patientName,
-              patientCode: reviewImpact.patientCode,
-            } : reviewAlert);
-          }
-        }}
-        acknowledgementAvailable={false}
-        careEpisodeHref={reviewAlert ? `/dashboard/care-episodes/${reviewAlert.episodeId}#risk-intelligence` : undefined}
+        careEpisodeHref={reviewAlert ? `/dashboard/care-episodes/${reviewAlert.episodeId}/recovery` : undefined}
         isLoading={isReviewLoading}
       />
-
-      {escalationAlert ? (
-        <EscalateCaseModal
-          key={escalationAlert.id}
-          open
-          context={{
-            patientName: escalationAlert.patientName,
-            patientCode: escalationAlert.patientCode,
-            alertReason: escalationAlert.reason,
-            severity: escalationAlert.severity,
-          }}
-          onOpenChange={(open) => {
-            if (!open) setEscalationAlert(null);
-          }}
-          onConfirm={() => undefined}
-          submissionAvailable={false}
-        />
-      ) : null}
     </div>
   );
 }

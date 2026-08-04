@@ -55,7 +55,14 @@ const appointmentTypes = [
 ];
 
 const departmentOptions = ["Emergency Medicine", "Cardiology", "Neurology", "Pediatrics", "Endocrinology"];
-const timeOptions = ["08:00 AM", "08:30 AM", "09:00 AM", "12:30 PM", "01:30 PM", "04:00 PM", "05:00 PM", "06:00 PM"];
+const timeOptions = [
+  ...Array.from({ length: 48 }, (_, index) => {
+    const hours = Math.floor(index / 2);
+    const minutes = index % 2 === 0 ? "00" : "30";
+    return `${String(hours).padStart(2, "0")}:${minutes}`;
+  }),
+  "23:59",
+];
 const capacityOptions = ["5", "10", "15", "20", "25", "30"];
 
 const selectClassName =
@@ -159,20 +166,6 @@ async function authorizedRequest(path: string, init?: RequestInit) {
   return payload;
 }
 
-function toTwentyFourHour(time: string) {
-  const match = time.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
-  if (!match) return time;
-
-  let hour = Number(match[1]);
-  const minute = match[2];
-  const period = match[3].toUpperCase();
-
-  if (period === "PM" && hour !== 12) hour += 12;
-  if (period === "AM" && hour === 12) hour = 0;
-
-  return `${String(hour).padStart(2, "0")}:${minute}`;
-}
-
 const previewStatusClasses: Record<string, string> = {
   available: "border-[#10B981] text-[#10B981]",
   near_capacity: "border-[#F59E0B] text-[#F59E0B]",
@@ -265,7 +258,7 @@ function TimeBlock({
             <SelectTrigger className="h-10 rounded-lg border-[#DDE3EC] bg-[#F6F7F9] px-3 text-sm font-bold text-[#111827] shadow-none focus:ring-0 focus:ring-offset-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-72">
               {timeOptions.map((time) => (
                 <SelectItem key={time} value={time}>
                   {time}
@@ -281,7 +274,7 @@ function TimeBlock({
             <SelectTrigger className="h-10 rounded-lg border-[#DDE3EC] bg-[#F6F7F9] px-3 text-sm font-bold text-[#111827] shadow-none focus:ring-0 focus:ring-offset-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-72">
               {timeOptions.map((time) => (
                 <SelectItem key={time} value={time}>
                   {time}
@@ -303,10 +296,10 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
   const [selectedClinicianId, setSelectedClinicianId] = useState("");
   const [selectedClinician, setSelectedClinician] = useState<ClinicianOption | null>(null);
   const [department, setDepartment] = useState("Cardiology");
-  const [workingHoursStart, setWorkingHoursStart] = useState("08:00 AM");
-  const [workingHoursEnd, setWorkingHoursEnd] = useState("05:00 PM");
-  const [breakStart, setBreakStart] = useState("12:30 PM");
-  const [breakEnd, setBreakEnd] = useState("01:30 PM");
+  const [workingHoursStart, setWorkingHoursStart] = useState("08:00");
+  const [workingHoursEnd, setWorkingHoursEnd] = useState("17:00");
+  const [breakStart, setBreakStart] = useState("12:30");
+  const [breakEnd, setBreakEnd] = useState("13:30");
   const [dailyCapacity, setDailyCapacity] = useState("15");
   const [isLoadingClinicians, setIsLoadingClinicians] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -330,7 +323,6 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
 
     try {
       const payload = await authorizedRequest("/clinicians");
-      console.log("Raw clinicians response:", payload);
       const nextClinicians = getItems(payload).map(normalizeClinician).filter((clinician) => clinician.id);
       setClinicians(nextClinicians);
 
@@ -403,10 +395,10 @@ export default function AddClinicianScheduleModal({ isOpen, onClose }: AddClinic
 
     const body = {
       workingDays: workingDays.filter((day) => selectedDays.includes(day.key)).map((day) => day.apiValue),
-      workingHoursStart: toTwentyFourHour(workingHoursStart),
-      workingHoursEnd: toTwentyFourHour(workingHoursEnd),
-      breakStart: toTwentyFourHour(breakStart),
-      breakEnd: toTwentyFourHour(breakEnd),
+      workingHoursStart,
+      workingHoursEnd,
+      breakStart,
+      breakEnd,
       dailyCapacity: Number(dailyCapacity),
       supportedAppointmentTypes: Array.from(new Set(appointmentTypes.filter((type) => selectedTypes.includes(type.key)).map((type) => type.apiValue))),
       department,

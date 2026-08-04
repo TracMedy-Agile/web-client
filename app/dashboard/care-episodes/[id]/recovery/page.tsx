@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
   AlertCircle,
   AlertTriangle,
@@ -18,18 +17,20 @@ import {
   Sparkles,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { RoleGate } from "@/components/auth/RoleGate";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getOpenAlertsForEpisode, type ClinicalAlert } from "@/lib/api/alerts";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getAssessmentHistory } from "@/lib/api/careTeamAndPlan.api";
 import {
-  asRecord,
-  completeCareEpisodeTask,
   getCareEpisodeById,
   getCareEpisodeDailyVitals,
   getCareEpisodeMedicationAdherence,
+  getCareEpisodeTaskCompletion,
   getCareEpisodeTimelinePage,
   getRecordArray,
   getString,
@@ -37,14 +38,30 @@ import {
   type CareEpisodeDetail,
   type DailyVitalsRecord,
   type MedicationAdherenceRecord,
+  type TaskCompletionRecord,
 } from "@/lib/api/care-episodes";
 import { SubHeaderSkeleton } from "../_shared/SubHeader";
 import { CircularProgress } from "../_shared/CircularProgress";
-import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent, humanizeSlug } from "../_shared/utils";
+import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent } from "../_shared/utils";
 import { ReviewImpactModal, type ReviewImpactData } from "../components/ReviewImpactModal";
+
+const CLINICIAN_ROLE = ["clinician"] as const;
 
 type ProgressionPoint = { day: string; expected: number; actual: number | null };
 type DailyTask = { id: string; label: string; sub: string; done: boolean };
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shiftDate(date: string, amount: number) {
+  const next = new Date(`${date}T12:00:00`);
+  next.setDate(next.getDate() + amount);
+  return localDateKey(next);
+}
 
 type RecoveryAlert = {
   id: string;
@@ -77,25 +94,15 @@ function buildDailyTasks(carePlan: ApiRecord | null): DailyTask[] {
   }));
 }
 
-function isAlertEvent(event: ApiRecord) {
-  const status = getString(event, ["status"]).toLowerCase();
-  const eventType = getString(event, ["eventType", "type"]).toLowerCase();
-  return status.includes("critical") || status.includes("alert") || eventType.includes("alert") || eventType.includes("escalation");
+function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
+  return alerts.map((alert) => ({
+    id: alert.id,
+    severity: alert.severity,
+    title: alert.reason,
+    description: `Triggered by ${alert.triggerSource}.`,
+    meta: formatRelativeTime(alert.timestamp),
+  }));
 }
-
-function buildAlertsFromTimeline(timeline: ApiRecord[]): RecoveryAlert[] {
-  return timeline.filter(isAlertEvent).map((event, index) => {
-    const payload = asRecord(event.payload) ?? {};
-    return {
-      id: getString(event, ["id", "_id"]) || `alert-${index}`,
-      severity: getString(payload, ["severity"], "Unspecified"),
-      title: getString(payload, ["message", "title"]) || humanizeSlug(getString(event, ["eventType", "type"])) || "Clinical alert",
-      description: getString(payload, ["details", "description", "note", "summary"], "No additional details were supplied."),
-      meta: formatRelativeTime(getString(event, ["timestamp", "createdAt"])),
-    };
-  });
-}
-
 function vitalMetricForAlert(alert: RecoveryAlert, records: DailyVitalsRecord[]) {
   const text = `${alert.title} ${alert.description}`.toLowerCase();
   const candidates = text.includes("oxygen") || text.includes("spo2")
@@ -172,17 +179,24 @@ function latestVitalsSummary(records: DailyVitalsRecord[]) {
 
 export default function CareEpisodeRecoveryPage() {
   const params = useParams<{ id: string }>();
+  const { role } = useDashboardUser();
   const router = useRouter();
   const episodeId = params?.id ?? "";
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
   const [medications, setMedications] = useState<MedicationAdherenceRecord[]>([]);
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
   const [timeline, setTimeline] = useState<ApiRecord[]>([]);
+  const [alerts, setAlerts] = useState<RecoveryAlert[]>([]);
   const [assessmentDates, setAssessmentDates] = useState<string[]>([]);
-  const [taskState, setTaskState] = useState<Record<string, boolean>>({});
-  const [reviewAlertId, setReviewAlertId] = useState<string | null>(null);
+  const [taskDate, setTaskDate] = useState(() => localDateKey(new Date()));
+  const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
+  const [reviewAlertId, setReviewAlertIdState] = useState<string | null>(null);
+  const setReviewAlertId = (alertId: string | null) => {
+    if (alertId === null || role === "clinician") setReviewAlertIdState(alertId);
+  };
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [alertsError, setAlertsError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -192,14 +206,37 @@ export default function CareEpisodeRecoveryPage() {
   useEffect(() => {
     if (!episodeId) return;
     let active = true;
-    Promise.allSettled([
-      getCareEpisodeById(episodeId),
-      getCareEpisodeMedicationAdherence(episodeId),
-      getCareEpisodeDailyVitals(episodeId, 7),
-      getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
-      getAssessmentHistory(episodeId),
-    ]).then(([episodeResult, medicationResult, vitalsResult, timelineResult, assessmentResult]) => {
+    void (async () => {
+      const [episodeResult, medicationResult, vitalsResult, timelineResult, assessmentResult] = await Promise.allSettled([
+        getCareEpisodeById(episodeId),
+        getCareEpisodeMedicationAdherence(episodeId),
+        getCareEpisodeDailyVitals(episodeId, 7),
+        getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
+        getAssessmentHistory(episodeId),
+      ]);
       if (!active) return;
+
+      let nextAlerts: RecoveryAlert[] = [];
+      if (episodeResult.status === "fulfilled") {
+        try {
+          const openAlerts = await getOpenAlertsForEpisode(
+            episodeId,
+            episodeResult.value.patientId,
+          );
+          nextAlerts = buildRecoveryAlerts(openAlerts);
+          setAlertsError("");
+        } catch (requestError) {
+          if (active) {
+            setAlertsError(
+              requestError instanceof Error
+                ? requestError.message
+                : "Unable to load open alerts.",
+            );
+          }
+        }
+      }
+      if (!active) return;
+
       if (episodeResult.status === "fulfilled") {
         setEpisode(episodeResult.value);
         setTimeline(episodeResult.value.recentTimeline);
@@ -207,43 +244,42 @@ export default function CareEpisodeRecoveryPage() {
         setEpisode(null);
         setError(episodeResult.reason instanceof Error ? episodeResult.reason.message : "Failed to load care episode.");
       }
+      setAlerts(nextAlerts);
       setMedications(medicationResult.status === "fulfilled" ? medicationResult.value : []);
       setDailyVitals(vitalsResult.status === "fulfilled" ? vitalsResult.value : []);
       if (timelineResult.status === "fulfilled") setTimeline(timelineResult.value.data.map((event) => ({ ...event })));
       setAssessmentDates(assessmentResult.status === "fulfilled" ? assessmentResult.value.map((assessment) => assessment.date) : []);
       setIsLoading(false);
-    });
+    })();
+
     return () => { active = false; };
   }, [episodeId, refreshKey]);
 
-  const dailyTasks = useMemo(() => buildDailyTasks(episode?.currentCarePlan ?? null), [episode]);
-  const [syncedDailyTasks, setSyncedDailyTasks] = useState<DailyTask[] | null>(null);
-  if (dailyTasks !== syncedDailyTasks) {
-    setSyncedDailyTasks(dailyTasks);
-    setTaskState(Object.fromEntries(dailyTasks.map((task) => [task.id, task.done])));
-  }
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    getCareEpisodeTaskCompletion(episodeId, taskDate)
+      .then((result) => { if (!ignore) setTaskCompletion(result); })
+      .catch(() => { if (!ignore) setTaskCompletion(null); });
+    return () => { ignore = true; };
+  }, [episodeId, taskDate]);
 
-  const alerts = useMemo(() => buildAlertsFromTimeline(timeline), [timeline]);
+  const dailyTasks = useMemo(() => buildDailyTasks(episode?.currentCarePlan ?? null), [episode]);
   const selectedAlert = alerts.find((alert) => alert.id === reviewAlertId) ?? null;
   const reviewImpact = selectedAlert ? buildReviewImpact(selectedAlert, dailyVitals, medications) : null;
   const adherence = medications.length > 0
     ? clamp(Math.round(medications.reduce((total, medication) => total + medication.adherencePercentage, 0) / medications.length))
     : null;
   const missedDoseCount = medications.reduce((total, medication) => total + medication.missedCount, 0);
-  const completedTaskCount = dailyTasks.filter((task) => taskState[task.id]).length;
+  const completedTaskCount = dailyTasks.filter((task) => task.done).length;
+  const displayedCompletedCount = taskCompletion?.completed ?? completedTaskCount;
+  const displayedTaskCount = taskCompletion?.totalDue ?? dailyTasks.length;
+  const taskCompletionPercent = taskCompletion
+    ? taskCompletion.completionRate * 100
+    : displayedTaskCount > 0 ? (displayedCompletedCount / displayedTaskCount) * 100 : 0;
+  const todayKey = localDateKey(new Date());
   const assessmentCount = assessmentDates.length;
   const lastAssessment = assessmentDates.at(0) ?? assessmentDates.at(-1) ?? "";
-
-  const handleTaskToggle = async (taskId: string, checked: boolean) => {
-    setTaskState((current) => ({ ...current, [taskId]: checked }));
-    if (!checked) return;
-    try {
-      await completeCareEpisodeTask(episodeId, taskId);
-    } catch (requestError) {
-      setTaskState((current) => ({ ...current, [taskId]: false }));
-      toast.error(requestError instanceof Error ? requestError.message : "Failed to complete task.");
-    }
-  };
 
   if (isLoading && !episode) return <SubHeaderSkeleton episodeId={episodeId} />;
   if (error && !episode) {
@@ -316,7 +352,7 @@ export default function CareEpisodeRecoveryPage() {
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-6">
             <div className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-primary" /><h2 className="text-base font-bold text-foreground">Clinical Assessment</h2></div>
             <div className="mt-4 flex flex-wrap items-center gap-8"><div><p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">Last Assessment</p><p className="mt-1 text-sm font-bold text-foreground">{lastAssessment ? formatLongDate(lastAssessment) : "--"}</p></div><div><p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">Assessments Completed</p><p className="mt-1 text-sm font-bold text-foreground">{assessmentCount}</p></div></div>
-            <div className="mt-4 flex flex-wrap gap-3"><Button type="button" onClick={() => openAction("new_assessment", `/dashboard/care-episodes/${episodeId}/assessment`)}><Plus className="h-4 w-4" />New Assessment</Button><Button type="button" variant="outline" onClick={() => openAction("assessment_history", `/dashboard/care-episodes/${episodeId}/assessment-history`)}><History className="h-4 w-4" />View History</Button></div>
+            <RoleGate allowedRoles={CLINICIAN_ROLE}><div className="mt-4 flex flex-wrap gap-3"><Button type="button" onClick={() => openAction("new_assessment", `/dashboard/care-episodes/${episodeId}/assessment`)}><Plus className="h-4 w-4" />New Assessment</Button><Button type="button" variant="outline" onClick={() => openAction("assessment_history", `/dashboard/care-episodes/${episodeId}/assessment-history`)}><History className="h-4 w-4" />View History</Button></div></RoleGate>
           </CardContent></Card>
 
           <section><h2 className="mb-4 text-base font-bold text-foreground">Recovery Outcomes</h2><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -327,23 +363,31 @@ export default function CareEpisodeRecoveryPage() {
         </div>
 
         <div className="space-y-6">
+          <RoleGate allowedRoles={CLINICIAN_ROLE}>
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><h2 className="text-base font-bold text-foreground">Clinical Action Workspace</h2><p className="mt-1 text-sm font-medium text-muted-foreground">Initiate interventions based on recovery insights.</p><div className="mt-4 space-y-3">
             <ActionButton icon={<Pencil className="h-4 w-4" />} title="Adjust Care Plan" detail="Open care plan editor" onClick={() => openAction("adjust_care_plan", `/dashboard/care-episodes/${episodeId}/recovery/adjust-plan`)} />
             <ActionButton icon={<CalendarPlus className="h-4 w-4" />} title="Schedule Follow-up" detail="Open appointments" onClick={() => openAction("schedule_follow_up", `/dashboard/appointments?patientId=${encodeURIComponent(episode.patientId)}`)} />
             <ActionButton icon={<Send className="h-4 w-4" />} title="Send Patient Instruction" detail="Open messaging module" onClick={() => openAction("send_instruction", `/dashboard/messages?${new URLSearchParams({ episodeId, patientId: episode.patientId, patientName: patient?.name || "Patient" })}`)} />
           </div></CardContent></Card>
+          </RoleGate>
 
-          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} · Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day unavailable" disabled className="rounded p-1 opacity-40"><ChevronLeft className="h-4 w-4" /></button><span className="text-xs font-bold text-foreground/80">Today</span><button type="button" aria-label="Next care-task day unavailable" disabled className="rounded p-1 opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
-            <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{completedTaskCount} / {dailyTasks.length} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${dailyTasks.length > 0 ? (completedTaskCount / dailyTasks.length) * 100 : 0}%` }} /></div>
-            <div className="mt-4 space-y-3">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <label key={task.id} className="flex items-center gap-3"><Checkbox checked={taskState[task.id]} onCheckedChange={(checked) => void handleTaskToggle(task.id, Boolean(checked))} /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className="block text-xs font-medium text-muted-foreground">{task.sub || "No schedule supplied"}</span></span></label>)}</div>
+          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} · Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
+            <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{displayedCompletedCount} / {displayedTaskCount} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${taskCompletionPercent}%` }} /></div>
+            <div className="mt-4 space-y-3">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-center gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className="block text-xs font-medium text-muted-foreground">{task.sub || "No schedule supplied"}</span></span></div>)}</div>
             <p className="mt-4 flex items-center gap-1.5 text-xs font-medium text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Last synced {formatRelativeTime(episode.updatedAt)}</p>
           </CardContent></Card>
 
-          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><h2 className="flex items-center gap-1.5 text-base font-bold text-foreground"><AlertTriangle className="h-4 w-4 text-destructive" />Open Alerts</h2><span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span></div><div className="mt-4 space-y-3">{alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts found in the episode timeline.</p> : null}{alerts.map((alert) => <div key={alert.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase text-muted-foreground">{alert.severity}</span><span className="rounded-full bg-destructive px-2.5 py-0.5 text-[10px] font-bold text-destructive-foreground">OPEN</span></div><p className="mt-1.5 text-sm font-bold text-foreground">{alert.title}</p><p className="mt-1 text-xs font-medium text-muted-foreground">{alert.description}</p><p className="mt-2 text-xs font-medium text-muted-foreground">{alert.meta}</p><Button type="button" variant="outline" onClick={() => { setReviewAlertId(alert.id); capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id }); }} className="mt-3 h-9 w-full border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10">Review Impact</Button></div>)}</div></CardContent></Card>
+          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><h2 className="flex items-center gap-1.5 text-base font-bold text-foreground"><AlertTriangle className="h-4 w-4 text-destructive" />Open Alerts</h2><span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span></div><div className="mt-4 space-y-3">{alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}{alerts.map((alert) => <div key={alert.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase text-muted-foreground">{alert.severity}</span><span className="rounded-full bg-destructive px-2.5 py-0.5 text-[10px] font-bold text-destructive-foreground">OPEN</span></div><p className="mt-1.5 text-sm font-bold text-foreground">{alert.title}</p><p className="mt-1 text-xs font-medium text-muted-foreground">{alert.description}</p><p className="mt-2 text-xs font-medium text-muted-foreground">{alert.meta}</p><Button type="button" variant="outline" onClick={() => { setReviewAlertId(alert.id); capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id }); }} className="mt-3 h-9 w-full border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10">Review Impact</Button></div>)}</div></CardContent></Card>
         </div>
       </div>
 
-      <ReviewImpactModal open={Boolean(reviewAlertId)} alert={reviewImpact} onOpenChange={(open) => { if (!open) setReviewAlertId(null); }} onAcknowledge={() => undefined} acknowledgementAvailable={false} careEpisodeHref={`/dashboard/care-episodes/${episodeId}#risk-intelligence`} />
+      <ReviewImpactModal
+        open={Boolean(reviewAlertId)}
+        alert={reviewImpact}
+        onOpenChange={(open) => { if (!open) setReviewAlertId(null); }}
+        onAcknowledge={() => undefined}
+        careEpisodeHref={`/dashboard/care-episodes/${episodeId}#risk-intelligence`}
+      />
     </div>
   );
 }

@@ -15,14 +15,18 @@
       "appointment_booked": "New appointment created",
       "appointment_confirmed": "Appointment confirmed by staff",
       "appointment_cancelled": "Appointment cancelled",
-      "appointment_rescheduled": "Appointment rescheduled"
+      "appointment_rescheduled": "Appointment rescheduled",
+      "appointment_completed": "Appointment completed by hospital staff",
+      "appointment_message_sent": "Staff sent an appointment-linked patient message"
     },
     "alerts": {
       "alerts_viewed": "User viewed active clinical alerts",
       "alerts_history_viewed": "User viewed alert history",
       "alerts_exported": "User exported the current alert view",
       "alerts_reloaded": "User reloaded alert data",
-      "alert_review_opened": "User opened an alert review"
+      "alert_review_opened": "User opened an alert review",
+      "alert_escalated": "Clinician escalated an alert",
+      "alert_resolved": "Clinician resolved an acknowledged alert"
     },
     "care_episodes": {
       "care_episode_created": "New care episode created",
@@ -56,7 +60,10 @@
       "care_timeline_viewed": "User viewed a care episode timeline",
       "care_timeline_filtered": "User filtered a care episode timeline",
       "closed_episode_summary_viewed": "User viewed a closed episode summary",
-      "care_episode_empty_state_viewed": "User viewed an empty care episode tab"
+      "care_episode_empty_state_viewed": "User viewed an empty care episode tab",
+      "care_team_member_added": "Hospital admin added a clinician to an episode care team",
+      "care_team_member_removed": "Hospital admin removed a clinician from an episode care team",
+      "home_care_request_created": "Staff member created a clinician-initiated home-care request for an episode patient"
     },
     "connected_patients": {
       "connected_patients_viewed": "User viewed the connected patients page",
@@ -66,7 +73,45 @@
       "connection_code_generated": "User generated a patient connection code",
       "connection_code_copied": "User copied a patient connection code",
       "connection_code_sent_sms": "User opened an SMS containing a patient connection code",
-      "connection_code_sent_email": "User opened an email containing a patient connection code"
+      "connection_code_sent_email": "User opened an email containing a patient connection code",
+      "connected_patient_updated": "Staff member updated facility-managed patient information",
+      "connected_patient_disconnected": "Staff member disconnected a patient from the facility",
+      "connected_patient_reconnected": "Staff member reconnected a patient to the facility"
+    },
+    "reports": {
+      "reports_analytics_viewed": "User viewed reports and analytics",
+      "reports_empty_state_viewed": "User viewed the reports empty state",
+      "reports_period_changed": "User changed the reports date period",
+      "reports_refreshed": "User refreshed reports data",
+      "reports_exported": "User exported a reports summary",
+      "clinician_workload_opened": "User opened clinician workload from reports",
+      "clinician_workload_viewed": "User viewed the full clinician workload page",
+      "clinician_workload_exported": "User exported clinician workload"
+    },
+    "team": {
+      "team_viewed": "User viewed the hospital team directory",
+      "team_member_viewed": "User viewed a team member profile",
+      "team_member_invite_opened": "User opened the team member invitation flow",
+      "team_member_edit_opened": "User opened the team member edit flow",
+      "team_member_status_opened": "User opened suspend or reactivate confirmation",
+      "team_member_remove_opened": "User opened team member removal confirmation",
+      "team_api_unavailable": "User reached a team action without an available API contract"
+    },
+    "audit": {
+      "audit_log_viewed": "User viewed the facility audit log",
+      "audit_log_filtered": "User filtered the facility audit log",
+      "audit_log_entry_viewed": "User opened an audit log entry",
+      "audit_log_exported": "User exported audit log records",
+      "audit_log_refreshed": "User refreshed the audit log history"
+    },
+    "system": {
+      "network_error_viewed": "User viewed the network error state",
+      "network_retry_clicked": "User retried the network connection",
+      "network_reload_clicked": "User reloaded from the network error state",
+      "session_expired_viewed": "User viewed the session expired screen",
+      "session_login_clicked": "User returned to login from the session expired screen",
+      "access_denied_viewed": "User viewed the access denied state",
+      "access_denied_returned": "User returned to the dashboard from access denied"
     }
   }
 }

@@ -31,6 +31,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -66,6 +67,8 @@ import {
   type BiometricRange,
 } from "./_shared/utils";
 import { CloseCareEpisodeModal, type CloseCareEpisodePayload, type EpisodeOutcomeSummary } from "./components/CloseCareEpisodeModal";
+
+const CLINICIAN_ROLE = ["clinician"] as const;
 
 type TimelineEntry = {
   id: string;
@@ -623,16 +626,18 @@ export default function CareEpisodeDetailPage() {
             </div>
 
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col">
-              <Button
-                asChild
-                onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
-                className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
-              >
-                <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
-                  <TrendingUp className="h-4 w-4" />
-                  Patients Insights
-                </Link>
-              </Button>
+              <RoleGate allowedRoles={CLINICIAN_ROLE}>
+                <Button
+                  asChild
+                  onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
+                  className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
+                >
+                  <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
+                    <TrendingUp className="h-4 w-4" />
+                    Patients Insights
+                  </Link>
+                </Button>
+              </RoleGate>
               <Button
                 asChild
                 variant="outline"
@@ -643,6 +648,7 @@ export default function CareEpisodeDetailPage() {
                   Recovery
                 </Link>
               </Button>
+              <RoleGate allowedRoles={CLINICIAN_ROLE}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -683,6 +689,7 @@ export default function CareEpisodeDetailPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              </RoleGate>
             </div>
           </div>
 
@@ -796,7 +803,7 @@ export default function CareEpisodeDetailPage() {
                     style={{ width: `${displayedRiskScore ?? 0}%` }}
                   />
                 </div>
-                <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4">
+                <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trend</dt>
                     <dd className="mt-1 text-sm font-semibold capitalize text-foreground">{episode.riskTrend || "Not provided"}</dd>
@@ -804,6 +811,10 @@ export default function CareEpisodeDetailPage() {
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Intervention window</dt>
                     <dd className="mt-1 text-sm font-semibold text-foreground">{riskWindow}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk history</dt>
+                    <dd className="mt-1 text-sm font-semibold text-foreground">{episode.riskHistory.length} assessment{episode.riskHistory.length === 1 ? "" : "s"}</dd>
                   </div>
                 </dl>
               </div>
