@@ -1,5 +1,5 @@
-import { Megaphone, TrendingUp, Users, CalendarCheck } from "lucide-react";
-import MetricCard from "@/components/dashboard/MetricCard";
+
+import DashboardMetricCards from "@/components/dashboard/DashboardMetricCards";
 import RecoveryTrend, { type RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import LiveAlerts, { type LiveAlert } from "@/components/dashboard/LiveAlerts";
 import WorkloadStatus, { type ClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
@@ -54,40 +54,7 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">What requires your attention right now</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <MetricCard
-          icon={Users}
-          iconClassName="bg-secondary/30 text-primary"
-          label="Active Care Episode"
-          value={8}
-          change="+2%"
-          changeType="positive"
-        />
-        <MetricCard
-          icon={CalendarCheck}
-          iconClassName="bg-secondary/30 text-primary"
-          label="Appointments"
-          value={3}
-          change="-1%"
-          changeType="negative"
-        />
-        <MetricCard
-          icon={Megaphone}
-          iconClassName="bg-red-50 text-red-500"
-          label="Alerts"
-          value={3}
-          change="-5%"
-          changeType="negative"
-        />
-        <MetricCard
-          icon={TrendingUp}
-          iconClassName="bg-emerald-50 text-emerald-500"
-          label="Avg Recovery %"
-          value="62%"
-          change="+4%"
-          changeType="positive"
-        />
-      </div>
+      <DashboardMetricCards />
 
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

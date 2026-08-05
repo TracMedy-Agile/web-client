@@ -4,6 +4,8 @@ import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { toast } from 'sonner'
+import { apiForgotPassword } from '@/lib/api/auth'
 
 function TracmedyLogo() {
   return (
@@ -20,14 +22,18 @@ function EmailSentContent() {
   const searchParams = useSearchParams()
   const email = searchParams.get('email') ?? ''
 
-  const [resendState, setResendState] = useState<'idle' | 'loading' | 'sent'>('idle')
+  const [resendState, setResendState] = useState<'idle' | 'loading'>('idle')
 
   const handleResend = async () => {
+    if (!email) {
+      toast.error('Return to the forgot-password page and enter your email again.')
+      return
+    }
     setResendState('loading')
-    // TODO: call resend API with email
-    await new Promise((r) => setTimeout(r, 800))
-    setResendState('sent')
-    setTimeout(() => setResendState('idle'), 4000)
+    const result = await apiForgotPassword({ email })
+    setResendState('idle')
+    if (result.ok) toast.success('Password reset email resent successfully.')
+    else toast.error(result.message)
   }
 
   return (
@@ -78,32 +84,23 @@ function EmailSentContent() {
 
             {/* Resend email */}
             <div className="text-center mt-5">
-              {resendState === 'sent' ? (
-                <span className="text-sm text-green-600 font-medium flex items-center justify-center gap-1.5">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Email resent successfully
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResend}
-                  disabled={resendState === 'loading'}
-                  className="text-sm font-bold text-gray-800 hover:text-primary transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
-                >
-                  {resendState === 'loading' ? (
-                    <>
-                      <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" />
-                      </svg>
-                      Sending…
-                    </>
-                  ) : (
-                    'Resend Email'
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendState === 'loading'}
+                className="text-sm font-bold text-gray-800 hover:text-primary transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {resendState === 'loading' ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" />
+                    </svg>
+                    Sending…
+                  </>
+                ) : (
+                  'Resend Email'
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -113,7 +110,7 @@ function EmailSentContent() {
       <div className="hidden lg:flex lg:w-1/2 items-center justify-center relative overflow-hidden">
        <Image 
                 src="/sign-in-image.png" 
-                alt="sign in image" 
+                alt="Password reset email sent illustration"
                 fill
                 className="object-cover"
               />

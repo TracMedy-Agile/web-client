@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Download,
   Info,
   Loader2,
   Plus,
@@ -74,18 +73,18 @@ type SystemAlert = {
 const fallbackMeta: Meta = { page: 1, limit: 5, total: 0, totalPages: 1 };
 
 const utilizationClasses = {
-  orange: { bar: "bg-[#F59E0B]", text: "text-[#F59E0B]" },
-  red: { bar: "bg-[#EF4444]", text: "text-[#EF4444]" },
-  green: { bar: "bg-[#10B981]", text: "text-[#10B981]" },
-  gray: { bar: "bg-[#98A2B3]", text: "text-[#71809B]" },
+  orange: { bar: "bg-amber-500", text: "text-amber-500" },
+  red: { bar: "bg-red-500", text: "text-red-500" },
+  green: { bar: "bg-emerald-500", text: "text-emerald-500" },
+  gray: { bar: "bg-slate-400", text: "text-slate-500" },
 } as const;
 
 const statusClasses: Record<string, string> = {
-  available: "bg-[#DFFBF0] text-[#10B981]",
-  near_capacity: "bg-[#FFF4E5] text-[#F59E0B]",
-  full: "bg-[#FFECEC] text-[#EF4444]",
-  unavailable: "bg-[#F2F4F7] text-[#71809B]",
-  off_duty: "bg-[#F2F4F7] text-[#71809B]",
+  available: "bg-emerald-50 text-emerald-600",
+  near_capacity: "bg-amber-50 text-amber-600",
+  full: "bg-red-50 text-red-500",
+  unavailable: "bg-slate-100 text-slate-500",
+  off_duty: "bg-slate-100 text-slate-500",
 };
 
 function asRecord(value: unknown): ApiRecord | null {
@@ -231,18 +230,18 @@ function buildSystemAlerts(clinicians: ClinicianRow[], unassignedTotal: number) 
   const nextAlerts: SystemAlert[] = [];
 
   if (unassignedTotal > 0) {
-    nextAlerts.push({ tone: "critical", icon: AlertTriangle, message: `Critical: ${unassignedTotal} appointments require assignment`, className: "border-[#FF3B3B] bg-[#FFECEC] text-[#FF1F1F]" });
+    nextAlerts.push({ tone: "critical", icon: AlertTriangle, message: `Critical: ${unassignedTotal} appointments require assignment`, className: "border-red-400 bg-red-50 text-red-500" });
   }
 
   for (const clinician of clinicians) {
     if (clinician.status === "full" || clinician.status === "unavailable") {
-      nextAlerts.push({ tone: "critical", icon: AlertTriangle, message: `Critical: ${clinician.name} is unavailable today`, className: "border-[#FF3B3B] bg-[#FFECEC] text-[#FF1F1F]" });
+      nextAlerts.push({ tone: "critical", icon: AlertTriangle, message: `Critical: ${clinician.name} is unavailable today`, className: "border-red-400 bg-red-50 text-red-500" });
     }
     if (clinician.status === "near_capacity") {
-      nextAlerts.push({ tone: "warning", icon: Info, message: `Warning: ${clinician.name} is near capacity (${clinician.utilization}% utilized)`, className: "border-[#F59E0B] bg-[#FFF6E8] text-[#F59E0B]" });
+      nextAlerts.push({ tone: "warning", icon: Info, message: `Warning: ${clinician.name} is near capacity (${clinician.utilization}% utilized)`, className: "border-amber-400 bg-amber-50 text-amber-500" });
     }
     if (clinician.dailyCapacity > 0 && clinician.assignedAppointments > clinician.dailyCapacity) {
-      nextAlerts.push({ tone: "info", icon: Info, message: `Info: appointments assigned above capacity for ${clinician.name}`, className: "border-[#023E8A] bg-[#E7F2FF] text-[#023E8A]" });
+      nextAlerts.push({ tone: "info", icon: Info, message: `Info: appointments assigned above capacity for ${clinician.name}`, className: "border-primary bg-primary/10 text-primary" });
     }
   }
 
@@ -250,9 +249,9 @@ function buildSystemAlerts(clinicians: ClinicianRow[], unassignedTotal: number) 
 }
 
 function priorityClass(priority: string) {
-  if (priority === "high") return "bg-[#FFE8EC] text-[#FF3B3B]";
-  if (priority === "normal") return "bg-[#D9EAFF] text-[#023E8A]";
-  return "bg-[#F2F4F7] text-[#71809B]";
+  if (priority === "high") return "bg-red-50 text-red-500";
+  if (priority === "normal") return "bg-primary/10 text-primary";
+  return "bg-slate-100 text-slate-500";
 }
 
 async function getAccessToken(): Promise<string | null> {
@@ -281,11 +280,11 @@ function MetricCard({ metric }: { metric: { label: string; value: string; icon: 
   const Icon = metric.icon;
 
   return (
-    <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+    <Card className="rounded-xl border-border bg-card shadow-sm">
       <CardContent className="flex min-h-25 items-start justify-between p-4 sm:min-h-31.5 sm:p-5">
         <div className="self-end">
-          <p className="text-xs font-medium text-[#344054] sm:text-sm">{metric.label}</p>
-          <p className="mt-4 text-lg font-bold text-[#111827] sm:mt-6 sm:text-xl md:text-3xl">{metric.value}</p>
+          <p className="text-xs font-medium text-foreground/80 sm:text-sm">{metric.label}</p>
+          <p className="mt-4 text-lg font-bold text-foreground sm:mt-6 sm:text-xl md:text-3xl">{metric.value}</p>
         </div>
         <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9", metric.iconClass)}>
           <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -301,13 +300,13 @@ function SelectFilter({ value, onChange, options, compact = false }: { value: st
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-lg border border-[#DDE3EC] bg-white px-4 pr-9 text-sm font-medium text-[#71809B] outline-none hover:bg-[#F8FAFC]"
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-card px-4 pr-9 text-sm font-medium text-muted-foreground outline-none hover:bg-muted/30 focus:border-primary focus:ring-2 focus:ring-primary/10"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
+      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
     </div>
   );
 }
@@ -323,7 +322,7 @@ function TableSkeleton({ columns, rows }: { columns: number; rows: number }) {
         <TableRow key={row} className="border-0 hover:bg-transparent">
           {Array.from({ length: columns }, (_, column) => (
             <TableCell key={column} className="px-3 py-5 sm:px-6">
-              <div className="h-4 animate-pulse rounded bg-[#EEF2F7]" />
+              <div className="h-4 animate-pulse rounded bg-muted" />
             </TableCell>
           ))}
         </TableRow>
@@ -341,7 +340,7 @@ function PageButton({ page, active, onClick }: { page: number | string; active: 
       onClick={onClick}
       className={cn(
         "h-8 min-w-8 shrink-0 rounded-lg px-3 text-sm font-bold disabled:cursor-default disabled:opacity-100",
-        active ? "bg-[#023E8A] text-white hover:bg-[#023575]" : "text-[#111827] hover:bg-[#F3F4F6]",
+        active ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-foreground hover:bg-muted",
       )}
     >
       {page}
@@ -372,10 +371,7 @@ export default function AvailabilityManagementPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [clinicianFilter, setClinicianFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [clinicianPage, setClinicianPage] = useState(1);
-  const [pendingPage, setPendingPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoadingClinicians, setIsLoadingClinicians] = useState(true);
   const [isLoadingPending, setIsLoadingPending] = useState(true);
@@ -462,7 +458,7 @@ export default function AvailabilityManagementPage() {
       setPendingError("");
 
       try {
-        const payload = await getPendingUnassigned({ page: pendingPage, limit: 5, dateFrom, dateTo });
+        const payload = await getPendingUnassigned({ page: 1, limit: 5 });
 
         if (ignore) return;
         setPendingAssignments(getItems(payload).map(normalizePendingAssignment));
@@ -479,17 +475,17 @@ export default function AvailabilityManagementPage() {
     return () => {
       ignore = true;
     };
-  }, [dateFrom, dateTo, pendingPage, refreshKey]);
+  }, [refreshKey]);
 
   const metrics = useMemo(() => {
     const availableToday = allClinicians.filter((clinician) => clinician.status === "available").length;
     const nearCapacity = allClinicians.filter((clinician) => clinician.status === "near_capacity").length;
 
     return [
-      { label: "Total Clinicians", value: String(allClinicianMeta.total), icon: UsersRound, iconClass: "bg-[#E7F2FF] text-[#023E8A]" },
-      { label: "Available Today", value: String(availableToday), icon: BadgeCheck, iconClass: "bg-[#E7F2FF] text-[#023E8A]" },
-      { label: "Near Capacity", value: String(nearCapacity), icon: AlertTriangle, iconClass: "bg-[#FFF4E5] text-[#F59E0B]" },
-      { label: "Unassigned Appointments", value: String(pendingMeta.total), icon: CalendarDays, iconClass: "bg-[#E7F2FF] text-[#023E8A]" },
+      { label: "Total Clinicians", value: String(allClinicianMeta.total), icon: UsersRound, iconClass: "bg-primary/10 text-primary" },
+      { label: "Available Today", value: String(availableToday), icon: BadgeCheck, iconClass: "bg-primary/10 text-primary" },
+      { label: "Near Capacity", value: String(nearCapacity), icon: AlertTriangle, iconClass: "bg-amber-50 text-amber-500" },
+      { label: "Unassigned Appointments", value: String(pendingMeta.total), icon: CalendarDays, iconClass: "bg-primary/10 text-primary" },
     ];
   }, [allClinicianMeta.total, allClinicians, pendingMeta.total]);
 
@@ -522,36 +518,21 @@ export default function AvailabilityManagementPage() {
     setIsAssignDrawerOpen(true);
   };
 
-  const exportCsv = () => {
-    const rows = [["Clinician", "Speciality", "Schedule", "Capacity Utilization", "Status"]];
-    for (const clinician of clinicians) rows.push([clinician.name, clinician.department, clinician.schedule, `${clinician.utilization}%`, formatStatus(clinician.status)]);
-    const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "clinician-capacity.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const pendingStart = pendingAssignments.length > 0 ? (pendingMeta.page - 1) * pendingMeta.limit + 1 : 0;
-  const pendingEnd = (pendingMeta.page - 1) * pendingMeta.limit + pendingAssignments.length;
   const clinicianStart = clinicians.length > 0 ? (clinicianMeta.page - 1) * clinicianMeta.limit + 1 : 0;
   const clinicianEnd = (clinicianMeta.page - 1) * clinicianMeta.limit + clinicians.length;
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Availability Management</h1>
-          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-[#71809B]">
+          <h1 className="text-xl font-bold text-foreground md:text-2xl">Availability Management</h1>
+          <p className="mt-1.5 max-w-[440px] text-sm font-medium leading-5 text-muted-foreground">
             Scheduling operations center, keep appointments continuous when clinician availability changes
           </p>
         </div>
         <Button
           onClick={() => openScheduleModal()}
-          className="h-11 w-full rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575] sm:w-auto"
+          className="h-11 w-full rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground hover:bg-primary/90 sm:w-auto"
         >
           <Plus className="h-4 w-4" />
           Add Clinician Schedule
@@ -568,7 +549,7 @@ export default function AvailabilityManagementPage() {
 
       <section className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div>
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-[#71809B]">System Alerts</p>
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">System Alerts</p>
           <div className="space-y-2">
             {systemAlerts.map((alert) => {
               const Icon = alert.icon;
@@ -585,19 +566,19 @@ export default function AvailabilityManagementPage() {
           </div>
         </div>
 
-        <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+        <Card className="rounded-xl border-border bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 sm:p-5">
-            <CardTitle className="text-lg font-bold text-[#111827] sm:text-xl">Pending Assignment Queue</CardTitle>
-            <button type="button" onClick={() => router.push("/dashboard/appointments?status=pending")} className="text-sm font-bold text-[#023E8A]">View All</button>
+            <CardTitle className="text-lg font-bold text-foreground">Pending Assignment Queue</CardTitle>
+            <button type="button" onClick={() => router.push("/dashboard/appointments?status=pending")} className="text-sm font-bold text-primary">View All</button>
           </CardHeader>
           <CardContent className="px-4 pb-4 sm:px-5 sm:pb-5">
-            {pendingError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{pendingError}</span><button type="button" onClick={refreshAll} className="text-[#023E8A]">Retry</button></div> : null}
-            <Table className="min-w-205">
-              <TableHeader className="bg-[#EFF5FF]">
-                <TableRow className="border-0 hover:bg-[#EFF5FF]">
+            {pendingError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{pendingError}</span><button type="button" onClick={refreshAll} className="text-primary">Retry</button></div> : null}
+            <Table className="w-full table-fixed">
+              <TableHeader className="bg-primary/5">
+                <TableRow className="border-0 hover:bg-primary/5">
                   {["PATIENT NAME", "APPOINTMENT Type", "DEPARTMENT", "REQUESTED DATE", "PRIORITY", "STATUS", "ACTION"].map(
                     (heading) => (
-                      <TableHead key={heading} className="h-14 px-3 text-xs font-bold text-[#71809B]">
+                      <TableHead key={heading} className="h-14 px-3 text-xs font-bold text-muted-foreground">
                         {heading}
                       </TableHead>
                     ),
@@ -608,25 +589,25 @@ export default function AvailabilityManagementPage() {
                 {isLoadingPending ? <TableSkeleton columns={7} rows={2} /> : null}
                 {!isLoadingPending && pendingAssignments.map((row) => (
                   <TableRow key={row.id || row.patient} className="border-0 hover:bg-transparent">
-                    <TableCell className="px-3 py-4 sm:py-6 font-bold leading-5 text-[#111827]">{row.patient}</TableCell>
-                    <TableCell className="px-3 py-4 sm:py-6 text-[#344054]">{row.type}</TableCell>
-                    <TableCell className="px-3 py-4 sm:py-6 text-[#344054]">{row.department}</TableCell>
-                    <TableCell className="px-3 py-4 sm:py-6 font-bold text-[#344054]">{row.requestedDate}</TableCell>
+                    <TableCell className="px-3 py-4 font-bold leading-5 text-foreground sm:py-6">{row.patient}</TableCell>
+                    <TableCell className="px-3 py-4 text-foreground/80 sm:py-6">{row.type}</TableCell>
+                    <TableCell className="px-3 py-4 text-foreground/80 sm:py-6">{row.department}</TableCell>
+                    <TableCell className="px-3 py-4 font-bold text-foreground/80 sm:py-6">{row.requestedDate}</TableCell>
                     <TableCell className="px-3 py-4 sm:py-6">
                       <PriorityBadge priority={row.priority} />
                     </TableCell>
                     <TableCell className="px-3 py-4 sm:py-6">
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#F59E0B]">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#F59E0B]" />
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-500">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                         Pending
                       </span>
                     </TableCell>
                     <TableCell className="px-3 py-4 sm:py-6">
                       <div className="flex gap-3 text-sm font-bold">
-                        <button type="button" onClick={() => openAssignDrawer(row.id)} className="text-[#023E8A]">
+                        <button type="button" onClick={() => openAssignDrawer(row.id)} className="text-primary">
                           Assign
                         </button>
-                        <button type="button" onClick={() => router.push(`/dashboard/appointments/${encodeURIComponent(row.id)}`)} className="text-[#71809B]">
+                        <button type="button" onClick={() => router.push(`/dashboard/appointments/${encodeURIComponent(row.id)}`)} className="text-muted-foreground">
                           View
                         </button>
                       </div>
@@ -635,30 +616,23 @@ export default function AvailabilityManagementPage() {
                 ))}
                 {!isLoadingPending && pendingAssignments.length === 0 ? (
                   <TableRow className="border-0 hover:bg-transparent">
-                    <TableCell colSpan={7} className="px-3 py-8 text-center text-sm font-medium text-[#71809B]">No pending assignments found.</TableCell>
+                    <TableCell colSpan={7} className="px-3 py-8 text-center text-sm font-medium text-muted-foreground">No pending assignments found.</TableCell>
                   </TableRow>
                 ) : null}
               </TableBody>
             </Table>
-            <div className="mt-4 flex flex-col items-center gap-3 text-center text-xs font-medium text-[#71809B] sm:flex-row sm:items-center sm:justify-between sm:text-left sm:text-sm">
-              <p>Showing {pendingStart}-{pendingEnd} of {pendingMeta.total}</p>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" disabled={pendingPage <= 1 || isLoadingPending} onClick={() => setPendingPage((page) => Math.max(page - 1, 1))} className="h-8 w-8 rounded-lg border-[#E5E7EB] text-[#71809B]"><ChevronLeft className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" disabled={pendingPage >= pendingMeta.totalPages || isLoadingPending} onClick={() => setPendingPage((page) => Math.min(page + 1, pendingMeta.totalPages))} className="h-8 w-8 rounded-lg border-[#023E8A] text-[#023E8A]"><ChevronRight className="h-4 w-4" /></Button>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </section>
 
-      <Card className="rounded-none border-0 bg-white shadow-none">
-        <CardHeader className="border-b border-[#E5E7EB] p-4 sm:p-5 lg:p-6">
-          <CardTitle className="text-lg font-bold text-[#111827] sm:text-xl">Clinician Capacity &amp; Utilization</CardTitle>
+      <Card className="rounded-none border-0 bg-card shadow-none">
+        <CardHeader className="border-b border-border p-4 sm:p-5 lg:p-6">
+          <CardTitle className="text-lg font-bold text-foreground">Clinician Capacity &amp; Utilization</CardTitle>
         </CardHeader>
         <CardContent className="p-4 sm:p-5 lg:p-6">
           <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-center">
             <div className="relative w-full xl:max-w-91.5">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#71809B]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(event) => {
@@ -666,10 +640,10 @@ export default function AvailabilityManagementPage() {
                   setClinicianPage(1);
                 }}
                 placeholder="Search by name, ID, Department"
-                className="h-10 rounded-lg border-[#DDE3EC] bg-white pl-10 text-sm placeholder:text-[#71809B]"
+                className="h-10 rounded-lg border-border bg-card pl-10 text-sm placeholder:text-muted-foreground focus-visible:ring-primary/20"
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-3 xl:flex">
+            <div className="grid gap-3 sm:grid-cols-2 xl:flex">
               <SelectFilter
                 compact
                 value={statusFilter}
@@ -687,38 +661,15 @@ export default function AvailabilityManagementPage() {
                 ]}
               />
               <SelectFilter value={clinicianFilter} onChange={(value) => { setClinicianFilter(value); setClinicianPage(1); }} options={clinicianOptions} />
-              <div className="relative">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 justify-between rounded-lg border-[#DDE3EC] bg-white px-4 text-sm font-medium text-[#71809B] hover:bg-[#F8FAFC]"
-                >
-                  Date Range
-                  <CalendarDays className="h-4 w-4" />
-                </Button>
-                <div className="absolute inset-0 flex opacity-0">
-                  <input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPendingPage(1); }} className="w-1/2 cursor-pointer" />
-                  <input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPendingPage(1); }} className="w-1/2 cursor-pointer" />
-                </div>
-              </div>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={exportCsv}
-              className="ml-0 h-10 gap-2 px-2 text-sm font-medium text-[#111827] hover:bg-[#F8FAFC] xl:ml-auto"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
           </div>
 
-          {cliniciansError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{cliniciansError}</span><button type="button" onClick={refreshAll} className="text-[#023E8A]">Retry</button></div> : null}
-          <Table className="min-w-190">
-            <TableHeader className="bg-[#EFF5FF]">
-              <TableRow className="border-0 hover:bg-[#EFF5FF]">
+          {cliniciansError ? <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600"><span>{cliniciansError}</span><button type="button" onClick={refreshAll} className="text-primary">Retry</button></div> : null}
+          <Table className="w-full table-fixed">
+            <TableHeader className="bg-primary/5">
+              <TableRow className="border-0 hover:bg-primary/5">
                 {["CLINICIAN", "SPECIALITY", "SCHEDULE", "CAPACITY UTILIZATION", "STATUS", "ACTION"].map((heading) => (
-                  <TableHead key={heading} className="h-14 px-4 sm:px-6 text-xs font-bold text-[#71809B]">
+                  <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-muted-foreground sm:px-6">
                     {heading}
                   </TableHead>
                 ))}
@@ -731,12 +682,12 @@ export default function AvailabilityManagementPage() {
 
                 return (
                   <TableRow key={clinician.id || `${clinician.name}-${clinician.department}`} className="border-0 hover:bg-transparent">
-                    <TableCell className="px-6 py-5 font-medium text-[#344054]">{clinician.name}</TableCell>
-                    <TableCell className="px-6 py-5 text-[#344054]">{clinician.department}</TableCell>
-                    <TableCell className="px-6 py-5 text-[#344054]">{clinician.schedule}</TableCell>
+                    <TableCell className="px-6 py-5 font-medium text-foreground/80">{clinician.name}</TableCell>
+                    <TableCell className="px-6 py-5 text-foreground/80">{clinician.department}</TableCell>
+                    <TableCell className="px-6 py-5 text-foreground/80">{clinician.schedule}</TableCell>
                     <TableCell className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-45 overflow-hidden rounded-full bg-[#E5E7EB]">
+                        <div className="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-muted">
                           <div
                             className={cn("h-full rounded-full", utilizationClasses[tone].bar)}
                             style={{ width: `${clinician.utilization}%` }}
@@ -754,11 +705,8 @@ export default function AvailabilityManagementPage() {
                     </TableCell>
                     <TableCell className="px-6 py-5">
                       <div className="flex gap-4 text-sm font-bold">
-                        <button type="button" onClick={() => void openClinicianProfile(clinician.id)} className="text-[#023E8A]">
+                        <button type="button" onClick={() => void openClinicianProfile(clinician.id)} className="text-primary">
                           View
-                        </button>
-                        <button type="button" onClick={() => openScheduleModal(clinician.id)} className="text-[#71809B]">
-                          Schedule
                         </button>
                       </div>
                     </TableCell>
@@ -767,14 +715,14 @@ export default function AvailabilityManagementPage() {
               })}
               {!isLoadingClinicians && clinicians.length === 0 ? (
                 <TableRow className="border-0 hover:bg-transparent">
-                  <TableCell colSpan={6} className="px-6 py-8 text-center text-sm font-medium text-[#71809B]">No clinicians found.</TableCell>
+                  <TableCell colSpan={6} className="px-6 py-8 text-center text-sm font-medium text-muted-foreground">No clinicians found.</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
           </Table>
         </CardContent>
-        <div className="flex flex-col items-center gap-4 border-t border-[#E5E7EB] px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
-          <p className="text-center text-xs font-medium text-[#71809B] sm:text-sm lg:text-left">
+        <div className="flex flex-col items-center gap-4 border-t border-border px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+          <p className="text-center text-xs font-medium text-muted-foreground sm:text-sm lg:text-left">
             Showing {clinicianStart}-{clinicianEnd} of {clinicianMeta.total} Clinicians
           </p>
           <div className="flex max-w-full items-center gap-2 overflow-x-auto py-1">
@@ -783,7 +731,7 @@ export default function AvailabilityManagementPage() {
               size="icon"
               disabled={clinicianPage <= 1 || isLoadingClinicians}
               onClick={() => setClinicianPage((page) => Math.max(page - 1, 1))}
-              className="h-8 w-8 shrink-0 rounded-lg border-[#E5E7EB] text-[#71809B]"
+              className="h-8 w-8 shrink-0 rounded-lg border-border text-muted-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -799,7 +747,7 @@ export default function AvailabilityManagementPage() {
               size="icon"
               disabled={clinicianPage >= clinicianMeta.totalPages || isLoadingClinicians}
               onClick={() => setClinicianPage((page) => Math.min(page + 1, clinicianMeta.totalPages))}
-              className="h-8 w-8 shrink-0 rounded-lg border-[#023E8A] text-[#023E8A]"
+              className="h-8 w-8 shrink-0 rounded-lg border-primary text-primary"
             >
               {isLoadingClinicians ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
             </Button>

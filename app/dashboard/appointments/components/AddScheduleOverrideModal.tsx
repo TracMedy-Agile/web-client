@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { CalendarDays, Clock3, FileText, Loader2, X } from "lucide-react";
@@ -291,7 +291,7 @@ export default function AddScheduleOverrideModal({ isOpen, onClose, onSuccess }:
   const [selectedClinicianId, setSelectedClinicianId] = useState("");
   const [date, setDate] = useState(formatDateParam(new Date()));
   const [overrideType, setOverrideType] = useState<OverrideType>("unavailable");
-  const [scope, setScope] = useState<OverrideScope>("full_day");
+  const [scope, setScope] = useState<OverrideScope>("partial");
   const [startTime, setStartTime] = useState("08:00 AM");
   const [endTime, setEndTime] = useState("05:00 PM");
   const [reason, setReason] = useState("Vacation");
@@ -334,7 +334,7 @@ export default function AddScheduleOverrideModal({ isOpen, onClose, onSuccess }:
     setSelectedClinicianId("");
     setDate(formatDateParam(new Date()));
     setOverrideType("unavailable");
-    setScope("full_day");
+    setScope("partial");
     setStartTime("08:00 AM");
     setEndTime("05:00 PM");
     setReason("Vacation");
@@ -474,7 +474,8 @@ export default function AddScheduleOverrideModal({ isOpen, onClose, onSuccess }:
       onClose();
       onSuccess?.();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to apply override.");
+      const message = requestError instanceof Error ? requestError.message : "Failed to apply override.";
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }

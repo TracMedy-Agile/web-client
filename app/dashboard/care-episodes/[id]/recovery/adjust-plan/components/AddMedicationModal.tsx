@@ -15,13 +15,13 @@ export function AddMedicationModal({ open, onClose, onAdd }: { open: boolean; on
   const close = () => { setDraft(empty); onClose(); };
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
-      <DialogContent className="rounded-xl border-[#DDE3EC] bg-white sm:max-w-xl">
+      <DialogContent className="rounded-xl border-border bg-card sm:max-w-xl">
         <DialogHeader><DialogTitle>Add medication</DialogTitle><DialogDescription>Add the prescription details and patient instructions.</DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           {(["name", "dosage", "frequency", "duration"] as const).map((key) => <label key={key}><FieldLabel>{key}</FieldLabel><input className={fieldClass} value={draft[key]} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} /></label>)}
           <label className="sm:col-span-2"><FieldLabel>Instructions</FieldLabel><textarea className={areaClass} value={draft.instructions} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} /></label>
         </div>
-        <DialogFooter><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button type="button" disabled={!valid} className="bg-[#0753A5] text-white" onClick={() => { if (!valid) return; onAdd(draft); close(); }}>Add medication</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button type="button" disabled={!valid} className="bg-primary text-white" onClick={() => { if (!valid) return; onAdd(draft); close(); }}>Add medication</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

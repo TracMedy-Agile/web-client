@@ -3,127 +3,134 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ChevronLeft, Plus, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-import { ClipboardList, History, Phone, Plus, UsersRound } from "lucide-react";
+import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { getCareEpisodeById, type CareEpisodeDetail } from "@/lib/api/care-episodes";
-import { getCareTeam, removeClinicianFromTeam } from "@/lib/api/careTeamAndPlan.api";
-import { CareEpisodeSubHeader, SubHeaderSkeleton } from "../_shared/SubHeader";
-import { createPlaceholderEpisode, formatLongDate, getAvatarColor, getInitials } from "../_shared/utils";
-import type { CareTeamMember, ClinicianRole } from "../_shared/careTeamTypes";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import {
+  getCareEpisodeById,
+  removeCareTeamMember,
+  type CareEpisodeDetail,
+  type CareTeamMember,
+} from "@/lib/api/care-episodes";
+import { createPlaceholderEpisode, formatLongDate, getAvatarColor, getInitials, humanizeSlug } from "../_shared/utils";
 import { AddClinicianModal } from "./components/AddClinicianModal";
 
-const ROLE_BADGE_CLASSNAME: Record<ClinicianRole, string> = {
-  Doctor: "bg-[#E7F2FF] text-[#1769C2]",
-  Nurse: "bg-[#F1EAFE] text-[#7C3AED]",
-  Physiotherapist: "bg-[#E6FBF3] text-[#0F9D6C]",
-  Pharmacist: "bg-[#FFF4E5] text-[#B45309]",
-  Nutritionist: "bg-[#FFECEC] text-[#B91C1C]",
-};
+const HOSPITAL_ADMIN_ROLE = ["hospital_admin"] as const;
+function roleBadgeClass(role: string) {
+  const normalized = role.toLowerCase();
+  if (normalized.includes("nurse")) return "bg-violet-50 text-violet-600";
+  if (normalized.includes("pharm")) return "bg-amber-50 text-amber-700";
+  if (normalized.includes("physio")) return "bg-emerald-50 text-emerald-600";
+  return "bg-blue-50 text-blue-600";
+}
 
 export default function CareTeamPage() {
   const params = useParams<{ id: string }>();
   const episodeId = params?.id ?? "";
-
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
-  const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
   const [team, setTeam] = useState<CareTeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removingClinicianId, setRemovingClinicianId] = useState("");
+  const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
 
-  const loadTeam = () => {
-    getCareTeam(episodeId).then(setTeam);
-  };
+  async function refreshTeam() {
+    const detail = await getCareEpisodeById(episodeId);
+    setEpisode(detail);
+    setTeam(detail.careTeam);
+  }
+
+  async function removeMember(member: CareTeamMember) {
+    setRemovingClinicianId(member.clinicianId);
+    try {
+      await removeCareTeamMember(episodeId, member.clinicianId);
+      capturePostHogEvent("care_team_member_removed", {
+        episode_id: episodeId,
+        clinician_id: member.clinicianId,
+      });
+      await refreshTeam();
+      toast.success(`${member.name} was removed from the care team.`);
+    } catch (requestError) {
+      toast.error(requestError instanceof Error ? requestError.message : "Unable to remove this clinician.");
+    } finally {
+      setRemovingClinicianId("");
+    }
+  }
 
   useEffect(() => {
     if (!episodeId) return;
+    capturePostHogEvent("care_team_viewed", { episode_id: episodeId });
     let ignore = false;
     (async () => {
       setIsLoading(true);
-      const [episodeResult, teamResult] = await Promise.allSettled([getCareEpisodeById(episodeId), getCareTeam(episodeId)]);
-      if (ignore) return;
-      if (episodeResult.status === "fulfilled") setEpisode(episodeResult.value);
-      if (teamResult.status === "fulfilled") setTeam(teamResult.value);
-      setIsLoading(false);
+      setError("");
+      try {
+        const detail = await getCareEpisodeById(episodeId);
+        if (!ignore) {
+          setEpisode(detail);
+          setTeam(detail.careTeam);
+        }
+      } catch (requestError) {
+        if (!ignore) setError(requestError instanceof Error ? requestError.message : "Unable to load the care team.");
+      } finally {
+        if (!ignore) setIsLoading(false);
+      }
     })();
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [episodeId]);
 
-  const handleRemove = async (member: CareTeamMember) => {
-    setRemovingId(member.id);
-    try {
-      await removeClinicianFromTeam(episodeId, member.id);
-      setTeam((current) => current.filter((item) => item.id !== member.id));
-      toast.success(`${member.name} removed from the care team.`);
-    } catch (requestError) {
-      toast.error(requestError instanceof Error ? requestError.message : "Failed to remove clinician.");
-    } finally {
-      setRemovingId(null);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <SubHeaderSkeleton />
-      </div>
-    );
-  }
+  if (isLoading) return <div className="space-y-4"><div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" /><div className="h-7 w-40 animate-pulse rounded bg-slate-200" /><div className="h-64 animate-pulse rounded-xl bg-slate-100" /></div>;
 
   return (
     <div className="space-y-6">
-      <CareEpisodeSubHeader episodeId={episodeId} episode={displayEpisode} />
+      <Link href={`/dashboard/care-episodes/${episodeId}`} aria-label="Back to care episode" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">
+        <ChevronLeft className="h-4 w-4" />
+      </Link>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Care Team</h1>
-          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-[#71809B]">
+          <h1 className="text-lg font-bold text-slate-900 md:text-2xl">Care Team</h1>
+          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-slate-500">
             Shared ownership and coordinated care for {displayEpisode.patient?.name || "this patient"}.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline" className="h-11 gap-2 rounded-xl border-[#DDE3EC] bg-white px-5 text-sm font-bold text-[#111827] hover:bg-[#F8FAFC]">
-            <Link href={`/dashboard/care-episodes/${episodeId}/assessment-history`}>
-              <History className="h-4 w-4" />
-              Assessment History
-            </Link>
+        <RoleGate allowedRoles={HOSPITAL_ADMIN_ROLE}>
+          <Button
+            type="button"
+            onClick={() => {
+              capturePostHogEvent("add_clinician_opened", { episode_id: episodeId });
+              setIsModalOpen(true);
+            }}
+            className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Clinician
           </Button>
-          <Button asChild className="h-11 gap-2 rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575]">
-            <Link href={`/dashboard/care-episodes/${episodeId}/assessment`}>
-              <ClipboardList className="h-4 w-4" />
-              New Assessment
-            </Link>
-          </Button>
-        </div>
+        </RoleGate>
       </div>
 
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="mb-5 flex items-center justify-between border-b border-[#E5E7EB] pb-4">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-[#111827]">
-              <UsersRound className="h-4 w-4 text-[#023E8A]" />
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <UsersRound className="h-4 w-4 text-primary" />
               Clinicians
-              <span className="rounded-md bg-[#F3F4F6] px-2 py-0.5 text-xs font-bold text-[#71809B]">{team.length}</span>
+              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">{team.length}</span>
             </h2>
-            <Button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="h-10 gap-1.5 rounded-lg bg-[#023E8A] px-4 text-sm font-bold text-white hover:bg-[#023575]"
-            >
-              <Plus className="h-4 w-4" />
-              Add Clinician
-            </Button>
+            <span className="text-xs font-medium text-slate-500">Assigned clinicians from the episode record</span>
           </div>
 
-          {team.length === 0 ? (
-            <p className="py-10 text-center text-sm font-medium text-[#71809B]">No clinicians assigned to this care team yet.</p>
-          ) : (
-            <div className="divide-y divide-[#E5E7EB]">
+          {error ? <p className="py-10 text-center text-sm font-medium text-red-600">{error}</p> : null}
+          {!error && team.length === 0 ? (
+            <p className="py-10 text-center text-sm font-medium text-slate-500">No clinicians are assigned to this care team yet.</p>
+          ) : null}
+          {!error && team.length > 0 ? (
+            <div className="divide-y divide-border">
               {team.map((member) => (
                 <div key={member.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
@@ -135,40 +142,39 @@ export default function CareTeamPage() {
                     </span>
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-[#111827]">{member.name}</span>
-                        <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", ROLE_BADGE_CLASSNAME[member.role])}>
-                          {member.role}
+                        <span className="font-bold text-slate-900">{member.name}</span>
+                        <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", roleBadgeClass(member.role))}>
+                          {humanizeSlug(member.role) || "Clinician"}
                         </span>
                       </div>
-                      <p className="mt-0.5 text-sm font-medium text-[#71809B]">
-                        {member.roleOnTeam} · {member.specialty}
-                      </p>
-                      <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-[#71809B]">
-                        <span className="inline-flex items-center gap-1.5 text-[#023E8A]">
-                          <Phone className="h-3.5 w-3.5" />
-                          {member.phone}
-                        </span>
-                        <span>Added {formatLongDate(member.dateAdded)}</span>
-                      </p>
+                      <p className="mt-1 text-xs font-medium text-slate-500">Added {formatLongDate(member.assignedAt)}</p>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => handleRemove(member)}
-                    disabled={removingId === member.id}
-                    className="h-9 self-start px-3 text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-600 sm:self-center"
-                  >
-                    {removingId === member.id ? "Removing..." : "Remove"}
-                  </Button>
+                  <RoleGate allowedRoles={HOSPITAL_ADMIN_ROLE}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={removingClinicianId === member.clinicianId}
+                      onClick={() => void removeMember(member)}
+                      className="h-9 self-start px-3 text-sm font-bold text-red-600 sm:self-center"
+                    >
+                      {removingClinicianId === member.clinicianId ? "Removing..." : "Remove"}
+                    </Button>
+                  </RoleGate>
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
-      <AddClinicianModal open={isModalOpen} onOpenChange={setIsModalOpen} episodeId={episodeId} onAdded={loadTeam} />
+      <AddClinicianModal
+        open={isModalOpen}
+        onOpenChange={setIsModalOpen}
+        episodeId={episodeId}
+        existingClinicianIds={team.map((member) => member.clinicianId)}
+        onAdded={refreshTeam}
+      />
     </div>
   );
 }

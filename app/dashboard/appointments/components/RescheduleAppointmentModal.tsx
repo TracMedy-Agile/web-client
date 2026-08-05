@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   Building2,
   CalendarDays,
@@ -14,13 +15,20 @@ import { rescheduleAppointment } from "@/lib/api/appointments";
 import { cn } from "@/lib/utils";
 
 type AppointmentType = "physical" | "teleconsultation";
-type QuickSlot = "oct-15-1130" | "oct-16-0900" | "oct-16-1415";
+type QuickSlotOption = {
+  value: string;
+  date: string;
+  time: string;
+  inputDate: string;
+};
 
 type RescheduleAppointmentModalProps = {
   isOpen: boolean;
   appointmentId?: string;
   patientName?: string;
   appointmentReason?: string;
+  appointmentDate?: string;
+  appointmentTime?: string;
   hospitalId?: string;
   onClose: () => void;
   onSuccess?: () => void;
@@ -41,11 +49,66 @@ const appointmentTypes = [
   },
 ];
 
-const quickSlots = [
-  { value: "oct-15-1130" as const, date: "OCT 15", time: "11:30 AM" },
-  { value: "oct-16-0900" as const, date: "OCT 16", time: "09:00 AM" },
-  { value: "oct-16-1415" as const, date: "OCT 16", time: "02:15 PM" },
-];
+function toInputDate(value: string) {
+  const isoMatch = value.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+  const displayMatch = value.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (displayMatch) {
+    return `${displayMatch[3]}-${displayMatch[1].padStart(2, "0")}-${displayMatch[2].padStart(2, "0")}`;
+  }
+
+  const dateOnlyValue = value.split(/\s+-\s+/)[0]?.trim() ?? value;
+  const parsed = Date.parse(dateOnlyValue);
+  const date = Number.isFinite(parsed) ? new Date(parsed) : new Date();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function toInputTime(value: string) {
+  const displayMatch = value.match(/(\d{1,2}):(\d{2})\s*(?:AM|PM)/i);
+  if (displayMatch) return formatTimeForApi(displayMatch[0]);
+
+  const parsed = Date.parse(value);
+  if (Number.isFinite(parsed)) {
+    const date = new Date(parsed);
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  const twentyFourHourMatch = value.match(/^(\d{1,2}):(\d{2})/);
+  if (twentyFourHourMatch) {
+    return `${twentyFourHourMatch[1].padStart(2, "0")}:${twentyFourHourMatch[2]}`;
+  }
+
+  return "11:30";
+}
+function getPatientInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase() || "PT";
+}
+
+function buildQuickSlots(value: string): QuickSlotOption[] {
+  const parsed = Date.parse(toInputDate(value));
+  const baseDate = Number.isFinite(parsed) ? new Date(parsed) : new Date();
+  baseDate.setHours(12, 0, 0, 0);
+
+  return [
+    { dayOffset: 0, time: "11:30 AM" },
+    { dayOffset: 1, time: "09:00 AM" },
+    { dayOffset: 1, time: "02:15 PM" },
+  ].map(({ dayOffset, time }) => {
+    const date = new Date(baseDate);
+    date.setDate(baseDate.getDate() + dayOffset);
+    const inputDate = toInputDate(date.toISOString());
+    return {
+      value: `${inputDate}-${time}`,
+      date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date).toUpperCase(),
+      time,
+      inputDate,
+    };
+  });
+}
 
 const inputClass =
   "h-14 w-full rounded-lg border border-transparent bg-[#F3F4F6] px-4 text-base font-medium text-[#111827] outline-none transition-colors placeholder:text-[#71809B] focus:border-[#023E8A]/40 focus:bg-white";
@@ -92,7 +155,7 @@ function QuickSlotButton({
   active,
   onClick,
 }: {
-  slot: (typeof quickSlots)[number];
+  slot: QuickSlotOption;
   active: boolean;
   onClick: () => void;
 }) {
@@ -139,24 +202,30 @@ export default function RescheduleAppointmentModal({
   isOpen,
   appointmentId,
   patientName = "Patient",
-  appointmentReason = "Appointment",
+  appointmentDate = "",
+  appointmentTime = "",
   hospitalId = "--",
   onClose,
   onSuccess,
 }: RescheduleAppointmentModalProps) {
+  const quickSlots = useMemo(() => buildQuickSlots(appointmentDate), [appointmentDate]);
+  const patientInitials = getPatientInitials(patientName);
   const [appointmentType, setAppointmentType] = useState<AppointmentType>("physical");
-  const [quickSlot, setQuickSlot] = useState<QuickSlot>("oct-16-0900");
-  const [selectedDate, setSelectedDate] = useState("12/05/2026");
-  const [selectedTime, setSelectedTime] = useState("11:30 AM");
+  const [quickSlot, setQuickSlot] = useState(() => quickSlots[0]?.value ?? "");
+  const [selectedDate, setSelectedDate] = useState(() => toInputDate(appointmentDate));
+  const [selectedTime, setSelectedTime] = useState(() => toInputTime(appointmentTime || appointmentDate));
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
+
 
   const handleSubmit = async () => {
     if (!appointmentId || isSubmitting) return;
+    if (!selectedDate || !selectedTime) {
+      toast.error("Select a new appointment date and time.");
+      return;
+    }
 
     setIsSubmitting(true);
-    setError("");
 
     try {
       await rescheduleAppointment(appointmentId, {
@@ -167,7 +236,8 @@ export default function RescheduleAppointmentModal({
       onSuccess?.();
       onClose();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Failed to reschedule appointment.");
+      const message = requestError instanceof Error ? requestError.message : "Failed to reschedule appointment.";
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -202,11 +272,10 @@ export default function RescheduleAppointmentModal({
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <div className="flex h-[70px] w-[70px] shrink-0 items-center justify-center rounded-full bg-[#023E8A] text-lg font-bold md:text-2xl text-white">
-                  AO
+                  {patientInitials}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-[#111827]">{patientName}</h3>
-                  <p className="mt-2 text-sm font-medium text-[#344054]">{appointmentReason}</p>
                 </div>
               </div>
               <div className="sm:text-left">
@@ -217,21 +286,42 @@ export default function RescheduleAppointmentModal({
               </div>
             </div>
           </section>
-
-          {error ? (
-            <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
-              {error}
+          <section className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h3 className="text-base font-bold text-[#344054]">Alternative Quick Slots</h3>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#023E8A]">
+                Recommended
+              </span>
             </div>
-          ) : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {quickSlots.map((slot) => (
+                <QuickSlotButton
+                  key={slot.value}
+                  slot={slot}
+                  active={quickSlot === slot.value}
+                  onClick={() => {
+                    setQuickSlot(slot.value);
+                    setSelectedDate(slot.inputDate);
+                    setSelectedTime(toInputTime(slot.time));
+                  }}
+                />
+              ))}
+            </div>
+          </section>
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
             <label className="block">
               <FieldLabel>Select New Date</FieldLabel>
               <span className="relative block">
                 <input
+                  type="date"
                   value={selectedDate}
                   onChange={(event) => setSelectedDate(event.target.value)}
-                  className={cn(inputClass, "pr-12")}
+                  aria-label="Select new appointment date"
+                  className={cn(
+                    inputClass,
+                    "relative pr-12 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-12 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
+                  )}
                 />
                 <CalendarDays className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#1473E6]" />
               </span>
@@ -241,9 +331,15 @@ export default function RescheduleAppointmentModal({
               <FieldLabel>Select New Time</FieldLabel>
               <span className="relative block">
                 <input
+                  type="time"
                   value={selectedTime}
                   onChange={(event) => setSelectedTime(event.target.value)}
-                  className={cn(inputClass, "pr-12")}
+                  step={900}
+                  aria-label="Select new appointment time"
+                  className={cn(
+                    inputClass,
+                    "relative pr-12 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-y-0 [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-12 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0",
+                  )}
                 />
                 <Clock3 className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#1473E6]" />
               </span>
@@ -264,28 +360,6 @@ export default function RescheduleAppointmentModal({
             </div>
           </section>
 
-          <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h3 className="text-base font-bold text-[#344054]">Alternative Quick Slots</h3>
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#023E8A]">
-                Recommended
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {quickSlots.map((slot) => (
-                <QuickSlotButton
-                  key={slot.value}
-                  slot={slot}
-                  active={quickSlot === slot.value}
-                  onClick={() => {
-                    setQuickSlot(slot.value);
-                    setSelectedDate(slot.date.replace("OCT ", "10/") + "/2026");
-                    setSelectedTime(slot.time);
-                  }}
-                />
-              ))}
-            </div>
-          </section>
 
           <section className="mt-8">
             <div className="mb-3 flex items-center justify-between gap-4">
@@ -315,7 +389,7 @@ export default function RescheduleAppointmentModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || !appointmentId}
+            disabled={isSubmitting || !appointmentId || !selectedDate || !selectedTime}
             className="h-12 rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#023575] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? "Rescheduling..." : "Confirm Reschedule"}

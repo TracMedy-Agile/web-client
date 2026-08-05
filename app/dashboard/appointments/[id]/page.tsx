@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,15 +26,20 @@ import {
   X,
 } from "lucide-react";
 import {
-  checkInAppointment,
+  completeAppointment,
   confirmAppointment,
   getAppointmentById,
   markNoShow,
 } from "@/lib/api/appointments";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { RoleGate } from "@/components/auth/RoleGate";
 import { cn } from "@/lib/utils";
 import CancelAppointmentModal from "../components/CancelAppointmentModal";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
+import { AppointmentMessageModal } from "../components/AppointmentMessageModal";
 
+const STAFF_ROLES = ["clinician", "hospital_admin"] as const;
+const CLINICIAN_ROLE = ["clinician"] as const;
 type ApiRecord = Record<string, unknown>;
 
 type ClinicianOption = {
@@ -382,12 +387,11 @@ export default function AppointmentDetailsPage() {
   const [appointment, setAppointment] = useState<AppointmentDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [actionError, setActionError] = useState("");
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [messageMode, setMessageMode] = useState<"message" | "update" | null>(null);
   const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
   const [isDoctorSelectorOpen, setIsDoctorSelectorOpen] = useState(false);
   const [isLoadingClinicians, setIsLoadingClinicians] = useState(false);
@@ -448,15 +452,12 @@ export default function AppointmentDetailsPage() {
 
   const runAction = async (label: string, action: () => Promise<unknown>) => {
     setActiveAction(label);
-    setActionError("");
-    setNotice("");
-
     try {
       await action();
-      setNotice(`${label} successfully.`);
+      toast.success(`${label} successfully.`);
       await loadAppointment();
     } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : `${label} failed.`);
+      toast.error(requestError instanceof Error ? requestError.message : `${label} failed.`);
     } finally {
       setActiveAction(null);
       setIsActionsOpen(false);
@@ -523,7 +524,6 @@ export default function AppointmentDetailsPage() {
     }
 
     toast.success("Doctor assigned successfully.");
-    setNotice("Doctor assigned successfully.");
     setIsDoctorSelectorOpen(false);
     setClinicianUnavailableError("");
     setPendingClinicianId(null);
@@ -548,7 +548,6 @@ export default function AppointmentDetailsPage() {
     }
 
     toast.success("Doctor assigned successfully.");
-    setNotice("Doctor assigned successfully.");
     setIsDoctorSelectorOpen(false);
     setClinicianUnavailableError("");
     setPendingClinicianId(null);
@@ -600,8 +599,17 @@ export default function AppointmentDetailsPage() {
               </button>
             ) : null}
             {canComplete ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => runAction("Appointment marked as completed", () => checkInAppointment(appointmentId))} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
-                {activeAction === "Appointment marked as completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              <button
+                type="button"
+                disabled={!appointment || Boolean(activeAction)}
+                onClick={() => void runAction("Appointment completed", async () => {
+                  const result = await completeAppointment(appointmentId);
+                  capturePostHogEvent("appointment_completed", { appointment_id: appointmentId });
+                  return result;
+                })}
+                className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {activeAction === "Appointment completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Mark as Completed
               </button>
             ) : null}
@@ -634,9 +642,6 @@ export default function AppointmentDetailsPage() {
             ) : null}
           </div>
         </div>
-
-        {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600">{notice}</div> : null}
-        {actionError ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{actionError}</div> : null}
 
         {isLoading ? <DetailsSkeleton /> : null}
 
@@ -721,13 +726,15 @@ export default function AppointmentDetailsPage() {
                           {appointment.clinicianId ? resolvedDoctorName ?? "Loading..." : appointment.service.assignedDoctor}
                         </span>
                         {!appointment.clinicianId ? (
-                          <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
-                            {isLoadingClinicians ? "Loading..." : "Assign"}
-                          </button>
+                          <RoleGate allowedRoles={STAFF_ROLES}>
+                            <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
+                              {isLoadingClinicians ? "Loading..." : "Assign"}
+                            </button>
+                          </RoleGate>
                         ) : null}
                       </div>
                       {isDoctorSelectorOpen && !appointment.clinicianId ? (
-                        <div className="absolute left-0 right-0 top-[52px] z-20 rounded-xl border border-border bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.16)]">
+                        <RoleGate allowedRoles={STAFF_ROLES}><div className="absolute left-0 right-0 top-[52px] z-20 rounded-xl border border-border bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.16)]">
                           <label className="sr-only" htmlFor="clinician-select">Select clinician</label>
                           <div className="relative">
                             <select
@@ -746,7 +753,7 @@ export default function AppointmentDetailsPage() {
                             </select>
                             <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
                           </div>
-                        </div>
+                        </div></RoleGate>
                       ) : null}
                     </div>
                     {assignmentError ? <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500"><AlertCircle className="h-4 w-4" />{assignmentError}</p> : null}
@@ -796,8 +803,10 @@ export default function AppointmentDetailsPage() {
                   <p className="mt-5 text-xs font-bold uppercase text-[#344054]">{appointment.communication.timestamp}</p>
                 </div>
                 <div className="mt-6 space-y-5">
-                  <button type="button" className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
-                  <button type="button" className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
+                  <RoleGate allowedRoles={CLINICIAN_ROLE}>
+                    <button type="button" onClick={() => setMessageMode("message")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
+                  </RoleGate>
+                  <button type="button" onClick={() => setMessageMode("update")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
                 </div>
               </Card>
             </div>
@@ -806,14 +815,17 @@ export default function AppointmentDetailsPage() {
       </div>
 
       <RescheduleAppointmentModal
+        key={isRescheduleOpen ? "reschedule-open" : "reschedule-closed"}
         isOpen={isRescheduleOpen}
         appointmentId={appointment?.id ?? appointmentId}
         patientName={appointment?.patient.name}
         appointmentReason={appointment?.notes.reason}
+        appointmentDate={appointment?.details.dateTime}
+        appointmentTime={appointment?.details.dateTime}
         hospitalId={appointment?.patient.hospitalId}
         onClose={() => setIsRescheduleOpen(false)}
         onSuccess={() => {
-          setNotice("Appointment rescheduled successfully.");
+          toast.success("Appointment rescheduled successfully.");
           void loadAppointment();
         }}
       />
@@ -822,7 +834,21 @@ export default function AppointmentDetailsPage() {
         appointmentId={appointment?.id ?? appointmentId}
         onClose={() => setIsCancelOpen(false)}
         onSuccess={() => {
-          setNotice("Appointment cancelled successfully.");
+          toast.success("Appointment cancelled successfully.");
+          void loadAppointment();
+        }}
+      />
+      <AppointmentMessageModal
+        key={messageMode ?? "closed"}
+        open={Boolean(messageMode)}
+        appointmentId={appointment?.id ?? appointmentId}
+        patientName={appointment?.patient.name ?? "Patient"}
+        title={messageMode === "update" ? "Send appointment update" : "Send message"}
+        initialContent={messageMode === "update" ? `Update for appointment ${appointment?.appointmentCode ?? appointmentId}: ` : ""}
+        onOpenChange={(open) => { if (!open) setMessageMode(null); }}
+        onSent={() => {
+          capturePostHogEvent("appointment_message_sent", { appointment_id: appointmentId, message_type: messageMode });
+          toast.success("Message sent successfully.");
           void loadAppointment();
         }}
       />

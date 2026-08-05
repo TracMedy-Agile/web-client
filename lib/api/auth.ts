@@ -88,7 +88,7 @@ export async function storeTokens(tokens: { accessToken: string; refreshToken: s
 }
 
 export async function logout() {
-  await fetch('/api/auth/set-tokens', { method: 'DELETE', credentials: 'include' })
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 }
 
 export const apiSubmitWaitlist = (data: { fullName: string; email: string; phone: string }) =>

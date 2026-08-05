@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
-  ClipboardList,
   Mail,
   MessageSquare,
   Minus,
@@ -21,7 +20,6 @@ import {
   Pill,
   Stethoscope,
   TrendingUp,
-  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -33,6 +31,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -42,28 +41,34 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   asRecord,
   closeCareEpisode,
   getCareEpisodeById,
+  getCareEpisodeDailyVitals,
+  getCareEpisodeMedicationAdherence,
   getCareEpisodeTimelinePage,
   getNumber,
   getRecordArray,
   getString,
   type ApiRecord,
   type CareEpisodeDetail,
+  type DailyVitalsRecord,
+  type MedicationAdherenceRecord,
 } from "@/lib/api/care-episodes";
-import { humanizeSlug } from "./_shared/utils";
-import { CloseCareEpisodeModal, type CloseCareEpisodePayload } from "./components/CloseCareEpisodeModal";
+import {
+  BIOMETRIC_METRICS,
+  BIOMETRIC_RANGES,
+  buildBiometricData,
+  humanizeSlug,
+  type BiometricMetric,
+  type BiometricPoint,
+  type BiometricRange,
+} from "./_shared/utils";
+import { CloseCareEpisodeModal, type CloseCareEpisodePayload, type EpisodeOutcomeSummary } from "./components/CloseCareEpisodeModal";
 
-type BiometricMetric = "Blood Pressure" | "Heart Rate" | "SpO2";
-type BiometricRange = "7d" | "14d" | "30d";
-
-type BiometricPoint = {
-  date: string;
-  value: number;
-  abnormal: boolean;
-};
+const CLINICIAN_ROLE = ["clinician"] as const;
 
 type TimelineEntry = {
   id: string;
@@ -75,18 +80,6 @@ type TimelineEntry = {
   time: string;
   category: "critical" | "completed" | "clinician" | "missed";
 };
-
-const BIOMETRIC_METRICS: { label: BiometricMetric; unit: string; base: number; spread: number }[] = [
-  { label: "Blood Pressure", unit: "MMHG", base: 118, spread: 18 },
-  { label: "Heart Rate", unit: "BPM", base: 78, spread: 14 },
-  { label: "SpO2", unit: "%", base: 96, spread: 3 },
-];
-
-const BIOMETRIC_RANGES: { key: BiometricRange; days: number }[] = [
-  { key: "7d", days: 7 },
-  { key: "14d", days: 14 },
-  { key: "30d", days: 30 },
-];
 
 function clamp(value: number, min = 0, max = 100) {
   return Math.min(max, Math.max(min, value));
@@ -105,10 +98,25 @@ function getProgressPercent(dayStart: number | null, expectedDurationDays: numbe
 
 function getHeaderRiskBadge(riskCategory: string | null) {
   const value = (riskCategory ?? "").toLowerCase();
-  if (value === "high") return { label: "High", className: "bg-[#FFECEC] text-[#EF4444]" };
-  if (value === "medium") return { label: "Moderate", className: "bg-[#FFF4E5] text-[#F59E0B]" };
-  if (value === "low") return { label: "Low", className: "bg-[#DFFBF0] text-[#10B981]" };
-  return { label: "Unrated", className: "bg-[#F3F4F6] text-[#71809B]" };
+  if (value === "critical") return { label: "Critical", className: "bg-red-50 text-red-700" };
+  if (value === "high") return { label: "High", className: "bg-red-50 text-red-500" };
+  if (value === "medium") return { label: "Moderate", className: "bg-amber-50 text-amber-500" };
+  if (value === "low") return { label: "Low", className: "bg-emerald-50 text-emerald-500" };
+  return { label: "Unrated", className: "bg-slate-100 text-slate-500" };
+}
+
+function getRiskFactors(riskData: ApiRecord | null) {
+  if (!riskData) return [];
+  for (const key of ["triggerFactors", "contributingFactors", "riskFactors", "factors"]) {
+    const value = riskData[key];
+    if (!Array.isArray(value)) continue;
+    return value.map((item) => {
+      if (typeof item === "string") return item;
+      const record = asRecord(item);
+      return getString(record, ["label", "reason", "description", "name"]);
+    }).filter(Boolean);
+  }
+  return [];
 }
 
 function formatLongDate(value: string) {
@@ -132,17 +140,17 @@ function getPercentField(record: ApiRecord | null, keys: string[]): number | nul
 function getTrendMeta(trend: string | null) {
   const value = (trend ?? "").toLowerCase();
   if (value.includes("up") || value.includes("increas") || value.includes("improv")) {
-    return { label: "Increase", className: "bg-[#DFFBF0] text-[#10B981]", Icon: ArrowUp };
+    return { label: "Increase", className: "bg-emerald-50 text-emerald-500", Icon: ArrowUp };
   }
   if (value.includes("down") || value.includes("decreas") || value.includes("declin") || value.includes("worsen")) {
-    return { label: "Decrease", className: "bg-[#FFECEC] text-[#EF4444]", Icon: ArrowDown };
+    return { label: "Decrease", className: "bg-red-50 text-red-500", Icon: ArrowDown };
   }
-  return { label: "Stable", className: "bg-[#E7F2FF] text-[#023E8A]", Icon: Minus };
+  return { label: "Stable", className: "bg-blue-50 text-primary", Icon: Minus };
 }
 
 function isTaskMissed(task: ApiRecord) {
   const status = getString(task, ["status"]).toLowerCase();
-  return status === "missed" || task.completed === false || task.missed === true;
+  return status === "missed" || status === "overdue" || task.missed === true;
 }
 
 function isTaskCompleted(task: ApiRecord) {
@@ -154,35 +162,6 @@ function isMedicationAdherent(medication: ApiRecord) {
   const status = getString(medication, ["status", "adherenceStatus"]).toLowerCase();
   if (status) return status === "taken" || status === "adherent" || status === "completed";
   return medication.adherent === true || medication.taken === true;
-}
-
-function seededRandom(seed: number) {
-  const value = Math.sin(seed) * 10000;
-  return value - Math.floor(value);
-}
-
-function buildBiometricData(metric: BiometricMetric, range: BiometricRange, episodeId: string): BiometricPoint[] {
-  const config = BIOMETRIC_METRICS.find((item) => item.label === metric) ?? BIOMETRIC_METRICS[0];
-  const days = BIOMETRIC_RANGES.find((item) => item.key === range)?.days ?? 7;
-  const seedBase = episodeId.length + metric.length + range.length;
-  const points: BiometricPoint[] = [];
-  const abnormalIndex = Math.floor(seededRandom(seedBase) * days);
-
-  for (let index = 0; index < days; index += 1) {
-    const noise = (seededRandom(seedBase + index * 3.17) - 0.5) * config.spread;
-    const wave = Math.sin(index / 2.4) * (config.spread / 2.2);
-    const value = Math.round(config.base + wave + noise);
-    const date = new Date();
-    date.setDate(date.getDate() - (days - index - 1));
-
-    points.push({
-      date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date).toUpperCase(),
-      value,
-      abnormal: index === abnormalIndex,
-    });
-  }
-
-  return points;
 }
 
 function getTimelineCategory(event: ApiRecord): TimelineEntry["category"] {
@@ -212,17 +191,17 @@ function normalizeTimelineEntry(event: ApiRecord, index: number): TimelineEntry 
 }
 
 const TIMELINE_ICON: Record<TimelineEntry["category"], { Icon: typeof AlertCircle; className: string }> = {
-  critical: { Icon: AlertCircle, className: "bg-[#FFECEC] text-[#EF4444]" },
-  completed: { Icon: CheckCircle2, className: "bg-[#DFFBF0] text-[#10B981]" },
-  clinician: { Icon: Stethoscope, className: "bg-[#E7F2FF] text-[#023E8A]" },
-  missed: { Icon: Pill, className: "bg-[#FFF4E5] text-[#F59E0B]" },
+  critical: { Icon: AlertCircle, className: "bg-red-50 text-red-500" },
+  completed: { Icon: CheckCircle2, className: "bg-emerald-50 text-emerald-500" },
+  clinician: { Icon: Stethoscope, className: "bg-blue-50 text-primary" },
+  missed: { Icon: Pill, className: "bg-amber-50 text-amber-500" },
 };
 
 const TIMELINE_BADGE: Record<TimelineEntry["category"], string> = {
-  critical: "bg-[#FFECEC] text-[#EF4444]",
-  completed: "bg-[#DFFBF0] text-[#10B981]",
-  clinician: "bg-[#E7F2FF] text-[#023E8A]",
-  missed: "bg-[#FFF4E5] text-[#F59E0B]",
+  critical: "bg-red-50 text-red-500",
+  completed: "bg-emerald-50 text-emerald-500",
+  clinician: "bg-blue-50 text-primary",
+  missed: "bg-amber-50 text-amber-500",
 };
 
 function CircularProgress({
@@ -231,7 +210,7 @@ function CircularProgress({
   progressColor,
   size = 128,
 }: {
-  percent: number;
+  percent: number | null;
   trackColor: string;
   progressColor: string;
   size?: number;
@@ -239,7 +218,7 @@ function CircularProgress({
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (clamp(percent) / 100) * circumference;
+  const offset = circumference - (clamp(percent ?? 0) / 100) * circumference;
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -258,7 +237,7 @@ function CircularProgress({
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-bold text-[#111827]">{percent}%</span>
+        <span className="text-2xl font-bold text-slate-900">{percent === null ? "--" : percent + "%"}</span>
       </div>
     </div>
   );
@@ -278,10 +257,10 @@ function MetricCard({
   children?: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+    <Card className="rounded-xl border-border bg-white shadow-sm">
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between">
-          <p className="text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">{label}</p>
+          <p className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">{label}</p>
           {trend ? (
             <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold", trend.className)}>
               <trend.Icon className="h-3 w-3" />
@@ -289,8 +268,8 @@ function MetricCard({
             </span>
           ) : null}
         </div>
-        <p className="mt-3 text-2xl font-bold text-[#111827] sm:text-3xl">
-          {isLoading ? <span className="inline-block h-7 w-16 animate-pulse rounded bg-[#F3F4F6]" /> : value}
+        <p className="mt-3 text-2xl font-bold text-slate-900 sm:text-3xl">
+          {isLoading ? <span className="inline-block h-7 w-16 animate-pulse rounded bg-slate-100" /> : value}
         </p>
         {children}
       </CardContent>
@@ -301,32 +280,32 @@ function MetricCard({
 function DetailSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-5 w-40 animate-pulse rounded bg-[#E5E7EB]" />
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <div className="h-5 w-40 animate-pulse rounded bg-slate-200" />
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="flex items-start gap-4">
-            <div className="h-20 w-20 shrink-0 animate-pulse rounded-full bg-[#F3F4F6]" />
+            <div className="h-20 w-20 shrink-0 animate-pulse rounded-full bg-slate-100" />
             <div className="flex-1 space-y-3">
-              <div className="h-5 w-52 animate-pulse rounded bg-[#F3F4F6]" />
-              <div className="h-4 w-72 animate-pulse rounded bg-[#F3F4F6]" />
-              <div className="h-4 w-64 animate-pulse rounded bg-[#F3F4F6]" />
+              <div className="h-5 w-52 animate-pulse rounded bg-slate-100" />
+              <div className="h-4 w-72 animate-pulse rounded bg-slate-100" />
+              <div className="h-4 w-64 animate-pulse rounded bg-slate-100" />
             </div>
           </div>
         </CardContent>
       </Card>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card key={index} className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="p-5">
-              <div className="h-4 w-24 animate-pulse rounded bg-[#F3F4F6]" />
-              <div className="mt-4 h-7 w-16 animate-pulse rounded bg-[#F3F4F6]" />
+              <div className="h-4 w-24 animate-pulse rounded bg-slate-100" />
+              <div className="mt-4 h-7 w-16 animate-pulse rounded bg-slate-100" />
             </CardContent>
           </Card>
         ))}
       </div>
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-6">
-          <div className="h-64 w-full animate-pulse rounded bg-[#F3F4F6]" />
+          <div className="h-64 w-full animate-pulse rounded bg-slate-100" />
         </CardContent>
       </Card>
     </div>
@@ -340,6 +319,10 @@ export default function CareEpisodeDetailPage() {
 
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [closureTimeline, setClosureTimeline] = useState<TimelineEntry[]>([]);
+  const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
+  const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
+  const [vitalsLoading, setVitalsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -350,6 +333,10 @@ export default function CareEpisodeDetailPage() {
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    capturePostHogEvent("care_episode_viewed", { episode_id: episodeId });
+  }, [episodeId]);
 
   useEffect(() => {
     if (!episodeId) return;
@@ -364,12 +351,18 @@ export default function CareEpisodeDetailPage() {
         setEpisode(detail);
 
         try {
-          const timelinePage = await getCareEpisodeTimelinePage(episodeId, { limit: 10 });
+          const timelinePage = await getCareEpisodeTimelinePage(episodeId, { limit: 100 });
           if (ignore) return;
           const events = (timelinePage.data.length > 0 ? timelinePage.data : detail.recentTimeline) as unknown as ApiRecord[];
-          setTimeline(events.map(normalizeTimelineEntry));
+          const normalizedEvents = events.map(normalizeTimelineEntry);
+          setClosureTimeline(normalizedEvents);
+          setTimeline(normalizedEvents.slice(0, 10));
         } catch {
-          if (!ignore) setTimeline(detail.recentTimeline.map(normalizeTimelineEntry));
+          if (!ignore) {
+            const normalizedEvents = detail.recentTimeline.map(normalizeTimelineEntry);
+            setClosureTimeline(normalizedEvents);
+            setTimeline(normalizedEvents.slice(0, 10));
+          }
         }
       } catch (requestError) {
         if (ignore) return;
@@ -385,9 +378,46 @@ export default function CareEpisodeDetailPage() {
     };
   }, [episodeId, refreshKey]);
 
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    const days = BIOMETRIC_RANGES.find((range) => range.key === biometricRange)?.days ?? 14;
+
+    (async () => {
+      setVitalsLoading(true);
+      try {
+        const records = await getCareEpisodeDailyVitals(episodeId, days);
+        if (!ignore) setDailyVitals(records);
+      } catch {
+        if (!ignore) setDailyVitals([]);
+      } finally {
+        if (!ignore) setVitalsLoading(false);
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [biometricRange, episodeId]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    getCareEpisodeMedicationAdherence(episodeId)
+      .then((records) => {
+        if (!ignore) setMedicationRecords(records);
+      })
+      .catch(() => {
+        if (!ignore) setMedicationRecords([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
   const biometricData = useMemo(
-    () => buildBiometricData(biometricMetric, biometricRange, episodeId),
-    [biometricMetric, biometricRange, episodeId],
+    () => buildBiometricData(biometricMetric, dailyVitals),
+    [biometricMetric, dailyVitals],
   );
   const biometricUnit = BIOMETRIC_METRICS.find((item) => item.label === biometricMetric)?.unit ?? "";
 
@@ -399,8 +429,11 @@ export default function CareEpisodeDetailPage() {
     const checkInTrend = getTrendMeta(getString(checkin, ["trend", "consistencyTrend"]));
 
     const medications = getRecordArray(episode.currentCarePlan, ["medications"]);
-    const adherentCount = medications.filter(isMedicationAdherent).length;
-    const medicationAdherence = medications.length > 0 ? clamp(Math.round((adherentCount / medications.length) * 100)) : 0;
+    const fallbackAdherentCount = medications.filter(isMedicationAdherent).length;
+    const fallbackAdherence = medications.length > 0 ? clamp(Math.round((fallbackAdherentCount / medications.length) * 100)) : 0;
+    const medicationAdherence = medicationRecords.length > 0
+      ? clamp(Math.round(medicationRecords.reduce((total, medication) => total + medication.adherencePercentage, 0) / medicationRecords.length))
+      : fallbackAdherence;
     const medicationTrend = getTrendMeta(getString(episode.currentCarePlan, ["medicationTrend", "adherenceTrend"]));
 
     const tasks = getRecordArray(episode.currentCarePlan, ["tasks"]);
@@ -425,37 +458,35 @@ export default function CareEpisodeDetailPage() {
       engagementTier,
       engagementTrend,
     };
-  }, [episode]);
+  }, [episode, medicationRecords]);
 
   const outcomes = useMemo(() => {
     const riskScore = episode?.riskScore ?? null;
-    const category = (episode?.riskCategory ?? "").toLowerCase();
-
-    const deteriorationRisk =
-      riskScore !== null ? clamp(Math.round(riskScore)) : category === "high" ? 70 : category === "medium" ? 40 : category === "low" ? 15 : 25;
-    const recoveryProbability = clamp(100 - deteriorationRisk);
-    const relapseRisk = clamp(Math.round(deteriorationRisk * 0.85));
+    const deteriorationRisk = riskScore === null ? null : clamp(Math.round(riskScore));
+    const recoveryProbability = deteriorationRisk === null ? null : clamp(100 - deteriorationRisk);
+    const relapseRisk = null;
 
     return { recoveryProbability, deteriorationRisk, relapseRisk };
   }, [episode]);
 
-  const CLOSURE_REASON_TO_OUTCOME: Record<CloseCareEpisodePayload["closureReason"], string> = {
-    "Recovery completed": "Recovered",
-    Transferred: "Transferred",
-    "Patient discontinued": "Discontinued",
-    "Lost to follow-up": "Lost to follow-up",
-    Deceased: "Deceased",
-    "Administrative closure": "Administrative",
-  };
+  const closureSummary = useMemo<EpisodeOutcomeSummary>(() => {
+    if (!episode) return { checkInCompletion: null, goalAchievementPercent: null, missedTasksCount: null };
+    const timelineCheckIns = closureTimeline.filter((entry) => entry.type.toLowerCase().includes("check")).length;
+    const completedCheckIns = Math.max(timelineCheckIns, episode.latestCheckin ? 1 : 0);
+    const totalCheckIns = Math.max(episode.dayStart ?? completedCheckIns, completedCheckIns, 1);
+    return {
+      checkInCompletion: { completed: completedCheckIns, total: totalCheckIns },
+      goalAchievementPercent: null,
+      missedTasksCount: episode.currentCarePlan ? monitoring?.missedTasksCount ?? null : null,
+    };
+  }, [closureTimeline, episode, monitoring]);
 
   const handleCloseEpisode = async (payload: CloseCareEpisodePayload) => {
     if (!episode) return;
     setIsClosing(true);
     try {
-      await closeCareEpisode(episode.id, {
-        closureReason: payload.closureReason,
-        outcomeStatus: CLOSURE_REASON_TO_OUTCOME[payload.closureReason],
-      });
+      await closeCareEpisode(episode.id, payload);
+      capturePostHogEvent("care_episode_closed", { episode_id: episode.id, reason: payload.closureReason, outcome: payload.outcomeStatus });
       toast.success("Care episode closed.");
       setCloseDialogOpen(false);
       router.push(`/dashboard/care-episodes/${episode.id}/closed-summary`);
@@ -475,7 +506,7 @@ export default function CareEpisodeDetailPage() {
       <div className="space-y-6">
         <Link
           href="/dashboard/care-episodes"
-          className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] hover:text-[#111827]"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
         >
           <ChevronLeft className="h-4 w-4" />
           Back to Care Episodes
@@ -504,12 +535,19 @@ export default function CareEpisodeDetailPage() {
   const progressPercent = episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays);
   const visibleCareTeam = episode.careTeam.slice(0, 3);
   const extraCareTeamCount = Math.max(episode.careTeam.length - visibleCareTeam.length, 0);
+  const riskFactors = getRiskFactors(episode.riskData);
+  const riskWindow = getString(
+    episode.riskData,
+    ["timeToIntervention", "recommendedInterventionWindow", "interventionWindow"],
+    "Not provided",
+  );
+  const displayedRiskScore = episode.riskScore === null ? null : clamp(Math.round(episode.riskScore));
 
   return (
     <div className="space-y-6">
       <Link
         href="/dashboard/care-episodes"
-        className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] hover:text-[#111827]"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
       >
         <ChevronLeft className="h-4 w-4" />
         Back to Care Episodes
@@ -519,16 +557,16 @@ export default function CareEpisodeDetailPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{error}</div>
       ) : null}
 
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex flex-1 items-start gap-4">
-              <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#023E8A] text-2xl font-bold text-white">
+              <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-primary text-2xl font-bold text-white">
                 {getInitials(patientName)}
               </span>
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-bold text-[#111827] md:text-xl">{patientName}</h1>
+                  <h1 className="text-lg font-bold text-slate-900 md:text-xl">{patientName}</h1>
                   <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>
                     {riskBadge.label}
                   </span>
@@ -538,13 +576,13 @@ export default function CareEpisodeDetailPage() {
                         <span
                           key={member.id || member.name}
                           title={member.name}
-                          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#E7F2FF] text-[10px] font-bold text-[#023E8A]"
+                          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-50 text-[10px] font-bold text-primary"
                         >
                           {getInitials(member.name)}
                         </span>
                       ))}
                       {extraCareTeamCount > 0 ? (
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#F3F4F6] text-[10px] font-bold text-[#71809B]">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[10px] font-bold text-slate-500">
                           +{extraCareTeamCount}
                         </span>
                       ) : null}
@@ -552,16 +590,16 @@ export default function CareEpisodeDetailPage() {
                   ) : null}
                 </div>
 
-                <p className="text-sm font-medium text-[#71809B]">
+                <p className="text-sm font-medium text-slate-500">
                   Hospital ID: {patient?.hospitalId || "--"} • Age: {patient?.age ?? "--"} • {patient?.gender || "--"}
                 </p>
-                <p className="flex items-center gap-1.5 text-xs font-medium text-[#71809B]">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                   <CalendarDays className="h-3.5 w-3.5" />
                   Episode started {formatLongDate(episode.createdAt)}
                 </p>
 
-                <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-[#71809B]">
-                  <span className="font-bold text-[#344054]">Contact Information:</span>
+                <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-slate-500">
+                  <span className="font-bold text-slate-700">Contact Information:</span>
                   <span className="inline-flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5" />
                     {patient?.phone || "--"}
@@ -573,8 +611,8 @@ export default function CareEpisodeDetailPage() {
                 </p>
 
                 {patient?.emergencyContactName || patient?.emergencyContactPhone ? (
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-[#71809B]">
-                    <span className="font-bold text-[#344054]">Emergency Contact:</span>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-500">
+                    <span className="font-bold text-slate-700">Emergency Contact:</span>
                     {patient?.emergencyContactName || "--"}
                     {patient?.emergencyContactPhone ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -588,96 +626,91 @@ export default function CareEpisodeDetailPage() {
             </div>
 
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col">
-              <Button
-                asChild
-                className="h-11 gap-2 rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575]"
-              >
-                <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
-                  <TrendingUp className="h-4 w-4" />
-                  Patients Insights
-                </Link>
-              </Button>
+              <RoleGate allowedRoles={CLINICIAN_ROLE}>
+                <Button
+                  asChild
+                  onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
+                  className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
+                >
+                  <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
+                    <TrendingUp className="h-4 w-4" />
+                    Patients Insights
+                  </Link>
+                </Button>
+              </RoleGate>
               <Button
                 asChild
                 variant="outline"
-                className="h-11 gap-2 rounded-xl border-[#DDE3EC] bg-white px-5 text-sm font-bold text-[#111827] hover:bg-[#F8FAFC]"
+                className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
               >
                 <Link href={`/dashboard/care-episodes/${episode.id}/recovery`}>
                   <TrendingUp className="h-4 w-4" />
                   Recovery
                 </Link>
               </Button>
-              <Button
-                asChild
-                variant="outline"
-                className="h-11 gap-2 rounded-xl border-[#DDE3EC] bg-white px-5 text-sm font-bold text-[#111827] hover:bg-[#F8FAFC]"
-              >
-                <Link href={`/dashboard/care-episodes/${episode.id}/care-team`}>
-                  <UsersRound className="h-4 w-4" />
-                  Care Team
-                </Link>
-              </Button>
+              <RoleGate allowedRoles={CLINICIAN_ROLE}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-11 gap-2 rounded-xl border-[#DDE3EC] bg-white px-5 text-sm font-bold text-[#111827] hover:bg-[#F8FAFC]"
+                    className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
                   >
                     Actions
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 rounded-lg border-[#DDE3EC] p-1.5">
-                  <DropdownMenuItem asChild className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-[#111827]">
-                    <Link href={`/dashboard/care-episodes/${episode.id}/assessment`}>
-                      <Stethoscope className="h-4 w-4" />
-                      New Assessment
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-[#111827]">
-                    <Link href={`/dashboard/care-episodes/${episode.id}/assessment-history`}>
-                      <ClipboardList className="h-4 w-4" />
-                      Assessment History
-                    </Link>
-                  </DropdownMenuItem>
+                <DropdownMenuContent align="end" className="w-52 rounded-lg border-border p-1.5">
                   <DropdownMenuItem
-                    onSelect={() => toast.info("Messaging is coming soon.")}
-                    className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-[#111827]"
+                    asChild
+                    onSelect={() => capturePostHogEvent("care_episode_message_opened", { episode_id: episode.id })}
+                    className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-900"
                   >
-                    <MessageSquare className="h-4 w-4" />
-                    Send Message
+                    <Link
+                      href={`/dashboard/messages?${new URLSearchParams({
+                        episodeId: episode.id,
+                        patientId: episode.patientId,
+                        patientName,
+                      })}`}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      Send Message
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onSelect={() => setCloseDialogOpen(true)}
+                    onSelect={() => {
+                      capturePostHogEvent("care_episode_close_opened", { episode_id: episode.id });
+                      setCloseDialogOpen(true);
+                    }}
                     className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-red-600 focus:bg-red-50 focus:text-red-600"
                   >
                     <X className="h-4 w-4" />
-                    Close Care Journey
+                    Close Care Episode
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              </RoleGate>
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 rounded-lg bg-[#EFF5FF] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-[#344054]">
-              <span className="font-bold text-[#023E8A]">CARE EPISODE:</span> {episode.carePhase || episode.diagnosis || "--"}
-              <span className="mx-3 text-[#71809B]">|</span>
+          <div className="mt-5 flex flex-col gap-3 rounded-lg bg-blue-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-slate-700">
+              <span className="font-bold text-primary">CARE EPISODE:</span> {episode.carePhase || episode.diagnosis || "--"}
+              <span className="mx-3 text-slate-500">|</span>
               Recovery Day {episode.dayStart ?? 0} of {episode.expectedDurationDays ?? 0}
             </p>
             <div className="flex flex-1 items-center gap-3 sm:max-w-xs">
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-white">
-                <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${progressPercent}%` }} />
+                <div className="h-full rounded-full bg-primary" style={{ width: `${progressPercent}%` }} />
               </div>
-              <span className="whitespace-nowrap text-xs font-bold text-[#344054]">{progressPercent}% Complete</span>
+              <span className="whitespace-nowrap text-xs font-bold text-slate-700">{progressPercent}% Complete</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
       <section>
-        <h2 className="mb-4 text-base font-bold text-[#111827]">Monitoring &amp; Analytics</h2>
+        <h2 className="mb-4 text-base font-bold text-slate-900">Monitoring &amp; Analytics</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             label="Check-in Consistency"
@@ -685,8 +718,8 @@ export default function CareEpisodeDetailPage() {
             trend={monitoring?.checkInTrend}
             isLoading={isLoading}
           >
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#E5E7EB]">
-              <div className="h-full rounded-full bg-[#10B981]" style={{ width: `${monitoring?.checkInConsistency ?? 0}%` }} />
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${monitoring?.checkInConsistency ?? 0}%` }} />
             </div>
           </MetricCard>
 
@@ -696,8 +729,8 @@ export default function CareEpisodeDetailPage() {
             trend={monitoring?.medicationTrend}
             isLoading={isLoading}
           >
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#E5E7EB]">
-              <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${monitoring?.medicationAdherence ?? 0}%` }} />
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${monitoring?.medicationAdherence ?? 0}%` }} />
             </div>
           </MetricCard>
 
@@ -706,12 +739,12 @@ export default function CareEpisodeDetailPage() {
             value={String(monitoring?.missedTasksCount ?? 0).padStart(2, "0")}
             trend={
               (monitoring?.missedTasksCount ?? 0) > 0
-                ? { label: "Warning", className: "bg-[#FFECEC] text-[#EF4444]", Icon: AlertTriangle }
+                ? { label: "Warning", className: "bg-red-50 text-red-500", Icon: AlertTriangle }
                 : undefined
             }
             isLoading={isLoading}
           >
-            <p className="mt-3 text-xs font-medium text-[#71809B]">
+            <p className="mt-3 text-xs font-medium text-slate-500">
               {monitoring?.lastMissedLabel ? `Last missed: ${monitoring.lastMissedLabel}` : "No missed tasks recorded"}
             </p>
           </MetricCard>
@@ -722,27 +755,109 @@ export default function CareEpisodeDetailPage() {
             trend={monitoring?.engagementTrend}
             isLoading={isLoading}
           >
-            <p className="mt-3 text-xs font-medium text-[#71809B]">{monitoring?.engagementTier ?? "Moderate"} engagement last week</p>
+            <p className="mt-3 text-xs font-medium text-slate-500">{monitoring?.engagementTier ?? "Moderate"} engagement last week</p>
           </MetricCard>
         </div>
       </section>
 
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card id="risk-intelligence" className="scroll-mt-24 rounded-xl border-border bg-card shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Risk Intelligence</h2>
+                  <p className="mt-0.5 text-sm text-muted-foreground">Clinical decision support from the latest episode risk assessment.</p>
+                </div>
+              </div>
+            </div>
+            <Button asChild variant="outline" className="h-10 rounded-lg border-border bg-card text-sm font-semibold text-foreground">
+              <Link href="/dashboard/alerts">View all alerts</Link>
+            </Button>
+          </div>
+
+          {displayedRiskScore === null && !episode.riskCategory && !episode.riskTrend && riskFactors.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/30 px-5 py-8 text-center">
+              <p className="text-sm font-semibold text-foreground">No risk assessment recorded</p>
+              <p className="mt-1 text-sm text-muted-foreground">Risk intelligence will appear when the backend adds risk data to this episode.</p>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="rounded-xl border border-border bg-muted/30 p-5">
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Current risk score</p>
+                    <p className="mt-2 text-4xl font-bold text-foreground">{displayedRiskScore === null ? "—" : displayedRiskScore}</p>
+                  </div>
+                  <span className={cn("rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>{riskBadge.label}</span>
+                </div>
+                <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      (displayedRiskScore ?? 0) >= 70 ? "bg-red-500" : (displayedRiskScore ?? 0) >= 40 ? "bg-amber-500" : "bg-emerald-500",
+                    )}
+                    style={{ width: `${displayedRiskScore ?? 0}%` }}
+                  />
+                </div>
+                <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trend</dt>
+                    <dd className="mt-1 text-sm font-semibold capitalize text-foreground">{episode.riskTrend || "Not provided"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Intervention window</dt>
+                    <dd className="mt-1 text-sm font-semibold text-foreground">{riskWindow}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk history</dt>
+                    <dd className="mt-1 text-sm font-semibold text-foreground">{episode.riskHistory.length} assessment{episode.riskHistory.length === 1 ? "" : "s"}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="rounded-xl border border-border p-5">
+                <h3 className="text-sm font-bold text-foreground">Contributing factors</h3>
+                {riskFactors.length > 0 ? (
+                  <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {riskFactors.map((factor, index) => (
+                      <li key={`${factor}-${index}`} className="flex items-start gap-2 rounded-lg bg-muted/40 px-3 py-3 text-sm font-medium text-foreground">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                        {factor}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-4 rounded-lg bg-muted/40 px-4 py-5 text-sm text-muted-foreground">No contributing factors were supplied with this assessment.</p>
+                )}
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  Review the patient’s current episode and clinical context before acting on any risk signal.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-bold text-[#111827]">Biometric Trends</h2>
+            <h2 className="text-base font-bold text-slate-900">Biometric Trends</h2>
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setMetricMenuOpen((open) => !open)}
-                  className="flex h-10 items-center gap-2 rounded-lg border border-[#DDE3EC] bg-white px-4 text-sm font-medium text-[#111827] hover:bg-[#F8FAFC]"
+                  className="flex h-10 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-medium text-slate-900 hover:bg-slate-50"
                 >
                   {biometricMetric}
-                  <ChevronDown className="h-4 w-4 text-[#71809B]" />
+                  <ChevronDown className="h-4 w-4 text-slate-500" />
                 </button>
                 {metricMenuOpen ? (
-                  <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-lg border border-[#DDE3EC] bg-white py-1 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+                  <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-lg border border-border bg-white py-1 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
                     {BIOMETRIC_METRICS.map((metric) => (
                       <button
                         key={metric.label}
@@ -752,8 +867,8 @@ export default function CareEpisodeDetailPage() {
                           setMetricMenuOpen(false);
                         }}
                         className={cn(
-                          "block w-full px-4 py-2 text-left text-sm font-medium hover:bg-[#F3F4F6]",
-                          biometricMetric === metric.label ? "text-[#023E8A]" : "text-[#344054]",
+                          "block w-full px-4 py-2 text-left text-sm font-medium hover:bg-slate-100",
+                          biometricMetric === metric.label ? "text-primary" : "text-slate-700",
                         )}
                       >
                         {metric.label}
@@ -762,7 +877,7 @@ export default function CareEpisodeDetailPage() {
                   </div>
                 ) : null}
               </div>
-              <div className="flex rounded-lg bg-[#F3F4F6] p-1 text-xs font-bold">
+              <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-bold">
                 {BIOMETRIC_RANGES.map((range) => (
                   <button
                     key={range.key}
@@ -770,7 +885,7 @@ export default function CareEpisodeDetailPage() {
                     onClick={() => setBiometricRange(range.key)}
                     className={cn(
                       "rounded-md px-3 py-1.5 transition-colors",
-                      biometricRange === range.key ? "bg-[#023E8A] text-white" : "text-[#71809B] hover:text-[#111827]",
+                      biometricRange === range.key ? "bg-primary text-white" : "text-slate-500 hover:text-slate-900",
                     )}
                   >
                     {range.key}
@@ -780,21 +895,28 @@ export default function CareEpisodeDetailPage() {
             </div>
           </div>
 
+          {vitalsLoading ? (
+            <div className="mt-6 h-75 animate-pulse rounded-xl bg-slate-100" />
+          ) : biometricData.length === 0 ? (
+            <div className="mt-6 flex h-75 items-center justify-center rounded-xl border border-dashed border-border bg-slate-50 px-6 text-center">
+              <p className="text-sm font-medium text-slate-500">No {biometricMetric.toLowerCase()} readings are available for this period.</p>
+            </div>
+          ) : (
           <div className="mt-6" style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={biometricData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="biometricFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#023E8A" stopOpacity={0.18} />
-                    <stop offset="100%" stopColor="#023E8A" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.18} />
+                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} stroke="#EEF1F6" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: "#71809B", fontSize: 11 }} />
+                <CartesianGrid vertical={false} stroke="var(--color-slate-100)" />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "#71809B", fontSize: 11 }}
+                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }}
                   tickFormatter={(value) => `${value} ${biometricUnit}`}
                   width={70}
                 />
@@ -802,7 +924,7 @@ export default function CareEpisodeDetailPage() {
                 <Area
                   type="monotone"
                   dataKey="value"
-                  stroke="#023E8A"
+                  stroke="var(--color-primary)"
                   strokeWidth={2}
                   fill="url(#biometricFill)"
                   dot={(dotProps: { cx?: number; cy?: number; payload?: BiometricPoint; index?: number }) => {
@@ -814,8 +936,8 @@ export default function CareEpisodeDetailPage() {
                         cx={cx}
                         cy={cy}
                         r={payload?.abnormal ? 5 : 3}
-                        fill={payload?.abnormal ? "#EF4444" : "#023E8A"}
-                        stroke="#fff"
+                        fill={payload?.abnormal ? "var(--color-red-500)" : "var(--color-primary)"}
+                        stroke="var(--color-card)"
                         strokeWidth={1.5}
                       />
                     );
@@ -825,89 +947,92 @@ export default function CareEpisodeDetailPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          )}
 
-          <div className="mt-4 flex items-center gap-5 text-xs font-medium text-[#71809B]">
+          {biometricData.length > 0 ? (
+          <div className="mt-4 flex items-center gap-5 text-xs font-medium text-slate-500">
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-[#023E8A]" />
+              <span className="h-2 w-2 rounded-full bg-primary" />
               Primary Metric
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-[#EF4444]" />
+              <span className="h-2 w-2 rounded-full bg-red-500" />
               Abnormal Spike Detected
             </span>
           </div>
+          ) : null}
         </CardContent>
       </Card>
 
       <section>
-        <h2 className="mb-4 text-base font-bold text-[#111827]">Recovery Outcomes</h2>
+        <h2 className="mb-4 text-base font-bold text-slate-900">Recovery Outcomes</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Recovery Probability</p>
-              <CircularProgress percent={outcomes.recoveryProbability} trackColor="#E7F2FF" progressColor="#023E8A" />
-              <p className="mt-4 text-xs font-medium text-[#71809B]">Within expected timeframe</p>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Recovery Probability</p>
+              <CircularProgress percent={outcomes.recoveryProbability} trackColor="var(--color-blue-50)" progressColor="var(--color-primary)" />
+              <p className="mt-4 text-xs font-medium text-slate-500">Derived from current risk score</p>
             </CardContent>
           </Card>
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Risk of Deterioration</p>
-              <CircularProgress percent={outcomes.deteriorationRisk} trackColor="#FFECEC" progressColor="#EF4444" />
-              <p className="mt-4 text-xs font-medium text-[#71809B]">Next 7 days</p>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Risk of Deterioration</p>
+              <CircularProgress percent={outcomes.deteriorationRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
+              <p className="mt-4 text-xs font-medium text-slate-500">Current episode risk score</p>
             </CardContent>
           </Card>
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+          <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-[#71809B]">Relapse Risk Forecast</p>
-              <CircularProgress percent={outcomes.relapseRisk} trackColor="#FFECEC" progressColor="#EF4444" />
-              <p className="mt-4 text-xs font-medium text-[#71809B]">30-day projection</p>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Relapse Risk Forecast</p>
+              <CircularProgress percent={outcomes.relapseRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
+              <p className="mt-4 text-xs font-medium text-slate-500">Not available in current API</p>
             </CardContent>
           </Card>
         </div>
       </section>
 
-      <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#111827]">Unified Care Timeline</h2>
-            <Link href={`/dashboard/care-episodes/${episode.id}/timeline`} className="text-sm font-bold text-[#023E8A]">
+            <h2 className="text-base font-bold text-slate-900">Unified Care Timeline</h2>
+            <Link href={`/dashboard/care-episodes/${episode.id}/timeline`} className="text-sm font-bold text-primary">
               View full page
             </Link>
           </div>
 
           {timeline.length === 0 ? (
-            <p className="py-8 text-center text-sm font-medium text-[#71809B]">No timeline events recorded yet.</p>
+            <p className="py-8 text-center text-sm font-medium text-slate-500">No timeline events recorded yet.</p>
           ) : (
             <>
-              <p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-[#71809B]">Today</p>
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Today</p>
               <div className="space-y-4">
                 {timeline.map((event) => {
                   const iconMeta = TIMELINE_ICON[event.category];
                   return (
-                    <div key={event.id} className="flex gap-3 rounded-lg border border-[#E5E7EB] p-4">
+                    <div key={event.id} className="flex gap-3 rounded-lg border border-slate-200 p-4">
                       <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", iconMeta.className)}>
                         <iconMeta.Icon className="h-4.5 w-4.5" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-bold text-[#111827]">{event.title}</p>
+                          <p className="text-sm font-bold text-slate-900">{event.title}</p>
                           <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", TIMELINE_BADGE[event.category])}>
                             {event.status}
                           </span>
                         </div>
                         {event.description ? (
-                          <p className="mt-1 text-sm font-medium text-[#71809B]">{event.description}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-500">{event.description}</p>
                         ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-[#71809B]">
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500">
                           <span>{formatTime(event.time)}</span>
                           {event.source ? (
                             <span className="inline-flex items-center gap-1">
-                              <span className="h-1 w-1 rounded-full bg-[#71809B]" />
+                              <span className="h-1 w-1 rounded-full bg-slate-500" />
                               {event.source}
                             </span>
                           ) : null}
                           {event.type ? (
-                            <span className="rounded-md bg-[#F3F4F6] px-2 py-0.5 font-bold text-[#71809B]">{event.type}</span>
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 font-bold text-slate-500">{event.type}</span>
                           ) : null}
                         </div>
                       </div>
@@ -925,6 +1050,7 @@ export default function CareEpisodeDetailPage() {
         onOpenChange={setCloseDialogOpen}
         patientName={patientName}
         isClosing={isClosing}
+        summary={closureSummary}
         onConfirm={(payload) => void handleCloseEpisode(payload)}
       />
     </div>

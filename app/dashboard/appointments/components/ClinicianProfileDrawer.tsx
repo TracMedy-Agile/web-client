@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import AddClinicianScheduleModal from "./AddClinicianScheduleModal";
 import AddScheduleOverrideModal from "./AddScheduleOverrideModal";
@@ -45,6 +46,7 @@ type ClinicianProfile = {
   id: string;
   name: string;
   email: string;
+  avatarUrl: string;
   department: string;
   dailyCapacity: number;
   assignedToday: number;
@@ -228,6 +230,7 @@ function normalizeProfile(payload: unknown): ClinicianProfile {
     name: getString(record, ["name", "fullName", "displayName"], "Unknown Clinician"),
     email: getString(record, ["email"], ""),
     department: getString(record, ["department"], getString(schedule, ["department"], "--")),
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
     dailyCapacity,
     assignedToday,
     remainingToday: getNumber(record, ["remainingToday"], Math.max(dailyCapacity - assignedToday, 0)),
@@ -450,7 +453,7 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
   ];
 
   const deactivateSchedule = async () => {
-    if (!activeClinicianId || !window.confirm("Are you sure you want to deactivate this schedule?")) return;
+    if (!activeClinicianId) return;
 
     setIsDeactivating(true);
 
@@ -470,6 +473,19 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
     }
   };
 
+  const requestScheduleDeactivation = () => {
+    if (!activeClinicianId) return;
+    toast.warning("Deactivate clinician schedule?", {
+      id: `deactivate-schedule-${activeClinicianId}`,
+      description: "The clinician will no longer be available for appointment assignments.",
+      duration: 8000,
+      action: {
+        label: "Deactivate",
+        onClick: () => void deactivateSchedule(),
+      },
+    });
+  };
+
   return (
     <>
       <Sheet open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
@@ -478,9 +494,12 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
           <DialogPrimitive.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[600px] flex-col border-l border-[#DDE3EC] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.36)] outline-none duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=open]:animate-in">
             <header className="flex items-start justify-between gap-4 border-b border-[#DDE3EC] bg-white px-4 sm:px-6 py-4 sm:py-6">
               <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#DDE3EC] bg-[linear-gradient(135deg,#E7F2FF,#F2F4F7)] text-base font-bold text-[#023E8A] ring-4 ring-[#F8FAFC]">
-                  {profile ? getInitials(profile.name) : isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "--"}
-                </div>
+                <Avatar className="h-14 w-14 shrink-0 border border-[#DDE3EC] ring-4 ring-[#F8FAFC]">
+                  {profile?.avatarUrl ? <AvatarImage src={profile.avatarUrl} alt={profile.name} className="object-cover" /> : null}
+                  <AvatarFallback className="bg-[linear-gradient(135deg,#E7F2FF,#F2F4F7)] text-base font-bold text-[#023E8A]">
+                    {profile ? getInitials(profile.name) : isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : "--"}
+                  </AvatarFallback>
+                </Avatar>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <SheetTitle className="text-lg font-bold md:text-xl text-[#0F2747]">{profile?.name ?? "Clinician Profile"}</SheetTitle>
@@ -656,7 +675,7 @@ export default function ClinicianProfileDrawer({ isOpen, onClose, clinicianId }:
                 type="button"
                 variant="outline"
                 disabled={isDeactivating || !activeClinicianId}
-                onClick={() => void deactivateSchedule()}
+                onClick={requestScheduleDeactivation}
                 className="mt-4 h-10 w-full rounded-xl border-[#EF4444] bg-white text-sm font-bold text-[#EF4444] hover:bg-[#FFF5F5] hover:text-[#EF4444] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isDeactivating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}

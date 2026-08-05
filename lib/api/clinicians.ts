@@ -1,7 +1,10 @@
 import type { Clinician } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
+import type { components } from "@/docs/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 type UnknownRecord = Record<string, unknown>;
+type ApiClinicianListItem = components["schemas"]["ClinicianListItemDto"];
+export type ClinicianProfile = components["schemas"]["ClinicianProfileResponseDto"];
 
 function asRecord(value: unknown): UnknownRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
@@ -10,6 +13,10 @@ function asRecord(value: unknown): UnknownRecord | null {
 function value(record: UnknownRecord, keys: string[], fallback = "") {
   for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string;
   return fallback;
+}
+
+function numberValue(record: UnknownRecord, key: string, fallback = 0) {
+  return typeof record[key] === "number" ? record[key] : fallback;
 }
 
 // Shared GET /clinicians fetch — CliniciansController_findAll (Back-end/openapi.yaml), scoped to
@@ -47,6 +54,50 @@ export type ClinicianSearchResult = {
   name: string;
   department: string;
 };
+
+export type ClinicianDirectoryEntry = ApiClinicianListItem;
+
+export async function getFacilityClinicians(params?: {
+  q?: string;
+  department?: string;
+  limit?: number;
+}): Promise<ClinicianDirectoryEntry[]> {
+  const query = new URLSearchParams({ limit: String(params?.limit ?? 100) });
+  if (params?.q?.trim()) query.set("q", params.q.trim());
+  if (params?.department && params.department !== "all") query.set("department", params.department);
+  const list = await fetchClinicianList(query);
+  return list.map((item) => ({
+    id: value(item, ["id"]),
+    name: value(item, ["name"], "Unnamed clinician"),
+    email: value(item, ["email"]),
+    department: value(item, ["department"]) || null,
+    schedule: value(item, ["schedule"], "Schedule not configured"),
+    dailyCapacity: numberValue(item, "dailyCapacity"),
+    assignedAppointments: numberValue(item, "assignedAppointments"),
+    capacityUtilization: numberValue(item, "capacityUtilization"),
+    status: (value(item, ["status"], "available") as ApiClinicianListItem["status"]),
+  })).filter((item) => item.id);
+}
+
+export async function getFacilityClinician(id: string): Promise<ClinicianProfile> {
+  const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
+  const tokenPayload = tokenResponse ? await tokenResponse.json().catch(() => ({})) : {};
+  const token = typeof tokenPayload.accessToken === "string" ? tokenPayload.accessToken : null;
+
+  const response = await fetch(`${BASE}/clinicians/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(response.status === 404 ? "Team member not found." : "Unable to load this team member.");
+
+  const root = asRecord(payload);
+  const nested = asRecord(root?.data);
+  const profile = nested ?? root;
+  if (!profile) throw new Error("The team member response was empty.");
+
+  return profile as ClinicianProfile;
+}
 
 export async function searchClinicians(query: string): Promise<ClinicianSearchResult[]> {
   const q = query.trim();

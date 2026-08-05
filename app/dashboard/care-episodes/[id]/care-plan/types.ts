@@ -70,7 +70,7 @@ export function carePlanToTasks(plan: CarePlan): CareTask[] {
   return [...medications, ...tasks];
 }
 
-export function tasksToCarePlanPayload(tasks: CareTask[], base: CarePlan, changeReason: string, notifyPatient: boolean): CarePlanPayload {
+export function tasksToCarePlanPayload(tasks: CareTask[], base: CarePlan, changeReason: string): CarePlanPayload {
   const medications = tasks
     .filter((task) => task.category === "Medication")
     .map((task) => ({ name: task.label, dosage: task.dosage ?? "", frequency: task.frequency, duration: task.duration ?? "Ongoing", instructions: task.instructions }));
@@ -89,11 +89,11 @@ export function tasksToCarePlanPayload(tasks: CareTask[], base: CarePlan, change
   return {
     medications,
     tasks: otherTasks,
-    lifestyleRecommendations: base.lifestyleRecommendations,
+    lifestyleRecommendations: (base.lifestyleRecommendations ?? []).map((item) =>
+      typeof item === "string" ? item : [item.title, item.description].filter(Boolean).join(": "),
+    ),
     monitoringFrequency: base.monitoringFrequency,
     episodeDuration: base.episodeDuration,
     changeReason,
-    isActive: true,
-    notifyPatient,
   };
 }

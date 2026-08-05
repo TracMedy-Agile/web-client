@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Building2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, Stethoscope, Video } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
@@ -154,9 +155,11 @@ function AppointmentCard({ appointment }: { appointment: DailyCalendarAppointmen
   const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
 
   return (
-    <article
+    <Link
+      href={`/dashboard/appointments/${encodeURIComponent(appointment.id)}`}
+      aria-label={`Open appointment details for ${appointment.patientName}`}
       className={cn(
-        "absolute left-6 right-6 rounded-xl px-5 py-5 text-sm shadow-sm",
+        "absolute left-6 right-6 cursor-pointer rounded-xl px-5 py-5 text-sm shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
         styles.card,
       )}
       style={{ top, height }}
@@ -183,7 +186,7 @@ function AppointmentCard({ appointment }: { appointment: DailyCalendarAppointmen
           {appointment.status}
         </span>
       </div>
-    </article>
+    </Link>
   );
 }
 
@@ -328,8 +331,8 @@ export default function AppointmentCalendarDaily({
       {!isLoading && !error && appointments.length === 0 ? (
         <AppointmentEmptyState onRefresh={() => setRefreshKey((key) => key + 1)} />
       ) : (
-      <div className="overflow-x-auto">
-        <div className="relative min-w-[1040px] bg-white pb-3 pl-4 pr-6">
+      <div className="w-full overflow-hidden">
+        <div className="relative w-full bg-white pb-3 pl-4 pr-6">
           <div className="relative ml-20 border-l border-[#CBD5E1]" style={{ height: timelineHeight }}>
             {timeSlots.map((slot, index) => (
               <div key={slot} className="absolute left-[-78px] right-0 h-px" style={{ top: index * HOUR_HEIGHT }}>

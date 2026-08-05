@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,7 +12,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { createAppointment } from "@/lib/api/appointments";
+import { createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
 import { cn } from "@/lib/utils";
 
 type AppointmentType = "physical" | "teleconsultation";
@@ -22,6 +22,7 @@ type ScheduleAppointmentModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAppointmentCreated?: () => void;
+  initialAppointmentType?: AppointmentType;
 };
 
 type ScheduleAppointmentFormData = {
@@ -264,9 +265,10 @@ function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facili
   };
 }
 
-export default function ScheduleAppointmentModal({ open, onOpenChange, onAppointmentCreated }: ScheduleAppointmentModalProps) {
+export default function ScheduleAppointmentModal({ open, onOpenChange, onAppointmentCreated, initialAppointmentType = "physical" }: ScheduleAppointmentModalProps) {
   const router = useRouter();
-  const [formData, setFormData] = useState<ScheduleAppointmentFormData>(initialFormData);
+  const freshFormData = (): ScheduleAppointmentFormData => ({ ...initialFormData, appointmentType: initialAppointmentType });
+  const [formData, setFormData] = useState<ScheduleAppointmentFormData>(freshFormData);
   const [facilityId, setFacilityId] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
@@ -274,6 +276,8 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
   const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [capacity, setCapacity] = useState<AppointmentCapacity | null>(null);
+  const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -342,6 +346,29 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
     };
   }, [formData.patient, open, selectedPatientId]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (!facilityId) return;
+    if (!formData.date) return;
+
+    let ignore = false;
+    const capacityQuery = { facilityId, date: formData.date, time: formData.time };
+    getAppointmentCapacity(capacityQuery)
+      .then((result) => {
+        if (!ignore) setCapacity(result);
+      })
+      .catch(() => {
+        if (!ignore) setCapacity(null);
+      })
+      .finally(() => {
+        if (!ignore) setIsCheckingCapacity(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [facilityId, formData.date, formData.time, open]);
+
   const selectedClinician = clinicians.find((clinician) => clinician.id === formData.clinicianId);
 
   const updateFormData = <Key extends keyof ScheduleAppointmentFormData>(
@@ -352,10 +379,11 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
   };
 
   const resetAndClose = () => {
-    setFormData(initialFormData);
+    setFormData(freshFormData());
     setSelectedPatientId("");
     setPatientResults([]);
     setApiError("");
+    setCapacity(null);
     onOpenChange(false);
   };
 
@@ -379,11 +407,16 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
       return;
     }
 
+    if (capacity && !capacity.canBook) {
+      setApiError("No appointment capacity remains for the selected date and time.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       await createAppointment(buildAppointmentPayload(formData, facilityId, selectedPatientId));
-      setFormData(initialFormData);
+      setFormData(freshFormData());
       setSelectedPatientId("");
       setPatientResults([]);
       onAppointmentCreated?.();
@@ -391,7 +424,8 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
       toast.success("Appointment added successfully.");
       router.refresh();
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Network error. Please check your connection.");
+      const message = error instanceof Error ? error.message : "Network error. Please check your connection.";
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -519,7 +553,11 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                     type="date"
                     className={cn(fieldClass, "pl-11")}
                     value={formData.date}
-                    onChange={(event) => updateFormData("date", event.target.value)}
+                    onChange={(event) => {
+                      setCapacity(null);
+                      setIsCheckingCapacity(Boolean(event.target.value));
+                      updateFormData("date", event.target.value);
+                    }}
                     required
                   />
                 </span>
@@ -531,7 +569,11 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                   type="time"
                   className={fieldClass}
                   value={formData.time}
-                  onChange={(event) => updateFormData("time", event.target.value)}
+                  onChange={(event) => {
+                    setCapacity(null);
+                    setIsCheckingCapacity(Boolean(formData.date));
+                    updateFormData("time", event.target.value);
+                  }}
                   required
                 />
               </label>
@@ -541,6 +583,16 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                 <SelectLike>{formData.duration}</SelectLike>
               </label>
             </div>
+
+            {formData.date ? (
+              <p role="status" className={cn("mt-2 text-xs font-semibold", capacity && !capacity.canBook ? "text-red-600" : "text-[#71809B]")}>
+                {isCheckingCapacity
+                  ? "Checking appointment capacity..."
+                  : capacity
+                    ? `${capacity.availableSlots} of ${capacity.totalSlots} slots available${formData.time ? " for this time" : " for this date"}.`
+                    : "Capacity could not be confirmed; the server will validate it when you submit."}
+              </p>
+            ) : null}
 
             <label className="mt-7 block">
               <span className="mb-2 block text-sm font-bold text-[#111827]">Reason for Visit</span>
@@ -606,7 +658,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                   Adding...
                 </>
               ) : (
-                "Add Appointment"
+                "Schedule Appointment"
               )}
             </button>
           </div>

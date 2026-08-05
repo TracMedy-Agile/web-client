@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, CheckCircle2, ClipboardList, History, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Bell, ClipboardList, History, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,10 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createCarePlanVersion, getCarePlan } from "@/lib/api/care-plan";
+import { createCarePlanVersion, getCarePlan, type CarePlanWithVersions } from "@/lib/api/care-plan";
 import { getCareEpisodeById, type CareEpisodeDetail } from "@/lib/api/care-episodes";
-import { createPlaceholderEpisode } from "../_shared/utils";
-import type { CarePlan } from "../recovery/adjust-plan/types";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import type { CareTaskCategory } from "../_shared/careTeamTypes";
 import { carePlanToTasks, tasksToCarePlanPayload, type CareTask } from "./types";
 import { SaveCarePlanModal } from "./components/SaveCarePlanModal";
@@ -27,10 +26,10 @@ import { SaveCarePlanModal } from "./components/SaveCarePlanModal";
 const CATEGORY_OPTIONS: CareTaskCategory[] = ["Medication", "Vital Check", "Symptom Log", "Activity", "Lab Test", "Home Care", "Warning Sign", "Other"];
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-[#DDE3EC] bg-white px-3.5 text-sm font-medium text-[#172033] outline-none focus-visible:border-[#74A9E5] focus-visible:ring-2 focus-visible:ring-[#0B5CAB]/10";
+  "h-11 w-full rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/10";
 
 function newTask(): CareTask {
-  return { id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: "", category: "Other", frequency: "", instructions: "" };
+  return { id: crypto.randomUUID(), label: "", category: "Other", frequency: "", instructions: "" };
 }
 
 export default function AdjustCarePlanPage() {
@@ -39,16 +38,17 @@ export default function AdjustCarePlanPage() {
   const episodeId = params?.id ?? "";
 
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
-  const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
-  const [plan, setPlan] = useState<CarePlan | null>(null);
+  const [plan, setPlan] = useState<CarePlanWithVersions | null>(null);
   const [loadError, setLoadError] = useState("");
   const [tasks, setTasks] = useState<CareTask[]>([]);
   const [initialTasks, setInitialTasks] = useState("[]");
-  const [notifyPatient, setNotifyPatient] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    if (episodeId) capturePostHogEvent("care_plan_adjust_viewed", { episode_id: episodeId, surface: "care_plan" });
+  }, [episodeId]);
 
   useEffect(() => {
     if (!episodeId) return;
@@ -75,22 +75,32 @@ export default function AdjustCarePlanPage() {
 
   const updateTask = (id: string, patch: Partial<CareTask>) => {
     setTasks((current) => current.map((task) => (task.id === id ? { ...task, ...patch } : task)));
-    setJustSaved(false);
   };
 
   const removeTask = (id: string) => {
     setTasks((current) => current.filter((task) => task.id !== id));
-    setJustSaved(false);
   };
 
   const addTask = () => {
     setTasks((current) => [...current, newTask()]);
-    setJustSaved(false);
   };
 
   const cancel = () => {
-    if (isDirty && !window.confirm("Discard all unsaved care plan changes?")) return;
-    router.push(`/dashboard/care-episodes/${episodeId}`);
+    const leave = () => router.push(`/dashboard/care-episodes/${episodeId}`);
+    if (!isDirty) {
+      leave();
+      return;
+    }
+
+    toast.warning("Unsaved care plan changes", {
+      id: "discard-care-plan",
+      description: "Your edits have not been saved.",
+      duration: 8000,
+      action: {
+        label: "Discard and leave",
+        onClick: leave,
+      },
+    });
   };
 
   const openSaveModal = () => {
@@ -98,6 +108,7 @@ export default function AdjustCarePlanPage() {
       toast.error("Every care task needs a label before saving.");
       return;
     }
+    capturePostHogEvent("care_plan_save_opened", { episode_id: episodeId, mode: "new_version", surface: "care_plan" });
     setIsModalOpen(true);
   };
 
@@ -109,15 +120,18 @@ export default function AdjustCarePlanPage() {
     }
     setIsSaving(true);
     try {
-      const payload = tasksToCarePlanPayload(tasks, plan, changeReason.trim(), notifyPatient);
+      const payload = tasksToCarePlanPayload(tasks, plan, changeReason.trim());
       const saved = await createCarePlanVersion(episodeId, payload);
-      setPlan(saved);
+      const refreshed = await getCarePlan(episodeId);
+      setPlan(refreshed);
       const nextTasks = carePlanToTasks(saved);
       setTasks(nextTasks);
       setInitialTasks(JSON.stringify(nextTasks));
       setIsModalOpen(false);
-      setJustSaved(true);
-      toast.success("Care plan updated. Patient notified and trajectory recalculated.");
+      toast.success("Care plan updated", {
+        description: `Version ${saved.version} is active.`,
+      });
+      capturePostHogEvent("care_plan_version_created", { episode_id: episodeId, version: saved.version, surface: "care_plan" });
     } catch (requestError) {
       toast.error(requestError instanceof Error ? requestError.message : "Failed to save the care plan.");
     } finally {
@@ -146,7 +160,7 @@ export default function AdjustCarePlanPage() {
         <button
           type="button"
           onClick={() => router.push(`/dashboard/care-episodes/${episodeId}`)}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E9EDF2] text-[#526078] hover:bg-[#DDE3EC]"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -157,8 +171,8 @@ export default function AdjustCarePlanPage() {
     );
   }
 
-  const patientName = displayEpisode.patient?.name || "this patient";
-  const patientCode = displayEpisode.patient?.hospitalId || displayEpisode.patientId || "--";
+  const patientName = episode?.patient?.name || "this patient";
+  const patientCode = episode?.patient?.hospitalId || episode?.patientId || "--";
   const version = plan.version || 1;
 
   return (
@@ -168,29 +182,29 @@ export default function AdjustCarePlanPage() {
           <button
             type="button"
             onClick={cancel}
-            className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#E9EDF2] text-[#526078] hover:bg-[#DDE3EC]"
+            className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-bold text-[#111827] md:text-2xl">Adjust Care Plan</h1>
-            <span className="rounded-full bg-[#E4F0FF] px-2.5 py-1 text-[10px] font-bold uppercase text-[#0753A5]">
+            <h1 className="text-xl font-bold text-foreground md:text-2xl">Adjust Care Plan</h1>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold uppercase text-primary">
               V{version} {plan.isActive ? "Active" : "Inactive"}
             </span>
           </div>
-          <p className="mt-1.5 text-sm font-medium text-[#71809B]">
-            Review and Adjust Care Plan for <strong className="text-[#344054]">{patientName} ({patientCode})</strong>
+          <p className="mt-1.5 text-sm font-medium text-muted-foreground">
+            Review and Adjust Care Plan for <strong className="text-foreground/80">{patientName} ({patientCode})</strong>
           </p>
         </div>
         <div className="flex items-center justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={cancel} className="h-11 px-4 text-sm font-bold text-[#111827]">
+          <Button type="button" variant="ghost" onClick={cancel} className="h-11 px-4 text-sm font-bold text-foreground">
             Cancel
           </Button>
           <Button
             type="button"
             onClick={openSaveModal}
             disabled={!isDirty || isSaving}
-            className="h-11 gap-2 rounded-xl bg-[#023E8A] px-5 text-sm font-bold text-white hover:bg-[#023575]"
+            className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
           >
             <Save className="h-4 w-4" />
             Save changes
@@ -199,21 +213,21 @@ export default function AdjustCarePlanPage() {
       </div>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-sm">
+        <Card className="rounded-xl border-border bg-card shadow-sm">
           <CardContent className="p-5 sm:p-6">
             <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#E7F2FF] text-[#1769C2]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <ClipboardList className="h-4.5 w-4.5" />
               </span>
               <div>
-                <h2 className="text-sm font-bold text-[#111827]">Care tasks</h2>
-                <p className="text-xs font-medium text-[#71809B]">Active tasks and instructions assigned to the patient</p>
+                <h2 className="text-sm font-bold text-foreground">Care tasks</h2>
+                <p className="text-xs font-medium text-muted-foreground">Active tasks and instructions assigned to the patient</p>
               </div>
             </div>
 
             <div className="mt-5 space-y-4">
               {tasks.map((task) => (
-                <div key={task.id} className="rounded-xl bg-[#F8FAFC] p-4">
+                <div key={task.id} className="rounded-xl bg-muted/40 p-4">
                   <div className="grid gap-2 sm:grid-cols-[1fr_160px_140px_auto]">
                     <input
                       aria-label="Task label"
@@ -223,10 +237,10 @@ export default function AdjustCarePlanPage() {
                       className={inputClass}
                     />
                     <Select value={task.category} onValueChange={(value) => updateTask(task.id, { category: value as CareTaskCategory })}>
-                      <SelectTrigger className="h-11 w-full rounded-lg border-[#DDE3EC] bg-white text-sm font-medium text-[#172033]">
+                      <SelectTrigger className="h-11 w-full rounded-lg border-border bg-card text-sm font-medium text-foreground">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="border-[#DDE3EC]">
+                      <SelectContent className="border-border">
                         {CATEGORY_OPTIONS.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
@@ -255,7 +269,7 @@ export default function AdjustCarePlanPage() {
                     value={task.instructions}
                     onChange={(event) => updateTask(task.id, { instructions: event.target.value })}
                     placeholder="Instructions for the patient..."
-                    className="mt-2 min-h-20 resize-none rounded-lg border-[#DDE3EC] bg-white py-2.5 text-sm leading-6"
+                    className="mt-2 min-h-20 resize-none rounded-lg border-border bg-card py-2.5 text-sm leading-6"
                   />
                 </div>
               ))}
@@ -264,7 +278,7 @@ export default function AdjustCarePlanPage() {
             <button
               type="button"
               onClick={addTask}
-              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#DDE3EC] text-sm font-bold text-[#023E8A] hover:bg-[#F8FAFC]"
+              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border text-sm font-bold text-primary hover:bg-muted/40"
             >
               <Plus className="h-4 w-4" />
               Add task
@@ -273,24 +287,10 @@ export default function AdjustCarePlanPage() {
         </Card>
 
         <aside className="space-y-4 lg:sticky lg:top-4">
-          {justSaved ? (
-            <Card className="rounded-xl border-[#BEE8D2] bg-[#F0FBF6] shadow-none">
-              <CardContent className="flex items-start gap-3 p-4">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#10B981]" />
-                <div>
-                  <p className="text-sm font-bold text-[#0F9D6C]">Care plan updated</p>
-                  <p className="mt-0.5 text-xs font-medium text-[#3E8E6E]">
-                    V{version} Active, Patient notified and trajectory recalculated
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-none">
+          <Card className="rounded-xl border-border bg-card shadow-none">
             <CardContent className="p-5">
-              <h2 className="text-sm font-bold text-[#172033]">Plan summary</h2>
-              <dl className="mt-4 space-y-3 text-xs text-[#71809B]">
+              <h2 className="text-sm font-bold text-foreground">Plan summary</h2>
+              <dl className="mt-4 space-y-3 text-xs text-muted-foreground">
                 {[
                   ["Care tasks", tasks.filter((task) => task.category !== "Medication").length],
                   ["Medications", tasks.filter((task) => task.category === "Medication").length],
@@ -299,59 +299,49 @@ export default function AdjustCarePlanPage() {
                 ].map(([label, count]) => (
                   <div key={String(label)} className="flex justify-between">
                     <dt>{label}</dt>
-                    <dd className="font-bold text-[#172033]">{count}</dd>
+                    <dd className="font-bold text-foreground">{count}</dd>
                   </div>
                 ))}
                 <div className="flex justify-between">
                   <dt>Duration</dt>
-                  <dd className="font-bold text-[#172033]">{plan.episodeDuration} days</dd>
+                  <dd className="font-bold text-foreground">{plan.episodeDuration} days</dd>
                 </div>
               </dl>
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-none">
+          <Card className="rounded-xl border-border bg-card shadow-none">
             <CardContent className="p-5">
-              <h2 className="flex items-center gap-2 text-sm font-bold text-[#172033]">
-                <History className="h-4 w-4 text-[#0873DC]" />
+              <h2 className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <History className="h-4 w-4 text-primary" />
                 Version history
               </h2>
               <div className="mt-4 space-y-4">
-                <div className="rounded-lg border border-[#4B91E5] bg-[#F3F8FF] p-3">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-xs text-[#172033]">Version {version}.0</strong>
-                    <span className="rounded-full bg-[#DDF8EA] px-2 py-0.5 text-[9px] font-bold text-[#16A76A]">ACTIVE</span>
+                {plan.versions.map((item) => (
+                  <div key={item.id} className={item.isActive ? "rounded-lg border border-primary/40 bg-primary/5 p-3" : "rounded-lg border border-border p-3"}>
+                    <div className="flex items-center justify-between">
+                      <strong className="text-xs text-foreground">Version {item.version}.0</strong>
+                      {item.isActive ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">ACTIVE</span> : null}
+                    </div>
+                    <p className="mt-2 text-xs leading-4 text-muted-foreground">{item.changeReason || "Care plan updated."}</p>
+                    <p className="mt-2 text-right text-[10px] font-bold text-muted-foreground">{item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "--"}</p>
                   </div>
-                  <p className="mt-2 text-xs leading-4 text-[#71819A]">{plan.changeReason || "Care plan updated."}</p>
-                  <p className="mt-2 text-right text-[10px] font-bold text-[#71819A]">{displayEpisode.updatedAt ? new Date(displayEpisode.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "--"}</p>
-                </div>
-                {version > 1 ? (
-                  <div className="relative border-l-2 border-[#DDE3EC] pl-4">
-                    <span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-[#AAB4C2]" />
-                    <strong className="text-xs text-[#526078]">Version {version - 1}.0</strong>
-                    <p className="mt-1 text-[11px] text-[#8190A5]">Previous care plan revision.</p>
-                  </div>
-                ) : null}
-                <div className="relative border-l-2 border-[#DDE3EC] pl-4">
-                  <span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-[#AAB4C2]" />
-                  <strong className="text-xs text-[#526078]">Version 1.0</strong>
-                  <p className="mt-1 text-[11px] text-[#8190A5]">Intake admission profile established.</p>
-                </div>
+                ))}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border-[#DDE3EC] bg-white shadow-none">
+          <Card className="rounded-xl border-border bg-card shadow-none">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-sm font-bold text-[#172033]">
-                  <Bell className="h-4 w-4 text-[#0873DC]" />
+                <h2 className="flex items-center gap-2 text-sm font-bold text-foreground">
+                  <Bell className="h-4 w-4 text-primary" />
                   Patient notification
                 </h2>
-                <Switch checked={notifyPatient} onCheckedChange={setNotifyPatient} />
+                <Switch checked disabled aria-describedby="care-plan-notification-status" />
               </div>
-              <p className="mt-3 text-xs leading-5 text-[#8190A5]">
-                On save, the patient will receive an in-app notification summarising the changes to their care tasks and schedule.
+              <p id="care-plan-notification-status" className="mt-3 text-xs leading-5 text-muted-foreground">
+                The backend automatically notifies the patient when this care plan is created or updated.
               </p>
             </CardContent>
           </Card>

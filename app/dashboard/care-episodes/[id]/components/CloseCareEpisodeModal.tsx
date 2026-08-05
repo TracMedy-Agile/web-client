@@ -5,34 +5,39 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-import type { ClosureReason } from "../_shared/episodeClosureTypes";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { components } from "@/docs/types/api";
 
-const CLOSURE_REASONS: ClosureReason[] = [
-  "Recovery completed",
-  "Transferred",
-  "Patient discontinued",
-  "Lost to follow-up",
-  "Deceased",
-  "Administrative closure",
+export type CloseCareEpisodePayload = components["schemas"]["CloseEpisodeDto"];
+type ClosureReasonValue = CloseCareEpisodePayload["closureReason"];
+type OutcomeStatusValue = CloseCareEpisodePayload["outcomeStatus"];
+type DischargeStatusValue = NonNullable<CloseCareEpisodePayload["dischargeStatus"]>;
+
+const CLOSURE_REASONS: Array<{ value: ClosureReasonValue; label: string }> = [
+  { value: "recovery_completed", label: "Recovery completed" },
+  { value: "lost_to_follow_up", label: "Lost to follow-up" },
+  { value: "no_further_action", label: "No further action" },
 ];
 
-const OUTCOME_SUMMARY = {
-  checkInCompletion: { completed: 5, total: 7 },
-  goalAchievementPercent: 85,
-  missedTasksCount: 0,
-};
+const OUTCOME_STATUSES: Array<{ value: OutcomeStatusValue; label: string }> = [
+  { value: "recovered", label: "Recovered" },
+  { value: "ongoing_monitoring", label: "Ongoing monitoring" },
+  { value: "referred", label: "Referred" },
+  { value: "deceased", label: "Deceased" },
+  { value: "unknown", label: "Unknown" },
+];
 
-export type CloseCareEpisodePayload = {
-  closureReason: ClosureReason;
-  finalClinicalSummary: string;
+const DISCHARGE_STATUSES: Array<{ value: DischargeStatusValue; label: string }> = [
+  { value: "PLANNED", label: "Planned" },
+  { value: "IN_PROGRESS", label: "In progress" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "NOT_APPLICABLE", label: "Not applicable" },
+];
+
+export type EpisodeOutcomeSummary = {
+  checkInCompletion: { completed: number; total: number } | null;
+  goalAchievementPercent: number | null;
+  missedTasksCount: number | null;
 };
 
 type CloseCareEpisodeModalProps = {
@@ -40,164 +45,102 @@ type CloseCareEpisodeModalProps = {
   onOpenChange: (open: boolean) => void;
   patientName: string;
   isClosing: boolean;
+  summary: EpisodeOutcomeSummary;
   onConfirm: (payload: CloseCareEpisodePayload) => void;
 };
 
-export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosing, onConfirm }: CloseCareEpisodeModalProps) {
-  const [closureReason, setClosureReason] = useState<ClosureReason | "">("");
-  const [finalClinicalSummary, setFinalClinicalSummary] = useState("");
+export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosing, summary, onConfirm }: CloseCareEpisodeModalProps) {
+  const [closureReason, setClosureReason] = useState<ClosureReasonValue | "">("");
+  const [outcomeStatus, setOutcomeStatus] = useState<OutcomeStatusValue | "">("");
+  const [finalNotes, setFinalNotes] = useState("");
+  const [dischargeStatus, setDischargeStatus] = useState<DischargeStatusValue | "">("");
+  const [followUpType, setFollowUpType] = useState("");
+  const [followUpReason, setFollowUpReason] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
   const [error, setError] = useState("");
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (isClosing) return;
     if (!nextOpen) {
       setClosureReason("");
-      setFinalClinicalSummary("");
+      setOutcomeStatus("");
+      setFinalNotes("");
+      setDischargeStatus("");
+      setFollowUpType("");
+      setFollowUpReason("");
+      setFollowUpDate("");
       setError("");
     }
     onOpenChange(nextOpen);
   };
 
   const handleConfirm = () => {
-    if (!closureReason) {
-      setError("Select a closure reason before continuing.");
+    if (!closureReason || !outcomeStatus) {
+      setError("Select both a closure reason and final outcome before continuing.");
       return;
     }
     setError("");
-    onConfirm({ closureReason, finalClinicalSummary: finalClinicalSummary.trim() });
+    onConfirm({
+      closureReason,
+      outcomeStatus,
+      finalNotes: finalNotes.trim() || undefined,
+      dischargeStatus: dischargeStatus || undefined,
+      followUp: followUpType ? {
+        type: followUpType,
+        reason: followUpReason.trim() || undefined,
+        scheduledDate: followUpDate ? new Date(`${followUpDate}T12:00:00`).toISOString() : undefined,
+        status: "open",
+      } : undefined,
+    });
   };
 
-  const checkInPercent = Math.round((OUTCOME_SUMMARY.checkInCompletion.completed / OUTCOME_SUMMARY.checkInCompletion.total) * 100);
+  const checkInPercent = summary.checkInCompletion && summary.checkInCompletion.total > 0
+    ? Math.min(Math.round((summary.checkInCompletion.completed / summary.checkInCompletion.total) * 100), 100)
+    : null;
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#111827]/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-[680px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.36)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
-          <div className="flex shrink-0 items-start justify-between border-b border-[#E5EAF0] bg-[#FBFCFE] px-6 py-5">
-            <div>
-              <DialogPrimitive.Title className="text-lg font-bold text-[#151D2C]">Close Care Episode</DialogPrimitive.Title>
-              <DialogPrimitive.Description className="mt-1 text-sm font-medium text-[#71809B]">
-                Reviewing Final Status for <strong className="text-[#344054]">{patientName}</strong>
-              </DialogPrimitive.Description>
-            </div>
-            <DialogPrimitive.Close
-              type="button"
-              aria-label="Close dialog"
-              disabled={isClosing}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#344054] transition-colors hover:bg-[#EEF2F6] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <X className="h-5 w-5" />
-            </DialogPrimitive.Close>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-[680px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-card shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
+          <div className="flex shrink-0 items-start justify-between border-b border-border bg-muted/30 px-6 py-5">
+            <div><DialogPrimitive.Title className="text-xl font-bold text-foreground">Close Care Episode</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm font-medium text-muted-foreground">Reviewing final status for <strong className="text-foreground">{patientName}</strong></DialogPrimitive.Description></div>
+            <DialogPrimitive.Close type="button" aria-label="Close dialog" disabled={isClosing} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"><X className="h-5 w-5" /></DialogPrimitive.Close>
           </div>
 
-          <div className="overflow-y-auto px-6 py-6" style={{ maxHeight: "calc(90vh - 160px)" }}>
-            <p className="text-xs font-extrabold uppercase tracking-[0.06em] text-[#023E8A]">Episode Outcome Summary</p>
+          <div className="overflow-y-auto px-6 py-6">
+            <p className="text-xs font-extrabold uppercase tracking-[0.06em] text-primary">Episode Outcome Summary</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-[#F1F3F5] p-4">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#71809B]">Check-in Completion</p>
-                <p className="mt-2 text-2xl font-extrabold text-[#023E8A]">
-                  {OUTCOME_SUMMARY.checkInCompletion.completed}
-                  <span className="text-sm font-bold text-[#71809B]"> / {OUTCOME_SUMMARY.checkInCompletion.total}</span>
-                </p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
-                  <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${checkInPercent}%` }} />
-                </div>
-              </div>
-              <div className="rounded-xl bg-[#F1F3F5] p-4">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#71809B]">Goal Achievements</p>
-                <p className="mt-2 text-2xl font-extrabold text-[#023E8A]">
-                  {OUTCOME_SUMMARY.goalAchievementPercent}
-                  <span className="text-sm font-bold text-[#71809B]">%</span>
-                </p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E5E7EB]">
-                  <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${OUTCOME_SUMMARY.goalAchievementPercent}%` }} />
-                </div>
-              </div>
-              <div className="rounded-xl bg-[#F1F3F5] p-4">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#71809B]">Missed Tasks</p>
-                <p className="mt-2 text-2xl font-extrabold text-[#023E8A]">{OUTCOME_SUMMARY.missedTasksCount}</p>
-                {OUTCOME_SUMMARY.missedTasksCount === 0 ? (
-                  <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[#10B981]">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Perfect Compliance
-                  </p>
-                ) : null}
-              </div>
+              <SummaryCard label="Check-in Completion" value={summary.checkInCompletion ? `${summary.checkInCompletion.completed} / ${summary.checkInCompletion.total}` : "--"} progress={checkInPercent} detail={summary.checkInCompletion ? "From episode timeline" : "Not available"} />
+              <SummaryCard label="Goal Achievements" value={summary.goalAchievementPercent == null ? "--" : `${summary.goalAchievementPercent}%`} progress={summary.goalAchievementPercent} detail={summary.goalAchievementPercent == null ? "Not tracked by API" : "Recorded goal progress"} />
+              <SummaryCard label="Missed Tasks" value={summary.missedTasksCount == null ? "--" : String(summary.missedTasksCount)} detail={summary.missedTasksCount === 0 ? "No missed care-plan tasks" : summary.missedTasksCount == null ? "No task data" : "From active care plan"} positive={summary.missedTasksCount === 0} />
             </div>
 
-            {error ? <p className="mt-4 text-sm font-semibold text-red-600">{error}</p> : null}
+            {error ? <p role="alert" className="mt-4 text-sm font-semibold text-destructive">{error}</p> : null}
 
-            <label className="mt-6 block">
-              <span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-[#182132]">
-                Closure Reason <span className="text-red-500">*</span>
-              </span>
-              <Select value={closureReason} onValueChange={(value) => setClosureReason(value as ClosureReason)}>
-                <SelectTrigger className="h-11 w-full rounded-lg border-[#DDE3EC] bg-[#F1F3F5] text-sm font-medium text-[#172033]">
-                  <SelectValue placeholder="Select a definitive reason..." />
-                </SelectTrigger>
-                <SelectContent className="z-[70] border-[#DDE3EC]">
-                  {CLOSURE_REASONS.map((reason) => (
-                    <SelectItem key={reason} value={reason}>
-                      {reason}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-
-            <label className="mt-6 block">
-              <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-[#182132]">
-                Final Clinical Summary <span className="font-medium normal-case text-[#71809B]">(optional)</span>
-              </span>
-              <Textarea
-                value={finalClinicalSummary}
-                onChange={(event) => setFinalClinicalSummary(event.target.value)}
-                placeholder="Enter clinical observations, final metrics, and discharge recommendations..."
-                className="min-h-28 resize-none rounded-lg border-transparent bg-[#F1F3F5] py-3 text-sm leading-6"
-              />
-            </label>
-
-            <div className="mt-6 flex items-start gap-3 rounded-xl bg-[#EFF5FF] p-4">
-              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#023E8A]" />
-              <div>
-                <p className="text-sm font-bold text-[#023E8A]">Final Validation Required</p>
-                <p className="mt-1 text-sm leading-6 text-[#344054]">
-                  Closing this episode will archive all associated metrics and discharge the patient from active monitoring. This
-                  action is logged for clinical audit.
-                </p>
-              </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Closure Reason <span className="text-destructive">*</span></span><Select value={closureReason} onValueChange={(value) => { setClosureReason(value as ClosureReasonValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select a reason..." /></SelectTrigger><SelectContent className="z-[70] border-border">{CLOSURE_REASONS.map((reason) => <SelectItem key={reason.value} value={reason.value}>{reason.label}</SelectItem>)}</SelectContent></Select></label>
+              <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Outcome <span className="text-destructive">*</span></span><Select value={outcomeStatus} onValueChange={(value) => { setOutcomeStatus(value as OutcomeStatusValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select an outcome..." /></SelectTrigger><SelectContent className="z-[70] border-border">{OUTCOME_STATUSES.map((outcome) => <SelectItem key={outcome.value} value={outcome.value}>{outcome.label}</SelectItem>)}</SelectContent></Select></label>
             </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Discharge Status</span><Select value={dischargeStatus} onValueChange={(value) => setDischargeStatus(value as DischargeStatusValue)}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select status..." /></SelectTrigger><SelectContent className="z-[70] border-border">{DISCHARGE_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent></Select></label>
+              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Type</span><Select value={followUpType} onValueChange={setFollowUpType}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="No follow-up" /></SelectTrigger><SelectContent className="z-[70] border-border"><SelectItem value="telehealth">Telehealth</SelectItem><SelectItem value="in_person">In person</SelectItem><SelectItem value="phone">Phone</SelectItem></SelectContent></Select></label>
+              {followUpType ? <><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Date</span><input type="date" value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Reason</span><input value={followUpReason} onChange={(event) => setFollowUpReason(event.target.value)} placeholder="e.g. BP recheck" className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label></> : null}
+            </div>
+
+            <label className="mt-6 block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Clinical Summary <span className="font-medium normal-case text-muted-foreground">(optional)</span></span><Textarea value={finalNotes} onChange={(event) => setFinalNotes(event.target.value)} placeholder="Enter clinical observations, final metrics, and discharge recommendations..." className="min-h-28 resize-none rounded-lg border-transparent bg-muted/60 py-3 text-sm leading-6" /></label>
+
+            <div className="mt-6 flex items-start gap-3 rounded-xl bg-primary/10 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="text-sm font-bold text-primary">Final Validation Required</p><p className="mt-1 text-sm leading-6 text-foreground/80">Closing this episode removes it from active monitoring. The closure reason, outcome, and final notes are recorded for clinical audit.</p></div></div>
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-[#E5EAF0] bg-[#FBFCFE] px-6 py-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => handleOpenChange(false)}
-              disabled={isClosing}
-              className="h-11 px-4 text-sm font-bold text-[#344054] hover:bg-[#EEF2F6]"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleConfirm}
-              disabled={isClosing}
-              className={cn("h-11 gap-2 rounded-xl bg-[#064B91] px-5 text-sm font-bold text-white hover:bg-[#023E8A]")}
-            >
-              {isClosing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Closing...
-                </>
-              ) : (
-                "Close Episode"
-              )}
-            </Button>
-          </div>
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border bg-muted/30 px-6 py-4"><Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isClosing} className="h-11 px-4 text-sm font-bold">Cancel</Button><Button type="button" onClick={handleConfirm} disabled={isClosing || !closureReason || !outcomeStatus} className="h-11 gap-2 rounded-xl px-5 text-sm font-bold">{isClosing ? <><Loader2 className="h-4 w-4 animate-spin" />Closing...</> : "Close Episode"}</Button></div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );
+}
+
+function SummaryCard({ label, value, detail, progress, positive = false }: { label: string; value: string; detail: string; progress?: number | null; positive?: boolean }) {
+  return <div className="rounded-xl bg-muted/60 p-4"><p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-extrabold text-primary">{value}</p>{progress != null ? <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} /></div> : null}<p className={positive ? "mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700" : "mt-2 text-xs text-muted-foreground"}>{positive ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}{detail}</p></div>;
 }

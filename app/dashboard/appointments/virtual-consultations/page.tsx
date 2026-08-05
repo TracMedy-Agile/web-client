@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   CalendarDays,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import AppointmentDateRangePicker from "../components/AppointmentDateRangePicker";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
+import ScheduleAppointmentModal from "../components/ScheduleAppointmentModal";
 
 type MetricCardData = {
   title: string;
@@ -419,7 +421,7 @@ export default function VirtualConsultationsPage() {
   const [clinicianFilter, setClinicianFilter] = useState("all");
   const [dateRange, setDateRange] = useState({ dateFrom: "", dateTo: "" });
   const [reschedulingAppointment, setReschedulingAppointment] = useState<Consultation | null>(null);
-  const [notice, setNotice] = useState("");
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   const loadConsultations = useCallback(async (refreshing = false) => {
     if (refreshing) setIsRefreshing(true);
@@ -544,6 +546,14 @@ export default function VirtualConsultationsPage() {
   return (
     <>
       <div className="space-y-6">
+        <Link
+          href="/dashboard/appointments"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-[#71809B] transition-colors hover:text-[#111827]"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Back to Appointments
+        </Link>
+
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Virtual Consultations</h1>
@@ -564,7 +574,7 @@ export default function VirtualConsultationsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setNotice("Video scheduling workflow is coming soon.")}
+              onClick={() => setIsScheduleModalOpen(true)}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
             >
               <Plus className="h-5 w-5" />
@@ -573,10 +583,9 @@ export default function VirtualConsultationsPage() {
           </div>
         </div>
 
-        {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600">{notice}</div> : null}
         {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">{error}</div> : null}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {metrics.map((metric) => (
             <MetricCard key={metric.title} metric={metric} />
           ))}
@@ -619,16 +628,16 @@ export default function VirtualConsultationsPage() {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-left">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-left">
               <thead>
                 <tr className="bg-[#EEF4FF] text-xs font-semibold uppercase text-[#71809B]">
-                  <th className="rounded-l-sm px-4 sm:px-6 py-4">Patient Name</th>
-                  <th className="px-6 py-4">Appointment ID</th>
-                  <th className="px-6 py-4">Scheduled</th>
-                  <th className="px-6 py-4">Clinician</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="rounded-r-sm px-4 sm:px-6 py-4 text-right">Action</th>
+                  <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:px-4">Patient Name</th>
+                  <th className="hidden px-3 py-4 xl:table-cell">Appointment ID</th>
+                  <th className="px-2 py-4 sm:px-3 xl:px-4">Scheduled</th>
+                  <th className="hidden px-3 py-4 lg:table-cell">Clinician</th>
+                  <th className="px-2 py-4 sm:px-3 xl:px-4">Status</th>
+                  <th className="rounded-r-sm px-2 py-4 text-right sm:px-3 xl:px-4">Action</th>
                 </tr>
               </thead>
               {isLoading ? (
@@ -647,25 +656,25 @@ export default function VirtualConsultationsPage() {
                 <tbody>
                   {filteredConsultations.map((consultation) => (
                     <tr key={consultation.id} className="border-b border-border text-sm text-[#344054] last:border-b-0">
-                      <td className="px-6 py-4 font-semibold text-[#111827]">{consultation.patientName}</td>
-                      <td className="px-6 py-4 font-medium">{consultation.appointmentId}</td>
-                      <td className="px-6 py-4">
-                        <p className="font-bold">{consultation.scheduledPrimary}</p>
-                        <p className="font-medium">{consultation.scheduledSecondary}</p>
+                      <td className="px-2 py-4 font-semibold text-[#111827] sm:px-3 xl:px-4"><p className="truncate" title={consultation.patientName}>{consultation.patientName}</p></td>
+                      <td className="hidden px-3 py-4 font-medium xl:table-cell"><p className="truncate" title={consultation.appointmentId}>{consultation.appointmentId}</p></td>
+                      <td className="px-2 py-4 sm:px-3 xl:px-4">
+                        <p className="truncate font-bold">{consultation.scheduledPrimary}</p>
+                        <p className="truncate font-medium">{consultation.scheduledSecondary}</p>
                       </td>
-                      <td className="px-6 py-4 font-medium">{consultation.clinician}</td>
-                      <td className="px-6 py-4">
+                      <td className="hidden px-3 py-4 font-medium lg:table-cell"><p className="truncate" title={consultation.clinician}>{consultation.clinician}</p></td>
+                      <td className="px-2 py-4 sm:px-3 xl:px-4">
                         <ConsultationStatusBadge consultation={consultation} />
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-2 py-4 text-right sm:px-3 xl:px-4">
                         <div className="flex justify-end">
                           {consultation.status === "ready" ? (
-                            <button type="button" onClick={() => setNotice("Video consultation launch is coming soon.")} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-white shadow-sm">
+                            <button type="button" onClick={() => toast.info("Video consultation launch is coming soon.")} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-white shadow-sm">
                               Join Consultation
                             </button>
                           ) : null}
                           {consultation.status === "in-progress" ? (
-                            <button type="button" onClick={() => setNotice("Video consultation launch is coming soon.")} className="h-10 rounded-xl border border-primary bg-white px-5 text-xs font-bold text-primary">
+                            <button type="button" onClick={() => toast.info("Video consultation launch is coming soon.")} className="h-10 rounded-xl border border-primary bg-white px-5 text-xs font-bold text-primary">
                               Rejoin Session
                             </button>
                           ) : null}
@@ -729,15 +738,26 @@ export default function VirtualConsultationsPage() {
       </div>
 
       <RescheduleAppointmentModal
+        key={reschedulingAppointment ? `reschedule-${reschedulingAppointment.id}` : "reschedule-closed"}
         isOpen={Boolean(reschedulingAppointment)}
         appointmentId={reschedulingAppointment?.id}
         patientName={reschedulingAppointment?.patientName}
         appointmentReason={reschedulingAppointment?.reason}
+        appointmentDate={reschedulingAppointment?.scheduledDate}
+        appointmentTime={reschedulingAppointment?.scheduledTime}
         hospitalId={reschedulingAppointment?.hospitalId}
         onClose={() => setReschedulingAppointment(null)}
         onSuccess={() => {
-          setNotice("Appointment rescheduled successfully.");
+          toast.success("Appointment rescheduled successfully.");
           setReschedulingAppointment(null);
+          void loadConsultations(true);
+        }}
+      />
+      <ScheduleAppointmentModal
+        open={isScheduleModalOpen}
+        onOpenChange={setIsScheduleModalOpen}
+        initialAppointmentType="teleconsultation"
+        onAppointmentCreated={() => {
           void loadConsultations(true);
         }}
       />

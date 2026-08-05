@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -44,6 +45,7 @@ type ClinicianSuggestion = {
   isTopMatch: boolean;
   isFull: boolean;
   tone: "blue" | "green" | "red";
+  avatarUrl: string;
   initials: string;
 };
 
@@ -141,37 +143,66 @@ function normalizeAppointmentSummary(payload: unknown, fallbackId: string): Appo
   };
 }
 
-function normalizeClinicianSuggestion(record: ApiRecord, index: number): ClinicianSuggestion {
+function normalizeDepartment(value: string) {
+  return value.toLowerCase().trim();
+}
+
+function normalizeClinicianSuggestion(record: ApiRecord, index: number, requestedDepartment: string): ClinicianSuggestion {
   const status = normalizeStatusKey(getString(record, ["status"], "available"));
   const isFull = status === "full" || status === "unavailable";
   const capacity = getNumber(record, ["dailyCapacity"], 0);
   const assigned = getNumber(record, ["assignedAppointments", "assignedToday"], 0);
   const utilization = Math.min(Math.max(Math.round(getNumber(record, ["capacityUtilization", "utilizationPercentage"], 0)), 0), 100);
   const name = formatDoctorName(getString(record, ["name", "fullName", "displayName"], "Unknown Clinician"));
+  const department = getString(record, ["department", "speciality", "specialty"], "--");
+  const isRequestedDepartment = requestedDepartment !== "--" && normalizeDepartment(department) === normalizeDepartment(requestedDepartment);
+  const isTopMatch = index === 0 && isRequestedDepartment && !isFull;
 
   return {
     id: getString(record, ["id", "clinicianId", "_id"]),
     name,
-    department: getString(record, ["department", "speciality", "specialty"], "--"),
+    department,
     status,
     assigned,
     capacity,
     utilization,
-    isTopMatch: index === 0 && !isFull,
+    isTopMatch,
     isFull,
-    tone: isFull ? "red" : index === 0 ? "blue" : "green",
+    tone: isFull ? "red" : isTopMatch ? "blue" : "green",
     initials: getInitials(name),
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
-function sortClinicians(items: ApiRecord[]) {
-  const rank = (status: string) => (status === "available" ? 0 : status === "near_capacity" ? 1 : 2);
+function sortClinicians(items: ApiRecord[], requestedDepartment: string) {
+  const statusRank = (status: string) => (status === "available" ? 0 : status === "near_capacity" ? 1 : 2);
+  const normalizedRequestedDepartment = normalizeDepartment(requestedDepartment);
 
   return [...items].sort((a, b) => {
-    const rankDiff = rank(normalizeStatusKey(getString(a, ["status"], "available"))) - rank(normalizeStatusKey(getString(b, ["status"], "available")));
+    const aDepartment = normalizeDepartment(getString(a, ["department", "speciality", "specialty"], "--"));
+    const bDepartment = normalizeDepartment(getString(b, ["department", "speciality", "specialty"], "--"));
+    const departmentRank = Number(bDepartment === normalizedRequestedDepartment) - Number(aDepartment === normalizedRequestedDepartment);
+    if (departmentRank !== 0) return departmentRank;
+
+    const rankDiff = statusRank(normalizeStatusKey(getString(a, ["status"], "available"))) - statusRank(normalizeStatusKey(getString(b, ["status"], "available")));
     if (rankDiff !== 0) return rankDiff;
     return getNumber(a, ["capacityUtilization", "utilizationPercentage"], 0) - getNumber(b, ["capacityUtilization", "utilizationPercentage"], 0);
   });
+}
+
+async function getAllClinicianRecords() {
+  const firstPage = await getClinicians({ page: 1, limit: 100 });
+  const firstPageRecord = asRecord(firstPage);
+  const meta = asRecord(firstPageRecord?.meta);
+  const totalPages = Math.max(1, Math.trunc(getNumber(meta, ["totalPages"], 1)));
+
+  if (totalPages === 1) return getItems(firstPage);
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) => getClinicians({ page: index + 2, limit: 100 })),
+  );
+
+  return [firstPage, ...remainingPages].flatMap(getItems);
 }
 
 async function getAccessToken(): Promise<string | null> {
@@ -236,16 +267,19 @@ function ClinicianCard({
       ) : null}
 
       <div className="flex items-start gap-4">
-        <div
-          className={cn(
-            "mt-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-sm font-bold ring-4 ring-white",
-            clinician.tone === "blue" && "bg-[#DDE7F5] text-[#023E8A]",
-            clinician.tone === "green" && "bg-[#DDF5EC] text-[#047857]",
-            clinician.tone === "red" && "bg-[#FFF1E8] text-[#B91C1C]",
-          )}
-        >
-          {clinician.initials}
-        </div>
+        <Avatar className="mt-4 h-14 w-14 shrink-0 ring-4 ring-white">
+          {clinician.avatarUrl ? <AvatarImage src={clinician.avatarUrl} alt={clinician.name} className="object-cover" /> : null}
+          <AvatarFallback
+            className={cn(
+              "text-sm font-bold",
+              clinician.tone === "blue" && "bg-[#DDE7F5] text-[#023E8A]",
+              clinician.tone === "green" && "bg-[#DDF5EC] text-[#047857]",
+              clinician.tone === "red" && "bg-[#FFF1E8] text-[#B91C1C]",
+            )}
+          >
+            {clinician.initials}
+          </AvatarFallback>
+        </Avatar>
 
         <div className="min-w-0 flex-1 pt-4">
           <div className="flex items-start justify-between gap-3">
@@ -331,10 +365,9 @@ export default function AssignAppointmentDrawer({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [assigningId, setAssigningId] = useState("");
-  const [assignError, setAssignError] = useState("");
-  const [capacityWarning, setCapacityWarning] = useState<{ id: string; name: string } | null>(null);
 
   const [showAll, setShowAll] = useState(false);
+  const visibleClinicians = showAll ? clinicians : clinicians.slice(0, 5);
 
   const loadData = useCallback(async () => {
     if (!appointmentId) return;
@@ -345,13 +378,13 @@ export default function AssignAppointmentDrawer({
     try {
       const appointmentPayload = await getAppointmentById(appointmentId);
       const summary = normalizeAppointmentSummary(appointmentPayload, appointmentId);
-      const cliniciansPayload = await getClinicians({
-        department: summary.department === "--" ? undefined : summary.department,
-        limit: showAll ? 50 : 5,
-      });
+      const clinicianRecords = await getAllClinicianRecords();
+      const rankedClinicians = sortClinicians(clinicianRecords, summary.department)
+        .map((clinician, index) => normalizeClinicianSuggestion(clinician, index, summary.department))
+        .filter((clinician) => clinician.id);
 
       setAppointment(summary);
-      setClinicians(sortClinicians(getItems(cliniciansPayload)).map(normalizeClinicianSuggestion));
+      setClinicians(rankedClinicians);
     } catch (requestError) {
       setAppointment(null);
       setClinicians([]);
@@ -359,7 +392,7 @@ export default function AssignAppointmentDrawer({
     } finally {
       setIsLoading(false);
     }
-  }, [appointmentId, showAll]);
+  }, [appointmentId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -369,8 +402,6 @@ export default function AssignAppointmentDrawer({
 
   const resetDrawerState = () => {
     setShowAll(false);
-    setCapacityWarning(null);
-    setAssignError("");
   };
 
   const handleClose = () => {
@@ -380,11 +411,20 @@ export default function AssignAppointmentDrawer({
 
   const handleAssign = async (clinician: ClinicianSuggestion, force = false) => {
     if (!appointmentId) return;
-    if (clinician.isFull && !force && !window.confirm(`${clinician.name} is at capacity. Assign anyway?`)) return;
+    if (clinician.isFull && !force) {
+      toast.warning(`${clinician.name} is at capacity`, {
+        id: `assign-capacity-${clinician.id}`,
+        description: "Assigning anyway may exceed the daily threshold and trigger overtime approval.",
+        duration: 8000,
+        action: {
+          label: "Assign anyway",
+          onClick: () => void handleAssign(clinician, true),
+        },
+      });
+      return;
+    }
 
     setAssigningId(clinician.id);
-    setAssignError("");
-    setCapacityWarning(null);
 
     try {
       await assignAppointment(appointmentId, clinician.id, force || clinician.isFull);
@@ -394,9 +434,18 @@ export default function AssignAppointmentDrawer({
       handleClose();
     } catch (requestError) {
       if (isCapacityError(requestError)) {
-        setCapacityWarning({ id: clinician.id, name: clinician.name });
+        toast.warning(`${clinician.name} is at capacity`, {
+          id: `assign-capacity-${clinician.id}`,
+          description: "Assigning anyway may exceed the daily threshold and trigger overtime approval.",
+          duration: 8000,
+          action: {
+            label: "Assign anyway",
+            onClick: () => void handleAssign(clinician, true),
+          },
+        });
       } else {
-        setAssignError(requestError instanceof Error ? requestError.message : "Failed to assign clinician.");
+        const message = requestError instanceof Error ? requestError.message : "Failed to assign clinician.";
+        toast.error(message);
       }
     } finally {
       setAssigningId("");
@@ -470,22 +519,15 @@ export default function AssignAppointmentDrawer({
 
                 <div className="mt-8 flex items-center justify-between border-b border-[#DDE3EC] pb-3">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#344054]">Suggested Clinicians</p>
-                  {!showAll ? (
+                  {clinicians.length > visibleClinicians.length ? (
                     <button type="button" onClick={() => setShowAll(true)} className="text-sm font-bold text-[#023E8A]">
                       View All
                     </button>
                   ) : null}
                 </div>
 
-                {assignError ? (
-                  <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500">
-                    <AlertCircle className="h-4 w-4" />
-                    {assignError}
-                  </p>
-                ) : null}
-
                 <div className="mt-4 space-y-4 pb-4">
-                  {clinicians.map((clinician) => (
+                  {visibleClinicians.map((clinician) => (
                     <ClinicianCard
                       key={clinician.id}
                       clinician={clinician}
@@ -493,37 +535,13 @@ export default function AssignAppointmentDrawer({
                       onAssign={(selected) => void handleAssign(selected)}
                     />
                   ))}
-                  {clinicians.length === 0 ? (
-                    <p className="py-6 text-center text-sm font-medium text-[#71809B]">No clinicians found for this department.</p>
+                  {visibleClinicians.length === 0 ? (
+                    <p className="py-6 text-center text-sm font-medium text-[#71809B]">No clinicians available for assignment.</p>
                   ) : null}
                 </div>
               </div>
             ) : null}
 
-            {capacityWarning ? (
-              <div className="sticky bottom-0 border-t border-[#FECACA] bg-[#FFE8E5] px-4 sm:px-6 py-5">
-                <div className="flex gap-3 text-sm font-medium leading-5 text-[#FF1F1F]">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div className="flex-1">
-                    <p>
-                      Assigning to {capacityWarning.name} will exceed their daily capacity threshold. Overtime
-                      approvals may be triggered and medical director notification will be sent.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={Boolean(assigningId)}
-                      onClick={() => {
-                        const clinician = clinicians.find((item) => item.id === capacityWarning.id);
-                        if (clinician) void handleAssign(clinician, true);
-                      }}
-                      className="mt-3 text-sm font-bold text-[#FF1F1F] underline disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Assign anyway
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </DialogPrimitive.Content>
         </SheetPortal>
       </Sheet>

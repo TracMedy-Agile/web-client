@@ -8,6 +8,7 @@ interface MetricCardProps {
   value: string | number;
   change?: string;
   changeType?: "positive" | "negative";
+  changeTitle?: string;
 }
 
 export default function MetricCard({
@@ -17,6 +18,7 @@ export default function MetricCard({
   value,
   change,
   changeType = "positive",
+  changeTitle,
 }: MetricCardProps) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
@@ -26,6 +28,7 @@ export default function MetricCard({
         </div>
         {change && (
           <span
+            title={changeTitle}
             className={cn(
               "rounded-full px-2 py-0.5 text-xs font-semibold",
               changeType === "positive" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500",

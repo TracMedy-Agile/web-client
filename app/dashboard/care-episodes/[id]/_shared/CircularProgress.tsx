@@ -6,7 +6,7 @@ export function CircularProgress({
   progressColor,
   size = 128,
 }: {
-  percent: number;
+  percent: number | null;
   trackColor: string;
   progressColor: string;
   size?: number;
@@ -14,7 +14,8 @@ export function CircularProgress({
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (clamp(percent) / 100) * circumference;
+  const normalizedPercent = percent == null ? 0 : clamp(percent);
+  const offset = circumference - (normalizedPercent / 100) * circumference;
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -33,7 +34,7 @@ export function CircularProgress({
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-bold text-[#111827]">{percent}%</span>
+        <span className="text-2xl font-bold text-foreground">{percent == null ? "--" : `${normalizedPercent}%`}</span>
       </div>
     </div>
   );

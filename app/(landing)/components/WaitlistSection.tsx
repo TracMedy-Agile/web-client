@@ -1,5 +1,6 @@
 'use client'
 import { useState } from "react";
+import { toast } from "sonner";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import ScrollReveal from "./ScrollReveal";
 import { apiSubmitWaitlist } from "@/lib/api/auth";
@@ -14,13 +15,11 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const WaitlistSection = () => {
   const [submitted, setSubmitted] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setErrorMsg("");
     setFieldErrors({});
     const form = e.currentTarget;
     const formData = new FormData(form);
@@ -55,17 +54,18 @@ const WaitlistSection = () => {
       const result = await apiSubmitWaitlist({ fullName, email, phone });
 
       if (!result.ok) {
-        setErrorMsg(result.message ?? "Failed to subscribe. Please try again.");
+        toast.error(result.message ?? "Failed to subscribe. Please try again.");
         setLoading(false);
         return;
       }
 
       capturePostHogEvent("waitlist_submitted");
+      toast.success("You joined the Tracmedy waitlist.");
       setSubmitted(true);
       setLoading(false);
     } catch (err) {
       console.error("Fetch error:", err);
-      setErrorMsg("A network error occurred. Please try again.");
+      toast.error("A network error occurred. Please try again.");
       setLoading(false);
     }
   };
@@ -159,12 +159,6 @@ const WaitlistSection = () => {
                   {loading ? "Joining..." : "Secure My Early Access"}
                 </button>
               </form>
-            )}
-
-            {errorMsg && (
-              <div className="mt-4 p-4 rounded-xl bg-destructive/20 text-destructive border border-destructive/50 text-sm font-bold">
-                {errorMsg}
-              </div>
             )}
 
             <p className="mt-6 text-sm text-primary-foreground/60">
