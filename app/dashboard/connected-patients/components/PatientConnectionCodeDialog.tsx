@@ -76,6 +76,7 @@ export function PatientConnectionCodeDialog({
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
 
   const updateField = (field: keyof InviteForm, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -99,7 +100,8 @@ export function PatientConnectionCodeDialog({
       setInvite(response);
       setGeneratedAt(new Date());
       setCopied(false);
-      toast.success("Connection code generated successfully.");
+      setShowSuccessBanner(true);
+      window.setTimeout(() => setShowSuccessBanner(false), 4000);
       capturePostHogEvent("connection_code_generated", {
         existing_user: response.existingUser,
       });
@@ -128,6 +130,7 @@ export function PatientConnectionCodeDialog({
         setGeneratedAt(null);
         setCopied(false);
         setIsSubmitting(false);
+        setShowSuccessBanner(false);
       }, 200);
     }
   };
@@ -173,6 +176,15 @@ export function PatientConnectionCodeDialog({
       <DialogContent className="max-h-[92vh] w-[calc(100%-2rem)] max-w-2xl gap-0 overflow-y-auto border-0 bg-white p-0 shadow-2xl sm:rounded-2xl">
         {invite ? (
           <>
+            {showSuccessBanner ? (
+              <div
+                role="status"
+                className="flex items-center gap-2 bg-emerald-50 px-6 py-4 text-sm font-semibold text-emerald-700 sm:px-8"
+              >
+                <Check className="h-4 w-4" />
+                Connection Code Generated successfully.
+              </div>
+            ) : null}
             <div className="border-b border-slate-200 bg-slate-50 px-6 py-6 sm:px-8">
               <DialogTitle className="text-2xl font-bold text-slate-900">
                 Connection Code Generated

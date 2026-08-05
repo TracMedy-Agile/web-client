@@ -4,6 +4,7 @@ import type { components } from "@/docs/types/api";
 type ApiConnectedPatient = components["schemas"]["ConnectedPatientResponseDto"];
 export type CreatePatientInviteInput = components["schemas"]["CreatePatientInviteDto"];
 export type PatientInvite = components["schemas"]["PatientInviteResponseDto"];
+export type UpdateConnectedPatientInput = components["schemas"]["UpdateFacilityPatientDto"];
 
 export type ConnectedPatientRecord = {
   patientId: ApiConnectedPatient["patientId"];
@@ -296,4 +297,28 @@ export async function getPatientProfile(facilityId: string, patientId: string): 
     careEpisodes: getRecordArray(root.careEpisodes),
     appointments: getRecordArray(root.appointments),
   };
+}
+
+export async function updateConnectedPatient(
+  facilityId: string,
+  patientId: string,
+  input: UpdateConnectedPatientInput,
+): Promise<PatientProfileResponse> {
+  await request(`/facilities/${encodeURIComponent(facilityId)}/patients/${encodeURIComponent(patientId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return getPatientProfile(facilityId, patientId);
+}
+
+export async function disconnectConnectedPatient(facilityId: string, patientId: string): Promise<void> {
+  await request(`/facilities/${encodeURIComponent(facilityId)}/patients/${encodeURIComponent(patientId)}/disconnect`, {
+    method: "PATCH",
+  });
+}
+
+export async function reconnectConnectedPatient(facilityId: string, patientId: string): Promise<void> {
+  await request(`/facilities/${encodeURIComponent(facilityId)}/patients/${encodeURIComponent(patientId)}/reconnect`, {
+    method: "PATCH",
+  });
 }

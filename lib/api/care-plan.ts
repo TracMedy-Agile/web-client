@@ -33,6 +33,10 @@ async function request(path: string, init?: RequestInit) {
 }
 
 type JsonRecord = Record<string, unknown>;
+export type CarePlanWithVersions = CarePlan & {
+  versions: CarePlan[];
+  versionCount: number;
+};
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -92,8 +96,18 @@ function normalizeCarePlan(value: unknown): CarePlan {
   };
 }
 
-export async function getCarePlan(episodeId: string): Promise<CarePlan> {
-  return normalizeCarePlan(await request(`/care-episodes/${encodeURIComponent(episodeId)}/care-plan`));
+export async function getCarePlan(episodeId: string): Promise<CarePlanWithVersions> {
+  const value = await request(`/care-episodes/${encodeURIComponent(episodeId)}/care-plan`);
+  const plan = normalizeCarePlan(value);
+  const record = isRecord(value) ? value : {};
+  const versions = Array.isArray(record.versions)
+    ? record.versions.map(normalizeCarePlan)
+    : [plan];
+  return {
+    ...plan,
+    versions,
+    versionCount: typeof record.versionCount === "number" ? record.versionCount : versions.length,
+  };
 }
 
 export async function updateCarePlan(episodeId: string, payload: CarePlanPayload): Promise<CarePlan> {

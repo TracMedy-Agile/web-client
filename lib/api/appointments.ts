@@ -1,3 +1,5 @@
+import type { components } from "@/docs/types/api";
+
 type AppointmentQueryParams = {
   status?: string;
   dateFrom?: string;
@@ -33,6 +35,8 @@ type PendingUnassignedQueryParams = {
 };
 
 type AppointmentMutationData = Record<string, unknown>;
+export type AppointmentCapacity = components["schemas"]["CapacityResponseDto"];
+export type CompleteAppointmentInput = components["schemas"]["CompleteAppointmentDto"];
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -95,6 +99,21 @@ export async function getCalendarAppointments(params: CalendarQueryParams) {
   query.set("facilityId", params.facilityId);
 
   return request("/appointments/calendar", undefined, query);
+}
+
+function normalizeAppointmentCapacity(payload: unknown): AppointmentCapacity {
+  const root = payload as { data?: AppointmentCapacity };
+  if (root.data) return root.data;
+  return payload as AppointmentCapacity;
+}
+
+export async function getAppointmentCapacity(params: CalendarQueryParams & { time?: string }): Promise<AppointmentCapacity> {
+  const query = new URLSearchParams();
+  query.set("date", params.date);
+  query.set("facilityId", params.facilityId);
+  setQueryValue(query, "time", params.time);
+  const payload = await request("/appointments/capacity", undefined, query);
+  return normalizeAppointmentCapacity(payload);
 }
 
 export async function getClinicians(params?: ClinicianQueryParams) {
@@ -160,5 +179,12 @@ export async function markNoShow(id: string) {
 export async function checkInAppointment(id: string) {
   return request(`/appointments/${encodeURIComponent(id)}/checkin`, {
     method: "PATCH",
+  });
+}
+
+export async function completeAppointment(id: string, data: CompleteAppointmentInput = {}) {
+  return request(`/appointments/${encodeURIComponent(id)}/complete`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
   });
 }

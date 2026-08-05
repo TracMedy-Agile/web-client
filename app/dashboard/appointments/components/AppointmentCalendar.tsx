@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Utensils, Video } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
@@ -129,7 +130,14 @@ function WeekAppointmentCard({ appointment }: { appointment: CalendarAppointment
   const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
 
   return (
-    <div className={cn("mx-1 mt-1 min-w-0 overflow-hidden rounded-xl px-2 py-3 text-xs shadow-sm xl:px-3", weekCardStyles[appointment.status])}>
+    <Link
+      href={`/dashboard/appointments/${encodeURIComponent(appointment.id)}`}
+      aria-label={`Open appointment details for ${appointment.patientName}`}
+      className={cn(
+        "mx-1 mt-1 block min-w-0 cursor-pointer overflow-hidden rounded-xl px-2 py-3 text-xs shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 xl:px-3",
+        weekCardStyles[appointment.status],
+      )}
+    >
       <p className="truncate font-bold leading-tight">{appointment.patientName}</p>
       <p className="mt-1 truncate font-medium text-[#71809B]">{appointment.type}</p>
       <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium text-[#71809B]">
@@ -141,7 +149,7 @@ function WeekAppointmentCard({ appointment }: { appointment: CalendarAppointment
         <span className="truncate">{appointment.doctor}</span>
       </p>
       <p className="mt-1 truncate font-bold">{appointment.status}</p>
-    </div>
+    </Link>
   );
 }
 

@@ -152,6 +152,10 @@ Do NOT change any other files.
 
 ## Common Tasks
 
+## Before working
+
+1. Do not change any design without my permission
+
 ## Design Files Location
 
 Designs are organized by phase:
@@ -217,6 +221,12 @@ When asked to "build [feature]":
 4. Read ../Back-end/openapi.yaml for endpoints
 5. Follow all rules in AGENTS.md
 6. Run npm run build after
+
+### Upadate backend.md
+
+1. Read ../Back-end/openapi.yaml for endpoints
+2. Read doc/phase for what we have built
+3. Check all we have built
 
 ### API Audit
 

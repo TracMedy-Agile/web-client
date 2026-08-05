@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-
   RefreshCcw,
   Search,
   Smartphone,
@@ -367,6 +366,8 @@ export default function ConnectedPatientsPage() {
         <StatCard
           label="DISCONNECTED"
           value={String(disconnectedTotal)}
+          note={disconnectedTotal > 0 ? "Needs immediate Review" : undefined}
+          noteClassName="bg-emerald-50 text-emerald-600"
           icon={UserX}
           iconClassName="bg-red-50 text-red-500"
           isLoading={isLoadingStats}
@@ -496,9 +497,9 @@ export default function ConnectedPatientsPage() {
                         <TableCell className="px-4 py-5 sm:px-6">
                           <Link
                             href={`/dashboard/connected-patients/${encodeURIComponent(record.patientId)}`}
-                            className="text-sm font-bold text-primary"
+                            className="inline-flex items-center text-sm font-bold text-primary"
                           >
-                            View Profile
+                            View
                           </Link>
                         </TableCell>
                       </TableRow>

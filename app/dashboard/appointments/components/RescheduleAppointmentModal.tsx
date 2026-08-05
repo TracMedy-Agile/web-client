@@ -286,6 +286,28 @@ export default function RescheduleAppointmentModal({
               </div>
             </div>
           </section>
+          <section className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h3 className="text-base font-bold text-[#344054]">Alternative Quick Slots</h3>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#023E8A]">
+                Recommended
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {quickSlots.map((slot) => (
+                <QuickSlotButton
+                  key={slot.value}
+                  slot={slot}
+                  active={quickSlot === slot.value}
+                  onClick={() => {
+                    setQuickSlot(slot.value);
+                    setSelectedDate(slot.inputDate);
+                    setSelectedTime(toInputTime(slot.time));
+                  }}
+                />
+              ))}
+            </div>
+          </section>
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
             <label className="block">
@@ -338,28 +360,6 @@ export default function RescheduleAppointmentModal({
             </div>
           </section>
 
-          <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h3 className="text-base font-bold text-[#344054]">Alternative Quick Slots</h3>
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#023E8A]">
-                Recommended
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {quickSlots.map((slot) => (
-                <QuickSlotButton
-                  key={slot.value}
-                  slot={slot}
-                  active={quickSlot === slot.value}
-                  onClick={() => {
-                    setQuickSlot(slot.value);
-                    setSelectedDate(slot.inputDate);
-                    setSelectedTime(toInputTime(slot.time));
-                  }}
-                />
-              ))}
-            </div>
-          </section>
 
           <section className="mt-8">
             <div className="mb-3 flex items-center justify-between gap-4">

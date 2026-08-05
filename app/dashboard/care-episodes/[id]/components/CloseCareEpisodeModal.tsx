@@ -11,6 +11,7 @@ import type { components } from "@/docs/types/api";
 export type CloseCareEpisodePayload = components["schemas"]["CloseEpisodeDto"];
 type ClosureReasonValue = CloseCareEpisodePayload["closureReason"];
 type OutcomeStatusValue = CloseCareEpisodePayload["outcomeStatus"];
+type DischargeStatusValue = NonNullable<CloseCareEpisodePayload["dischargeStatus"]>;
 
 const CLOSURE_REASONS: Array<{ value: ClosureReasonValue; label: string }> = [
   { value: "recovery_completed", label: "Recovery completed" },
@@ -24,6 +25,13 @@ const OUTCOME_STATUSES: Array<{ value: OutcomeStatusValue; label: string }> = [
   { value: "referred", label: "Referred" },
   { value: "deceased", label: "Deceased" },
   { value: "unknown", label: "Unknown" },
+];
+
+const DISCHARGE_STATUSES: Array<{ value: DischargeStatusValue; label: string }> = [
+  { value: "PLANNED", label: "Planned" },
+  { value: "IN_PROGRESS", label: "In progress" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "NOT_APPLICABLE", label: "Not applicable" },
 ];
 
 export type EpisodeOutcomeSummary = {
@@ -45,6 +53,10 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
   const [closureReason, setClosureReason] = useState<ClosureReasonValue | "">("");
   const [outcomeStatus, setOutcomeStatus] = useState<OutcomeStatusValue | "">("");
   const [finalNotes, setFinalNotes] = useState("");
+  const [dischargeStatus, setDischargeStatus] = useState<DischargeStatusValue | "">("");
+  const [followUpType, setFollowUpType] = useState("");
+  const [followUpReason, setFollowUpReason] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
   const [error, setError] = useState("");
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -53,6 +65,10 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
       setClosureReason("");
       setOutcomeStatus("");
       setFinalNotes("");
+      setDischargeStatus("");
+      setFollowUpType("");
+      setFollowUpReason("");
+      setFollowUpDate("");
       setError("");
     }
     onOpenChange(nextOpen);
@@ -64,7 +80,18 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
       return;
     }
     setError("");
-    onConfirm({ closureReason, outcomeStatus, finalNotes: finalNotes.trim() || undefined });
+    onConfirm({
+      closureReason,
+      outcomeStatus,
+      finalNotes: finalNotes.trim() || undefined,
+      dischargeStatus: dischargeStatus || undefined,
+      followUp: followUpType ? {
+        type: followUpType,
+        reason: followUpReason.trim() || undefined,
+        scheduledDate: followUpDate ? new Date(`${followUpDate}T12:00:00`).toISOString() : undefined,
+        status: "open",
+      } : undefined,
+    });
   };
 
   const checkInPercent = summary.checkInCompletion && summary.checkInCompletion.total > 0
@@ -94,6 +121,12 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Closure Reason <span className="text-destructive">*</span></span><Select value={closureReason} onValueChange={(value) => { setClosureReason(value as ClosureReasonValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select a reason..." /></SelectTrigger><SelectContent className="z-[70] border-border">{CLOSURE_REASONS.map((reason) => <SelectItem key={reason.value} value={reason.value}>{reason.label}</SelectItem>)}</SelectContent></Select></label>
               <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Outcome <span className="text-destructive">*</span></span><Select value={outcomeStatus} onValueChange={(value) => { setOutcomeStatus(value as OutcomeStatusValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select an outcome..." /></SelectTrigger><SelectContent className="z-[70] border-border">{OUTCOME_STATUSES.map((outcome) => <SelectItem key={outcome.value} value={outcome.value}>{outcome.label}</SelectItem>)}</SelectContent></Select></label>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Discharge Status</span><Select value={dischargeStatus} onValueChange={(value) => setDischargeStatus(value as DischargeStatusValue)}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select status..." /></SelectTrigger><SelectContent className="z-[70] border-border">{DISCHARGE_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent></Select></label>
+              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Type</span><Select value={followUpType} onValueChange={setFollowUpType}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="No follow-up" /></SelectTrigger><SelectContent className="z-[70] border-border"><SelectItem value="telehealth">Telehealth</SelectItem><SelectItem value="in_person">In person</SelectItem><SelectItem value="phone">Phone</SelectItem></SelectContent></Select></label>
+              {followUpType ? <><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Date</span><input type="date" value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Reason</span><input value={followUpReason} onChange={(event) => setFollowUpReason(event.target.value)} placeholder="e.g. BP recheck" className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label></> : null}
             </div>
 
             <label className="mt-6 block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Clinical Summary <span className="font-medium normal-case text-muted-foreground">(optional)</span></span><Textarea value={finalNotes} onChange={(event) => setFinalNotes(event.target.value)} placeholder="Enter clinical observations, final metrics, and discharge recommendations..." className="min-h-28 resize-none rounded-lg border-transparent bg-muted/60 py-3 text-sm leading-6" /></label>

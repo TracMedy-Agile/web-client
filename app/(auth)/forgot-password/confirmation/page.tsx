@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { toast } from 'sonner'
+import { apiForgotPassword } from '@/lib/api/auth'
 
 function TracmedyLogo() {
   return (
@@ -24,11 +25,15 @@ function EmailSentContent() {
   const [resendState, setResendState] = useState<'idle' | 'loading'>('idle')
 
   const handleResend = async () => {
+    if (!email) {
+      toast.error('Return to the forgot-password page and enter your email again.')
+      return
+    }
     setResendState('loading')
-    // TODO: call resend API with email
-    await new Promise((r) => setTimeout(r, 800))
+    const result = await apiForgotPassword({ email })
     setResendState('idle')
-    toast.success('Email resent successfully.')
+    if (result.ok) toast.success('Password reset email resent successfully.')
+    else toast.error(result.message)
   }
 
   return (

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getCareEpisodeById } from "@/lib/api/care-episodes";
 import { createCarePlanVersion, getCarePlan, updateCarePlan } from "@/lib/api/care-plan";
 import { getAvailableClinicians } from "@/lib/api/clinicians";
+import { createHomeCareRequest, getHomeCareServices, type HomeCareService } from "@/lib/api/home-care";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import type {
   CarePlan,
@@ -48,6 +49,87 @@ function splitInstructions(instructions = "") {
 }
 
 const HOME_CARE_DETAILS_PREFIX = "Home care details:";
+const MONITORING_DETAILS_PREFIX = "Monitoring criteria:";
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function monitoringDefaults(name: string): Omit<MonitoringItem, "id" | "name" | "frequency" | "cadence"> {
+  const normalized = name.toLowerCase();
+  const type: MonitoringItem["type"] = normalized.includes("walk") || normalized.includes("exercise") || normalized.includes("activity")
+    ? "Activity"
+    : normalized.includes("pressure") || normalized.includes("heart") || normalized.includes("temperature") || normalized.includes("weight") || normalized.includes("sugar") || normalized.includes("oxygen")
+      ? "Vital Sign"
+      : "Symptom";
+  return {
+    type,
+    priority: "High Priority",
+    criticalLow: "",
+    criticalHigh: "",
+    severityThreshold: "Moderate",
+    persistenceReports: "",
+    minimumCompletion: "",
+    missedSessions: "",
+    worseningTrend: true,
+    decliningPerformance: false,
+    missingDataRule: "Alert after 24 hours",
+    trendRules: [],
+  };
+}
+
+function parseMonitoringInstructions(name: string, instructions = "") {
+  const lines = instructions.split("\n");
+  const primary = splitInstructions(lines.find((line) => !line.startsWith(MONITORING_DETAILS_PREFIX)) ?? "");
+  const defaults = monitoringDefaults(name);
+  const metadataLine = lines.find((line) => line.startsWith(MONITORING_DETAILS_PREFIX));
+  if (!metadataLine) return { ...defaults, frequency: primary.first, cadence: primary.rest };
+  try {
+    const metadata = recordValue(JSON.parse(metadataLine.slice(MONITORING_DETAILS_PREFIX.length).trim()));
+    if (!metadata) return { ...defaults, frequency: primary.first, cadence: primary.rest };
+    return {
+      ...defaults,
+      ...metadata,
+      type: metadata.type === "Vital Sign" || metadata.type === "Symptom" || metadata.type === "Activity" ? metadata.type : defaults.type,
+      priority: typeof metadata.priority === "string" ? metadata.priority : defaults.priority,
+      frequency: primary.first,
+      cadence: primary.rest,
+      trendRules: Array.isArray(metadata.trendRules) ? metadata.trendRules.filter((rule) => recordValue(rule)).map((rule, index) => {
+        const value = recordValue(rule) ?? {};
+        return {
+          id: typeof value.id === "string" ? value.id : rowId("rule", index),
+          condition: typeof value.condition === "string" ? value.condition : "Rapid Increase",
+          threshold: typeof value.threshold === "string" ? value.threshold : "",
+          unit: typeof value.unit === "string" ? value.unit : "mmHg",
+          window: typeof value.window === "string" ? value.window : "24 hours",
+        };
+      }) : [],
+    } as Omit<MonitoringItem, "id" | "name">;
+  } catch {
+    return { ...defaults, frequency: primary.first, cadence: primary.rest };
+  }
+}
+
+function serializeMonitoringInstructions(item: MonitoringItem) {
+  const metadata = {
+    type: item.type,
+    priority: item.priority,
+    criticalLow: item.criticalLow,
+    criticalHigh: item.criticalHigh,
+    severityThreshold: item.severityThreshold,
+    persistenceReports: item.persistenceReports,
+    minimumCompletion: item.minimumCompletion,
+    missedSessions: item.missedSessions,
+    worseningTrend: item.worseningTrend,
+    decliningPerformance: item.decliningPerformance,
+    missingDataRule: item.missingDataRule,
+    trendRules: item.trendRules,
+  };
+  return [
+    [item.frequency, item.cadence].filter(Boolean).join(" | "),
+    `${MONITORING_DETAILS_PREFIX} ${JSON.stringify(metadata)}`,
+  ].filter(Boolean).join("\n");
+}
 
 function parseHomeCareInstructions(value = "") {
   const lines = value.split("\n");
@@ -104,6 +186,7 @@ function normalizeCarePlan(plan: CarePlan, startDate: string, expectedDurationDa
       const details = parseHomeCareInstructions(task.instructions);
       homeCare.push({
         id: rowId("home", index),
+        serviceId: "",
         service: task.title,
         priority: task.priority || "Routine",
         frequency: details.frequency || plan.monitoringFrequency || "Daily",
@@ -113,6 +196,7 @@ function normalizeCarePlan(plan: CarePlan, startDate: string, expectedDurationDa
         instructions: details.instructions,
         fulfillmentMethod: details.fulfillmentMethod,
         clinicianId: details.clinicianId,
+        isNew: false,
       });
     } else if (["warning", "warning-sign", "warning_sign"].includes(type)) {
       const parsed = splitInstructions(task.instructions);
@@ -123,12 +207,12 @@ function normalizeCarePlan(plan: CarePlan, startDate: string, expectedDurationDa
         response: parsed.rest,
       });
     } else {
-      const parsed = splitInstructions(task.instructions);
+      const parsed = parseMonitoringInstructions(task.title, task.instructions);
       monitoring.push({
         id: rowId("monitoring", index),
         name: task.title,
-        frequency: parsed.first || plan.monitoringFrequency || "",
-        cadence: parsed.rest,
+        ...parsed,
+        frequency: parsed.frequency || plan.monitoringFrequency || "",
       });
     }
   }
@@ -171,7 +255,7 @@ function toPayload(form: CarePlanForm, reason: string): CarePlanPayload {
     })),
     tasks: [
       ...form.labTests.map((test) => ({ title: test.name, dueDate: test.date, status: "pending", type: "laboratory", priority: test.priority, instructions: test.purpose })),
-      ...form.monitoring.map((item) => ({ title: item.name, dueDate: "", status: "active", type: "monitoring", priority: "Routine", instructions: [item.frequency, item.cadence].filter(Boolean).join(" | ") })),
+      ...form.monitoring.map((item) => ({ title: item.name, dueDate: "", status: "active", type: "monitoring", priority: item.priority, instructions: serializeMonitoringInstructions(item) })),
       ...form.homeCare.map((order) => ({ title: order.service, dueDate: order.startDate, status: "pending", type: "home-care", priority: order.priority, instructions: serializeHomeCareInstructions(order) })),
       ...form.warningSigns.map((warning) => ({ title: warning.title, dueDate: "", status: "active", type: "warning", priority: "Urgent", instructions: [warning.detail, warning.response].filter(Boolean).join(" | ") })),
     ],
@@ -182,10 +266,35 @@ function toPayload(form: CarePlanForm, reason: string): CarePlanPayload {
   };
 }
 
+function attachHomeCareServices(form: CarePlanForm, services: HomeCareService[]): CarePlanForm {
+  return {
+    ...form,
+    homeCare: form.homeCare.map((order) => {
+      const normalizedName = order.service.trim().toLowerCase();
+      const service = services.find((item) => item.name.trim().toLowerCase() === normalizedName);
+      return service ? { ...order, serviceId: service.id, service: service.name } : order;
+    }),
+  };
+}
+
+function homeCareRequestNotes(order: HomeCareOrder) {
+  return [
+    order.instructions.trim(),
+    `Priority: ${order.priority}`,
+    `Frequency: ${order.frequency}`,
+    `Duration: ${order.duration} days`,
+    `Visits: ${order.numberOfVisits}`,
+    `Fulfillment: ${order.fulfillmentMethod}`,
+    order.clinicianId ? `Requested clinician: ${order.clinicianId}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export function useCarePlanForm(episodeId: string) {
   const [form, setForm] = useState<CarePlanForm>(() => emptyForm());
+  const [versions, setVersions] = useState<CarePlan[]>([]);
   const [clinicians, setClinicians] = useState<Clinician[]>([]);
-  const [patient, setPatient] = useState({ name: "Patient", id: "--" });
+  const [services, setServices] = useState<HomeCareService[]>([]);
+  const [patient, setPatient] = useState({ name: "Patient", id: "--", patientId: "" });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [saveMode, setSaveMode] = useState<"patch" | "post" | null>(null);
@@ -194,22 +303,31 @@ export function useCarePlanForm(episodeId: string) {
   useEffect(() => {
     if (!episodeId) return;
     let active = true;
-    Promise.allSettled([getCarePlan(episodeId), getAvailableClinicians(), getCareEpisodeById(episodeId)]).then(([plan, staff, episode]) => {
+    Promise.allSettled([
+      getCarePlan(episodeId),
+      getAvailableClinicians(),
+      getCareEpisodeById(episodeId),
+      getHomeCareServices(),
+    ]).then(([plan, staff, episode, homeCareServices]) => {
       if (!active) return;
       const episodeValue = episode.status === "fulfilled" ? episode.value : null;
+      const serviceDirectory = homeCareServices.status === "fulfilled" ? homeCareServices.value : [];
       const startDate = episodeValue?.createdAt?.slice(0, 10) || isoToday;
       const duration = episodeValue?.expectedDurationDays ?? 1;
 
-      if (episodeValue?.patient) {
+      if (episodeValue) {
         setPatient({
-          name: episodeValue.patient.name || "Patient",
-          id: episodeValue.patient.hospitalId || episodeValue.patientId || "--",
+          name: episodeValue.patient?.name || "Patient",
+          id: episodeValue.patient?.hospitalId || episodeValue.patientId || "--",
+          patientId: episodeValue.patientId,
         });
       }
       if (staff.status === "fulfilled") setClinicians(staff.value);
+      setServices(serviceDirectory);
 
       if (plan.status === "fulfilled") {
-        const next = normalizeCarePlan(plan.value, startDate, duration);
+        const next = attachHomeCareServices(normalizeCarePlan(plan.value, startDate, duration), serviceDirectory);
+        setVersions(plan.value.versions);
         setForm(next);
         setInitialForm(JSON.stringify(next));
       } else {
@@ -256,12 +374,69 @@ export function useCarePlanForm(episodeId: string) {
     if (!reason) throw new Error("Change reason is required.");
     setSaveMode(mode);
     try {
+      let formToSave = form;
+      const newHomeCareOrders = form.homeCare.filter((order) => order.isNew);
+      if (newHomeCareOrders.length > 0) {
+        if (!patient.patientId) throw new Error("The episode patient could not be identified for the home-care request.");
+        if (newHomeCareOrders.some((order) => !order.serviceId)) {
+          throw new Error("Select an available home-care service before saving.");
+        }
+
+        const requestResults = await Promise.allSettled(newHomeCareOrders.map(async (order) => {
+          const request = await createHomeCareRequest({
+            patientId: patient.patientId,
+            serviceId: order.serviceId,
+            requestType: "clinician_initiated",
+            episodeId,
+            ...(order.startDate ? { preferredDate: `${order.startDate}T00:00:00.000Z` } : {}),
+            notes: homeCareRequestNotes(order),
+          });
+          capturePostHogEvent("home_care_request_created", {
+            episode_id: episodeId,
+            patient_id: patient.patientId,
+            service_id: order.serviceId,
+            request_id: request.id,
+            fulfillment_method: order.fulfillmentMethod,
+          });
+          return order.id;
+        }));
+
+        const createdOrderIds = new Set(
+          requestResults
+            .filter((result): result is PromiseFulfilledResult<string> => result.status === "fulfilled")
+            .map((result) => result.value),
+        );
+        formToSave = {
+          ...form,
+          homeCare: form.homeCare.map((order) => createdOrderIds.has(order.id) ? { ...order, isNew: false } : order),
+        };
+        setForm(formToSave);
+
+        const failedCount = requestResults.length - createdOrderIds.size;
+        if (failedCount > 0) {
+          throw new Error(`${failedCount} home-care request${failedCount === 1 ? "" : "s"} could not be created. Please retry.`);
+        }
+      }
+
       const result = mode === "patch"
-        ? await updateCarePlan(episodeId, toPayload(form, reason))
-        : await createCarePlanVersion(episodeId, toPayload(form, reason));
-      const saved = normalizeCarePlan(result, form.startDate, form.episodeDuration);
+        ? await updateCarePlan(episodeId, toPayload(formToSave, reason))
+        : await createCarePlanVersion(episodeId, toPayload(formToSave, reason));
+      const normalized = normalizeCarePlan(result, formToSave.startDate, formToSave.episodeDuration);
+      const saved = {
+        ...normalized,
+        homeCare: normalized.homeCare.map((order, index) => ({
+          ...order,
+          serviceId: formToSave.homeCare[index]?.serviceId ?? order.serviceId,
+        })),
+      };
       setForm(saved);
       setInitialForm(JSON.stringify(saved));
+      try {
+        const refreshed = await getCarePlan(episodeId);
+        setVersions(refreshed.versions);
+      } catch {
+        setVersions((current) => [result, ...current.filter((item) => item.id !== result.id)]);
+      }
       capturePostHogEvent(mode === "patch" ? "care_plan_updated" : "care_plan_version_created", {
         episode_id: episodeId,
         version: saved.version,
@@ -270,8 +445,8 @@ export function useCarePlanForm(episodeId: string) {
     } finally {
       setSaveMode(null);
     }
-  }, [episodeId, form]);
+  }, [episodeId, form, patient.patientId]);
 
   const reset = useCallback(() => setForm(JSON.parse(initialForm) as CarePlanForm), [initialForm]);
-  return { form, setForm, clinicians, patient, error, isLoading, saveMode, isDirty, save, reset };
+  return { form, setForm, versions, clinicians, services, patient, error, isLoading, saveMode, isDirty, save, reset };
 }
