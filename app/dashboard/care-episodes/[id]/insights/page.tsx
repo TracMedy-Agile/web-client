@@ -486,6 +486,17 @@ function biometricAliases(metric: BiometricMetric) {
   return [];
 }
 
+
+function aiDataNoticeForInsight(insight: EpisodeInsightPayload | null | undefined) {
+  if (!insight) return "AI needs more patient check-ins, vitals, medication logs, or timeline activity before it can create a reviewable suggestion.";
+  if (insight.dataSufficiency === "insufficient") {
+    return "AI does not have enough episode data yet. Add more check-ins, vitals, medication logs, or timeline notes to generate a reliable suggestion.";
+  }
+  if (insight.dataSufficiency === "partial") {
+    return "AI generated this with partial episode data. More check-ins and clinical activity will improve the recommendation quality.";
+  }
+  return "";
+}
 function findBiometricMetric(insight: BiometricsInsightPayload | null, metric: BiometricMetric) {
   if (!insight) return null;
   const aliases = biometricAliases(metric).map((item) => item.toLowerCase());
@@ -557,15 +568,18 @@ export default function CareEpisodeInsightsPage() {
     if (!episodeId) return;
     setAiStatus("generating");
     setAiError("");
+    setAiDataNotice("");
     try {
       const response = await generateEpisodeInsight(episodeId);
       if (response.status === "success" && response.insight) {
         setAiSummary(response.insight);
         setAiSuggestionId(response.suggestionId ?? null);
         setAiGeneratedAt(new Date().toISOString());
+        setAiDataNotice(aiDataNoticeForInsight(response.insight));
         capturePostHogEvent("ai_insight_viewed", { source: "episode", episode_id: episodeId });
         await refreshAiSuggestions();
       } else {
+        setAiDataNotice(aiDataNoticeForInsight(response.insight));
         setAiError("AI could not generate a usable insight from the available episode data.");
       }
     } catch (requestError) {
@@ -609,6 +623,7 @@ export default function CareEpisodeInsightsPage() {
     (async () => {
       setAiStatus("loading");
       setAiError("");
+      setAiDataNotice("");
       try {
         const response = await getLatestRecoverySummary(episodeId);
         if (ignore) return;
@@ -616,11 +631,13 @@ export default function CareEpisodeInsightsPage() {
           setAiSummary(response.summary);
           setAiSuggestionId(response.suggestionId ?? null);
           setAiGeneratedAt(response.generatedAt ?? "");
+          setAiDataNotice(aiDataNoticeForInsight(response.summary));
           capturePostHogEvent("ai_insight_viewed", { source: "recovery_summary", episode_id: episodeId });
         } else {
           setAiSummary(null);
           setAiSuggestionId(null);
           setAiGeneratedAt("");
+          setAiDataNotice(aiDataNoticeForInsight(null));
         }
       } catch (requestError) {
         if (!ignore) setAiError(requestError instanceof Error ? requestError.message : "Unable to load latest AI summary.");
