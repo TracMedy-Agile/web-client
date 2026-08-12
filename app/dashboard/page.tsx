@@ -1,4 +1,3 @@
-
 import DashboardMetricCards from "@/components/dashboard/DashboardMetricCards";
 import RecoveryTrend, { type RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import LiveAlerts, { type LiveAlert } from "@/components/dashboard/LiveAlerts";
@@ -67,8 +66,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-
-
-
-

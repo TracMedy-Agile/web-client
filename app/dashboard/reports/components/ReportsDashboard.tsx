@@ -14,7 +14,6 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   getReportsDateRange,
@@ -35,7 +34,6 @@ interface ReportsDashboardProps {
   empty?: boolean;
 }
 
-const STAFF_ROLES = ["clinician", "hospital_admin"] as const;
 const statusStyles: Record<WorkloadStatus, string> = {
   Low: "bg-emerald-500",
   Moderate: "bg-amber-500",
@@ -461,7 +459,7 @@ export default function ReportsDashboard({ empty = false }: ReportsDashboardProp
               </button>
             ))}
           </div>
-          <RoleGate allowedRoles={STAFF_ROLES}>
+
             <button
               type="button"
               onClick={() => setIsExportOpen(true)}
@@ -471,7 +469,7 @@ export default function ReportsDashboard({ empty = false }: ReportsDashboardProp
               <Download className="h-4 w-4" />
               Export
             </button>
-          </RoleGate>
+
         </div>
       </div>
 
@@ -569,9 +567,9 @@ export default function ReportsDashboard({ empty = false }: ReportsDashboardProp
             <AlertPerformanceChart points={snapshot.alertPerformance} />
             <ConsultationChart points={snapshot.consultationTrend} range={snapshot.range} />
           </div>
-          <RoleGate allowedRoles={STAFF_ROLES}>
+
             <ClinicianWorkloadCards clinicians={snapshot.clinicians} />
-          </RoleGate>
+
         </>
       ) : null}
       <ExportReportModal

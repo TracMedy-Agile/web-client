@@ -24,6 +24,7 @@ import {
   type ConnectedPatientRecord,
 } from "@/lib/api/connected-patients";
 import type { components } from "@/docs/types/api";
+import { generateAlertInsight } from "@/lib/api/ai";
 
 export type AlertSeverity = "critical" | "moderate" | "low";
 export type AlertStatus = "active" | "resolved";
@@ -71,7 +72,8 @@ export type AlertReviewImpact = {
   evidence: AlertReviewEvidence[];
   analysisSummary: string;
   generatedAt: string;
-  analysisSource: "alert-impact endpoint" | "episode evidence fallback";
+  suggestedReview: string[];
+  analysisSource: "ai alert insight" | "alert-impact endpoint" | "episode evidence fallback";
 };
 
 export type ResolveAlertInput = components["schemas"]["ResolveAlertDto"];
@@ -474,25 +476,34 @@ function buildVitalHeadline(alert: ClinicalAlert, records: DailyVitalsRecord[]) 
 
 export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertReviewImpact> {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const [detail, vitals, adherence, timeline, sync, backendImpactPayload] = await Promise.all([
+  const [detail, vitals, adherence, timeline, sync, aiInsightPayload, backendImpactPayload] = await Promise.all([
     getCareEpisodeById(alert.episodeId).catch(() => null),
     getCareEpisodeDailyVitals(alert.episodeId, 7).catch(() => []),
     getCareEpisodeMedicationAdherence(alert.episodeId).catch(() => []),
     getCareEpisodeTimelinePage(alert.episodeId, { page: 1, limit: 10 }).catch(() => null),
     getCareEpisodeSync(alert.episodeId, since).catch(() => null),
+    generateAlertInsight(alert.id).catch(() => null),
     requestAlertAction(`/alerts/${encodeURIComponent(alert.id)}/impact`).catch(() => null),
   ]);
+  const aiInsight = asRecord(aiInsightPayload?.insight ?? null);
   const impactRoot = asRecord(backendImpactPayload);
-  const backendImpact = asRecord(impactRoot?.impact) ?? impactRoot;
+  const fallbackImpact = asRecord(impactRoot?.impact) ?? impactRoot;
+  const backendImpact = aiInsight ?? fallbackImpact;
   const patientName = detail?.patient?.name || alert.patientName;
   const patientCode = detail?.patient?.hospitalId ? `ID: ${detail.patient.hospitalId}` : alert.patientCode;
   const events = [...(sync?.events ?? []), ...(timeline?.data ?? [])];
   const severity = alert.severity.toUpperCase();
   const endpointEvidence = buildEndpointEvidence(backendImpact);
+  const aiEvidence = getStringList(backendImpact, "supportingEvidence")
+    .map((value) => ({ label: "AI supporting evidence", value, status: "RECORDED" }));
+  const aiSignals = getStringList(backendImpact, "relatedSignals")
+    .map((value) => ({ label: "Related signal", value, status: "RECORDED" }));
   const backendSignals = getStringList(backendImpact, "trends")
     .map((value) => ({ label: "Impact trend", value, status: "RECORDED" }));
   const evidence = [
     ...endpointEvidence,
+    ...aiEvidence,
+    ...aiSignals,
     ...backendSignals,
     ...buildVitalEvidence(vitals),
     ...buildAdherenceEvidence(adherence),
@@ -501,24 +512,26 @@ export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertR
   ].slice(0, 5);
   const vitalHeadline = buildVitalHeadline(alert, vitals);
   const riskScore = sync?.riskScore ?? detail?.riskScore ?? alert.riskScore;
-  const endpointExpected = getDisplayValue(backendImpact, ["expected", "expectedValue", "expectedRange"]);
-  const endpointActual = getDisplayValue(backendImpact, ["actual", "actualValue", "currentValue"]);
-  const endpointTrend = getDisplayValue(backendImpact, ["trend", "trendDirection"]);
-  const hasStructuredEndpointImpact = Boolean(endpointExpected || endpointActual || endpointTrend || endpointEvidence.length);
+  const endpointExpected = getDisplayValue(backendImpact, ["expected", "expectedValue", "expectedRange", "baselineComparison"]);
+  const endpointActual = getDisplayValue(backendImpact, ["actual", "actualValue", "currentValue", "contextSummary"]);
+  const endpointTrend = getDisplayValue(backendImpact, ["trend", "trendDirection", "trendInterpretation"]);
+  const suggestedReview = getStringList(backendImpact, "suggestedReview");
+  const hasStructuredEndpointImpact = Boolean(endpointExpected || endpointActual || endpointTrend || endpointEvidence.length || aiEvidence.length || aiSignals.length);
 
   return {
     patientName,
     patientCode,
-    expectedLabel: getString(backendImpact, ["expectedLabel"]) || vitalHeadline?.expectedLabel || "Alert trigger",
+    expectedLabel: getString(backendImpact, ["expectedLabel"]) || (aiInsight ? "Baseline comparison" : vitalHeadline?.expectedLabel || "Alert trigger"),
     expected: endpointExpected || vitalHeadline?.expected || alert.triggerSource,
-    actualLabel: getString(backendImpact, ["actualLabel"]) || vitalHeadline?.actualLabel || "Current risk score",
+    actualLabel: getString(backendImpact, ["actualLabel"]) || (aiInsight ? "AI context" : "Current risk score"),
     actual: endpointActual || vitalHeadline?.actual || (riskScore === null ? "Not recorded" : `${Math.round(riskScore)}/100`),
     riskScore,
     riskCategory: detail?.riskCategory ?? alert.riskCategory,
     trend: endpointTrend || vitalHeadline?.trend || detail?.riskTrend || alert.riskTrend || "No trend supplied",
-    analysisSummary: getString(backendImpact, ["ai_summary", "aiSummary", "summary"]),
+    analysisSummary: getString(backendImpact, ["contextSummary", "trendInterpretation", "priorityRationale", "ai_summary", "aiSummary", "summary"]),
     generatedAt: getString(backendImpact, ["generatedAt", "generated_at", "computedAt"]) || new Date().toISOString(),
-    analysisSource: hasStructuredEndpointImpact ? "alert-impact endpoint" : "episode evidence fallback",
+    suggestedReview,
+    analysisSource: aiInsight ? "ai alert insight" : hasStructuredEndpointImpact ? "alert-impact endpoint" : "episode evidence fallback",
     evidence: evidence.length > 0
       ? evidence
       : [{ label: "Alert severity", value: alert.severity, status: severity }],

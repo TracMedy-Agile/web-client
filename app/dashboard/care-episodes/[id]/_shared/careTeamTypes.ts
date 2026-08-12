@@ -32,6 +32,7 @@ export type Assessment = {
   date: string;
   escalationStatus: EscalationStatus;
   outcome: AssessmentOutcome;
+  keyObservation: string;
   clinicianNotes: string;
   clinicianName: string;
 };

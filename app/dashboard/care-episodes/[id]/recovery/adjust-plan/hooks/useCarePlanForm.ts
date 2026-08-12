@@ -55,6 +55,16 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+function monitoringUnit(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("pressure")) return "mmHg";
+  if (normalized.includes("temperature")) return "Celsius";
+  if (normalized.includes("sugar") || normalized.includes("glucose")) return "mg/dL";
+  if (normalized.includes("weight")) return "kg";
+  if (normalized.includes("oxygen")) return "%";
+  if (normalized.includes("heart")) return "bpm";
+  return "";
+}
 function monitoringDefaults(name: string): Omit<MonitoringItem, "id" | "name" | "frequency" | "cadence"> {
   const normalized = name.toLowerCase();
   const type: MonitoringItem["type"] = normalized.includes("walk") || normalized.includes("exercise") || normalized.includes("activity")
@@ -67,6 +77,7 @@ function monitoringDefaults(name: string): Omit<MonitoringItem, "id" | "name" | 
     priority: "High Priority",
     criticalLow: "",
     criticalHigh: "",
+    criticalUnit: monitoringUnit(name),
     severityThreshold: "Moderate",
     persistenceReports: "",
     minimumCompletion: "",
@@ -116,6 +127,7 @@ function serializeMonitoringInstructions(item: MonitoringItem) {
     priority: item.priority,
     criticalLow: item.criticalLow,
     criticalHigh: item.criticalHigh,
+    criticalUnit: item.criticalUnit,
     severityThreshold: item.severityThreshold,
     persistenceReports: item.persistenceReports,
     minimumCompletion: item.minimumCompletion,
@@ -370,17 +382,14 @@ export function useCarePlanForm(episodeId: string) {
 
   const save = useCallback(async (mode: "patch" | "post", modalReason: string) => {
     const selected = [...form.changeReasons, form.additionalReason.trim()].filter(Boolean).join("; ");
-    const reason = [selected, modalReason.trim()].filter(Boolean).join(" — ");
+    const reason = [selected, modalReason.trim()].filter(Boolean).join(" - ");
     if (!reason) throw new Error("Change reason is required.");
     setSaveMode(mode);
     try {
       let formToSave = form;
-      const newHomeCareOrders = form.homeCare.filter((order) => order.isNew);
+      const newHomeCareOrders = form.homeCare.filter((order) => order.isNew && order.serviceId);
       if (newHomeCareOrders.length > 0) {
         if (!patient.patientId) throw new Error("The episode patient could not be identified for the home-care request.");
-        if (newHomeCareOrders.some((order) => !order.serviceId)) {
-          throw new Error("Select an available home-care service before saving.");
-        }
 
         const requestResults = await Promise.allSettled(newHomeCareOrders.map(async (order) => {
           const request = await createHomeCareRequest({

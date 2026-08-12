@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { logout } from "@/lib/api/auth";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import MobileSidebarButton from "@/components/dashboard/MobileSidebarButton";
-import { Bell, ChevronDown, LogOut, Search } from "lucide-react";
+import { Bell, ChevronDown, LogOut } from "lucide-react";
 
 import {
   getNotifications,
@@ -15,7 +16,6 @@ import {
 } from '@/lib/api/notifications';
 import { CheckCheck, Loader2 } from 'lucide-react';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL;
 
 function notificationDestination(notification: NotificationRecord) {
   const { data, type } = notification;
@@ -44,34 +44,13 @@ function formatNotificationTime(value: string) {
   }).format(date);
 }
 
-interface CurrentUser {
-  name?: string;
-  role?: string;
-  specialty?: string;
-}
-
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
-
-async function getCurrentUser(): Promise<CurrentUser | null> {
-  try {
-    const accessToken = await getAccessToken();
-    const res = await fetch(`${BASE}/auth/me`, {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.data?.user ?? json?.data ?? null;
-  } catch {
-    return null;
-  }
+function formatRoleLabel(value?: string | null) {
+  if (!value) return "Staff member";
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function getInitials(name?: string | null) {
@@ -110,7 +89,7 @@ function getDashboardRouteTitle(pathname: string) {
 export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<CurrentUser | null>(null);
+  const { user } = useDashboardUser();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -120,16 +99,6 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const [notificationsError, setNotificationsError] = useState('');
   const notificationRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    getCurrentUser().then((currentUser) => {
-      if (isMounted) setUser(currentUser);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -167,8 +136,8 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isNotificationsOpen]);
 
-  const name = user?.name ?? "User";
-  const role = user?.specialty ?? user?.role ?? "";
+  const name = user?.name || "Staff member";
+  const role = user?.specialty || formatRoleLabel(user?.role);
   const resolvedTitle = title === "Dashboard" ? getDashboardRouteTitle(pathname) : title;
 
   async function loadNotifications() {
@@ -238,15 +207,6 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="relative hidden md:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search patients, alerts..."
-            className="w-72 rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-
         <div className={'relative'} ref={notificationRef}>
         <button
           onClick={handleNotificationsToggle}
@@ -360,3 +320,4 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
     </header>
   );
 }
+

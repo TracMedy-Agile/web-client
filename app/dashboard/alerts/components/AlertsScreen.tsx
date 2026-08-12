@@ -29,10 +29,8 @@ import {
   ReviewImpactModal,
   type ReviewImpactData,
 } from "@/app/dashboard/care-episodes/[id]/components/ReviewImpactModal";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 
-const CLINICIAN_ROLE = ["clinician"] as const;
 const EMPTY_SNAPSHOT: AlertsSnapshot = { active: [], history: [] };
 const ALERT_TAB_LABELS = { all: "All Alert", critical: "Critical", moderate: "Moderate", low: "Low" } as const;
 
@@ -113,6 +111,10 @@ function getReviewImpactData(alert: ClinicalAlert, impact: AlertReviewImpact | n
     actualLabel: impact?.actualLabel ?? "Current risk score",
     actual: impact?.actual ?? (alert.riskScore === null ? "Not recorded" : `${Math.round(alert.riskScore)}/100`),
     trend: impact?.trend ?? alert.riskTrend ?? "No trend supplied",
+    analysisSummary: impact?.analysisSummary,
+    generatedAt: impact?.generatedAt,
+    source: impact?.analysisSource,
+    suggestedReview: impact?.suggestedReview,
     evidence: impact?.evidence ?? [
       { label: "Patient reference", value: alert.patientCode, status: "RECORDED" },
       { label: "Risk category", value: alert.riskCategory || alert.severity, status: severity },
@@ -608,12 +610,7 @@ export default function AlertsScreen() {
                     <td className="px-6 py-3.5 text-muted-foreground">{formatTimestamp(alert.timestamp)}</td>
                     {!isHistory ? (
                       <td className="px-6 py-3.5 text-right">
-                        <RoleGate
-                          allowedRoles={CLINICIAN_ROLE}
-                          fallback={<span className="text-xs font-medium text-muted-foreground">Read only</span>}
-                        >
-                          <button type="button" onClick={() => openReview(alert)} className="font-semibold text-primary hover:underline">Review</button>
-                        </RoleGate>
+                        <button type="button" onClick={() => openReview(alert)} className="font-semibold text-primary hover:underline">Review</button>
                       </td>
                     ) : null}
                   </tr>

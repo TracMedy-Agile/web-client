@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleUserRound,
-  Ellipsis,
   FilterX,
   Search,
   ShieldAlert,
@@ -16,15 +15,7 @@ import {
   UserRoundPlus,
   UsersRound,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -35,47 +26,59 @@ import {
 } from "@/components/ui/select";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import {
-  getFacilityClinicians,
-  type ClinicianDirectoryEntry,
-} from "@/lib/api/clinicians";
+import { getTeamMembers, type TeamMember } from "@/lib/api/clinicians";
 import { cn } from "@/lib/utils";
 import InviteTeamMemberDialog from "./components/InviteTeamMemberDialog";
+import TeamMemberActions from "./components/TeamMemberActions";
 
 const PAGE_SIZE = 10;
 
-const STATUS_LABELS: Record<ClinicianDirectoryEntry["status"], string> = {
-  available: "Available",
-  near_capacity: "Near capacity",
-  full: "At capacity",
-  unavailable: "Unavailable",
-  off_duty: "Off duty",
-  covering: "Covering",
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  pending: "Pending invite",
+  suspended: "Suspended",
 };
 
-const STATUS_CLASSES: Record<ClinicianDirectoryEntry["status"], string> = {
-  available: "bg-emerald-500/10 text-emerald-700",
-  near_capacity: "bg-amber-500/10 text-amber-700",
-  full: "bg-destructive/10 text-destructive",
-  unavailable: "bg-muted text-muted-foreground",
-  off_duty: "bg-muted text-muted-foreground",
-  covering: "bg-primary/10 text-primary",
+const STATUS_CLASSES: Record<string, string> = {
+  active: "bg-emerald-500/10 text-emerald-700",
+  pending: "bg-amber-500/10 text-amber-700",
+  suspended: "bg-destructive/10 text-destructive",
 };
 
 function initials(name: string | null) {
   return (name || "Team Member")
-    .split(/s+/)
+    .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
 }
 
-function showUnavailableAction(action: string, memberId?: string) {
-  capturePostHogEvent("team_api_unavailable", { action, member_id: memberId });
-  toast.error(`${action} is not available yet`, {
-    description: "The required team-management endpoint is missing from the current API contract.",
-  });
+function humanize(value: string) {
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function statusLabel(value: string) {
+  return STATUS_LABELS[value] ?? humanize(value);
+}
+
+function statusClass(value: string) {
+  return STATUS_CLASSES[value] ?? "bg-muted text-muted-foreground";
+}
+
+function memberDepartment(member: TeamMember) {
+  return member.ward || member.specialty || "Not specified";
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unavailable";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
 function SummarySkeleton() {
@@ -88,38 +91,8 @@ function SummarySkeleton() {
   );
 }
 
-function MemberActionMenu({ member }: { member: ClinicianDirectoryEntry }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`Actions for ${member.name || "team member"}`}>
-          <Ellipsis className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/dashboard/team/${member.id}`}>View profile</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => showUnavailableAction("Edit member", member.id)}>
-          Edit member
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => showUnavailableAction("Suspend member", member.id)}>
-          Suspend member
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onSelect={() => showUnavailableAction("Remove member", member.id)}
-        >
-          Remove member
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 export default function TeamPage() {
-  const [members, setMembers] = useState<ClinicianDirectoryEntry[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -132,7 +105,7 @@ export default function TeamPage() {
     setIsLoading(true);
     setError(null);
     try {
-      setMembers(await getFacilityClinicians({ limit: 100 }));
+      setMembers(await getTeamMembers());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load the hospital team.");
     } finally {
@@ -151,10 +124,15 @@ export default function TeamPage() {
       Array.from(
         new Set(
           members
-            .map((member) => member.department)
-            .filter((item): item is string => Boolean(item)),
+            .map(memberDepartment)
+            .filter((item) => item !== "Not specified"),
         ),
       ).sort(),
+    [members],
+  );
+
+  const statusOptions = useMemo(
+    () => Array.from(new Set(members.map((member) => member.status))).filter(Boolean).sort(),
     [members],
   );
 
@@ -163,10 +141,13 @@ export default function TeamPage() {
     return members.filter((member) => {
       const matchesSearch =
         !term ||
-        member.name?.toLowerCase().includes(term) ||
+        member.name.toLowerCase().includes(term) ||
         member.email.toLowerCase().includes(term) ||
-        member.department?.toLowerCase().includes(term);
-      const matchesDepartment = department === "all" || member.department === department;
+        member.role.toLowerCase().includes(term) ||
+        member.systemRole.toLowerCase().includes(term) ||
+        (member.ward || "").toLowerCase().includes(term) ||
+        (member.specialty || "").toLowerCase().includes(term);
+      const matchesDepartment = department === "all" || memberDepartment(member) === department;
       const matchesStatus = status === "all" || member.status === status;
       return matchesSearch && matchesDepartment && matchesStatus;
     });
@@ -174,17 +155,15 @@ export default function TeamPage() {
 
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
   const visibleMembers = filteredMembers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const assignedToday = members.reduce((sum, member) => sum + member.assignedAppointments, 0);
-  const totalCapacity = members.reduce((sum, member) => sum + member.dailyCapacity, 0);
-  const availableToday = members.filter((member) =>
-    ["available", "near_capacity", "covering"].includes(member.status),
-  ).length;
+  const activeAccounts = members.filter((member) => member.status === "active").length;
+  const pendingInvites = members.filter((member) => member.status === "pending" || member.inviteState === "pending").length;
+  const assignedPatients = members.reduce((sum, member) => sum + member.assignedPatientCount, 0);
 
   const summaries = [
-    { label: "Total Clinicians", value: members.length, icon: UsersRound, detail: "Facility directory" },
-    { label: "Available Today", value: availableToday, icon: Activity, detail: "Includes covering staff" },
-    { label: "Assigned Today", value: assignedToday, icon: CalendarClock, detail: "Appointments" },
-    { label: "Daily Capacity", value: totalCapacity, icon: Stethoscope, detail: "Combined appointments" },
+    { label: "Total Members", value: members.length, icon: UsersRound, detail: "Facility workspace" },
+    { label: "Active Accounts", value: activeAccounts, icon: Activity, detail: "Can access the workspace" },
+    { label: "Pending Invites", value: pendingInvites, icon: CalendarClock, detail: "Awaiting acceptance" },
+    { label: "Assigned Patients", value: assignedPatients, icon: Stethoscope, detail: "Active episode load" },
   ];
 
   function openInvitation() {
@@ -238,7 +217,7 @@ export default function TeamPage() {
         <div className="flex gap-3">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
           <p className="text-sm leading-6 text-muted-foreground">
-            This directory uses live clinician data. Account roles, wards, last login, assigned-patient totals, and access profiles are not exposed by the current API.
+            This directory uses live team-management data, including roles, access profiles, assigned patients, invitation status, and account status.
           </p>
         </div>
       </div>
@@ -254,7 +233,7 @@ export default function TeamPage() {
                 setPage(1);
               }}
               className="h-11 pl-10"
-              placeholder="Search by name, email, or specialty"
+              placeholder="Search by name, email, role, or specialty"
               aria-label="Search team members"
             />
           </div>
@@ -265,11 +244,11 @@ export default function TeamPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="h-11 w-full lg:w-52" aria-label="Filter by specialty">
-              <SelectValue placeholder="All specialties" />
+            <SelectTrigger className="h-11 w-full lg:w-52" aria-label="Filter by ward or specialty">
+              <SelectValue placeholder="All wards" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All specialties</SelectItem>
+              <SelectItem value="all">All wards</SelectItem>
               {departments.map((item) => (
                 <SelectItem key={item} value={item}>{item}</SelectItem>
               ))}
@@ -282,13 +261,13 @@ export default function TeamPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="h-11 w-full lg:w-48" aria-label="Filter by availability">
-              <SelectValue placeholder="All availability" />
+            <SelectTrigger className="h-11 w-full lg:w-48" aria-label="Filter by account status">
+              <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All availability</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+              {statusOptions.map((value) => (
+                <SelectItem key={value} value={value}>{statusLabel(value)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -356,32 +335,43 @@ export default function TeamPage() {
                           </Link>
                           <p className="mt-0.5 break-all text-xs text-muted-foreground">{member.email}</p>
                         </div>
-                        <MemberActionMenu member={member} />
+                        <TeamMemberActions
+                          memberId={member.id}
+                          name={member.name}
+                          email={member.email}
+                          specialty={member.specialty || ""}
+                          ward={member.ward || ""}
+                          role={member.role}
+                          status={member.status}
+                          accessProfile={member.accessProfile}
+                          permissions={member.permissions}
+                          onChanged={loadMembers}
+                        />
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", STATUS_CLASSES[member.status])}>
-                          {STATUS_LABELS[member.status]}
+                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", statusClass(member.status))}>
+                          {statusLabel(member.status)}
                         </span>
-                        <span className="text-xs text-muted-foreground">{member.department || "Specialty not specified"}</span>
+                        <span className="text-xs text-muted-foreground">{memberDepartment(member)}</span>
                       </div>
                     </div>
                   </div>
                   <dl className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-muted/50 p-3 text-sm">
                     <div>
-                      <dt className="text-xs text-muted-foreground">Assigned today</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{member.assignedAppointments}</dd>
+                      <dt className="text-xs text-muted-foreground">Assigned patients</dt>
+                      <dd className="mt-1 font-semibold text-foreground">{member.assignedPatientCount}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">Daily capacity</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{member.dailyCapacity}</dd>
+                      <dt className="text-xs text-muted-foreground">Role</dt>
+                      <dd className="mt-1 font-semibold text-foreground">{statusLabel(member.role)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">Utilization</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{member.capacityUtilization}%</dd>
+                      <dt className="text-xs text-muted-foreground">Access</dt>
+                      <dd className="mt-1 font-semibold text-foreground">{statusLabel(member.accessProfile)}</dd>
                     </div>
                     <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">Schedule</dt>
-                      <dd className="mt-1 truncate font-semibold text-foreground" title={member.schedule}>{member.schedule}</dd>
+                      <dt className="text-xs text-muted-foreground">Last login</dt>
+                      <dd className="mt-1 truncate font-semibold text-foreground" title={member.lastLoginAt || "Never"}>{formatDate(member.lastLoginAt)}</dd>
                     </div>
                   </dl>
                 </article>
@@ -392,13 +382,13 @@ export default function TeamPage() {
               <table className="w-full table-fixed text-left">
                 <thead className="bg-muted/60 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="w-[38%] px-4 py-3 xl:w-[30%]">Full name</th>
-                    <th className="hidden w-[18%] px-4 py-3 xl:table-cell">Specialty</th>
-                    <th className="w-[20%] px-4 py-3 xl:w-[15%]">Assigned today</th>
-                    <th className="hidden w-[16%] px-4 py-3 2xl:table-cell">Capacity</th>
-                    <th className="w-[24%] px-4 py-3 xl:w-[18%]">Availability</th>
-                    <th className="hidden w-[20%] px-4 py-3 2xl:table-cell">Schedule</th>
-                    <th className="w-16 px-4 py-3 text-right">Actions</th>
+                    <th className="w-[32%] px-4 py-3">Full name</th>
+                    <th className="hidden w-[18%] px-4 py-3 xl:table-cell">Role / Ward</th>
+                    <th className="w-[16%] px-4 py-3 xl:w-[13%]">Assigned patients</th>
+                    <th className="hidden w-[15%] px-4 py-3 2xl:table-cell">Access</th>
+                    <th className="w-[18%] px-4 py-3 xl:w-[15%]">Status</th>
+                    <th className="hidden w-[16%] px-4 py-3 2xl:table-cell">Last login</th>
+                    <th className="w-28 px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -420,34 +410,37 @@ export default function TeamPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="hidden truncate px-4 py-4 text-sm text-foreground xl:table-cell" title={member.department || "Not specified"}>
-                        {member.department || "Not specified"}
+                      <td className="hidden truncate px-4 py-4 text-sm text-foreground xl:table-cell" title={memberDepartment(member)}>
+                        <span className="block font-medium">{statusLabel(member.role)}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{memberDepartment(member)}</span>
                       </td>
-                      <td className="px-4 py-4 text-sm font-semibold text-foreground">{member.assignedAppointments}</td>
+                      <td className="px-4 py-4 text-sm font-semibold text-foreground">{member.assignedPatientCount}</td>
                       <td className="hidden px-4 py-4 2xl:table-cell">
-                        <div className="w-full max-w-28">
-                          <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                            <span>{member.capacityUtilization}%</span>
-                            <span>{member.dailyCapacity}/day</span>
-                          </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full bg-primary"
-                              style={{ width: `${Math.min(100, Math.max(0, member.capacityUtilization))}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", STATUS_CLASSES[member.status])}>
-                          {STATUS_LABELS[member.status]}
+                        <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                          {statusLabel(member.accessProfile)}
                         </span>
                       </td>
-                      <td className="hidden truncate px-4 py-4 text-sm text-muted-foreground 2xl:table-cell" title={member.schedule}>
-                        {member.schedule}
+                      <td className="px-4 py-4">
+                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", statusClass(member.status))}>
+                          {statusLabel(member.status)}
+                        </span>
+                      </td>
+                      <td className="hidden truncate px-4 py-4 text-sm text-muted-foreground 2xl:table-cell" title={member.lastLoginAt || "Never"}>
+                        {formatDate(member.lastLoginAt)}
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <MemberActionMenu member={member} />
+                        <TeamMemberActions
+                          memberId={member.id}
+                          name={member.name}
+                          email={member.email}
+                          specialty={member.specialty || ""}
+                          ward={member.ward || ""}
+                          role={member.role}
+                          status={member.status}
+                          accessProfile={member.accessProfile}
+                          permissions={member.permissions}
+                          onChanged={loadMembers}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -488,7 +481,8 @@ export default function TeamPage() {
         )}
       </div>
 
-      <InviteTeamMemberDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      <InviteTeamMemberDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={loadMembers} />
     </section>
   );
 }
+

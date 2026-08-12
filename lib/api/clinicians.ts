@@ -1,5 +1,6 @@
 import type { Clinician } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
 import type { components } from "@/docs/types/api";
+import { apiClient } from "@/lib/services/auth/api-client";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 type UnknownRecord = Record<string, unknown>;
@@ -19,7 +20,7 @@ function numberValue(record: UnknownRecord, key: string, fallback = 0) {
   return typeof record[key] === "number" ? record[key] : fallback;
 }
 
-// Shared GET /clinicians fetch — CliniciansController_findAll (Back-end/openapi.yaml), scoped to
+// Shared GET /clinicians fetch Ã¢â‚¬â€ CliniciansController_findAll (Back-end/openapi.yaml), scoped to
 // the authenticated staff member's facility. Returns ClinicianListResponseDto ({ data, meta }).
 async function fetchClinicianList(params: URLSearchParams): Promise<UnknownRecord[]> {
   const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
@@ -56,6 +57,25 @@ export type ClinicianSearchResult = {
 };
 
 export type ClinicianDirectoryEntry = ApiClinicianListItem;
+
+export type TeamMemberActivityEntry = {
+  id: string;
+  module: string;
+  action: string;
+  actorName: string;
+  targetSummary: string;
+  createdAt: string;
+};
+
+export type TeamMemberActivityResponse = {
+  data: TeamMemberActivityEntry[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+};
 
 export async function getFacilityClinicians(params?: {
   q?: string;
@@ -99,6 +119,52 @@ export async function getFacilityClinician(id: string): Promise<ClinicianProfile
   return profile as ClinicianProfile;
 }
 
+export async function getTeamMemberActivity(
+  id: string,
+  params: { page?: number; limit?: number; action?: string } = {},
+): Promise<TeamMemberActivityResponse> {
+  const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
+  const tokenPayload = tokenResponse ? await tokenResponse.json().catch(() => ({})) : {};
+  const token = typeof tokenPayload.accessToken === "string" ? tokenPayload.accessToken : null;
+  const query = new URLSearchParams();
+  if (params.page) query.set("page", String(params.page));
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.action?.trim()) query.set("action", params.action.trim());
+
+  const response = await fetch(`${BASE}/team/members/${encodeURIComponent(id)}/activity${query.toString() ? `?${query}` : ""}`, {
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(response.status === 404 ? "Team member activity was not found." : "Unable to load team member activity.");
+
+  const root = asRecord(payload);
+  const nested = asRecord(root?.data);
+  const listRoot = nested ?? root;
+  const rows = Array.isArray(listRoot?.data) ? listRoot.data : [];
+  const meta = asRecord(listRoot?.meta);
+
+  return {
+    data: rows
+      .map(asRecord)
+      .filter((item): item is UnknownRecord => Boolean(item))
+      .map((item) => ({
+        id: value(item, ["id"], "Unknown"),
+        module: value(item, ["module"], "system"),
+        action: value(item, ["action"], "activity_recorded"),
+        actorName: value(item, ["actorName"], "System"),
+        targetSummary: value(item, ["targetSummary"], "No target recorded"),
+        createdAt: value(item, ["createdAt"], new Date(0).toISOString()),
+      })),
+    meta: {
+      page: typeof meta?.page === "number" ? meta.page : params.page ?? 1,
+      limit: typeof meta?.limit === "number" ? meta.limit : params.limit ?? 20,
+      total: typeof meta?.total === "number" ? meta.total : rows.length,
+      totalPages: Math.max(typeof meta?.totalPages === "number" ? meta.totalPages : 1, 1),
+    },
+  };
+}
+
 export async function searchClinicians(query: string): Promise<ClinicianSearchResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
@@ -111,7 +177,7 @@ export async function searchClinicians(query: string): Promise<ClinicianSearchRe
   })).filter((item) => item.id);
 }
 
-// Facility-wide clinician directory (no filters) — used to resolve clinicianId -> display name
+// Facility-wide clinician directory (no filters) Ã¢â‚¬â€ used to resolve clinicianId -> display name
 // wherever a record only carries the raw ID (e.g. CareEpisodeSummaryDto, AppointmentResponseDto).
 export async function getClinicianDirectory(limit = 100): Promise<Record<string, ClinicianSearchResult>> {
   const list = await fetchClinicianList(new URLSearchParams({ limit: String(limit) }));
@@ -129,3 +195,114 @@ export async function getClinicianDirectory(limit = 100): Promise<Record<string,
 
   return directory;
 }
+export type TeamMember = components["schemas"]["TeamMemberRowDto"];
+export type InviteTeamMemberInput = components["schemas"]["InviteTeamMemberDto"];
+export type InviteTeamMemberResult = components["schemas"]["InviteResultDto"];
+export type UpdateTeamMemberInput = components["schemas"]["UpdateTeamMemberDto"];
+export type SuspendTeamMemberInput = components["schemas"]["SuspendTeamMemberDto"];
+export type EscalationPreference = components["schemas"]["EscalationPreferenceDto"];
+export type UpdateEscalationPreferenceInput = components["schemas"]["UpdateEscalationPreferenceDto"];
+
+
+async function teamRequest(path: string, init?: RequestInit): Promise<unknown> {
+  const response = await apiClient(path, {
+    ...init,
+    cache: "no-store",
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = value(asRecord(payload) ?? {}, ["message"], response.status === 401 ? "Your session expired. Please sign in again and retry." : "Unable to complete team request.");
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function unwrapPayload(payload: unknown): unknown {
+  const root = asRecord(payload);
+  return root && "data" in root ? root.data : payload;
+}
+
+function teamRowsFromPayload(payload: unknown): TeamMember[] {
+  const unwrapped = unwrapPayload(payload);
+  const container = asRecord(unwrapped);
+  const rows = Array.isArray(unwrapped)
+    ? unwrapped
+    : Array.isArray(container?.data)
+      ? container.data
+      : [];
+  return rows.map(asRecord).filter((item): item is UnknownRecord => Boolean(item)).map((item) => item as TeamMember);
+}
+
+export async function getTeamMembers(): Promise<TeamMember[]> {
+  return teamRowsFromPayload(await teamRequest("/team/members"));
+}
+
+export async function getTeamMember(id: string): Promise<TeamMember> {
+  const members = await getTeamMembers();
+  const member = members.find((item) => item.id === id || item.userId === id);
+  if (!member) throw new Error("Team member not found.");
+  return member;
+}
+
+export async function inviteTeamMember(input: InviteTeamMemberInput): Promise<InviteTeamMemberResult> {
+  const payload = await teamRequest("/team/members", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  const result = unwrapPayload(payload);
+  if (!asRecord(result)) throw new Error("The invite response was invalid.");
+  return result as InviteTeamMemberResult;
+}
+
+export async function resendTeamMemberInvite(id: string): Promise<InviteTeamMemberResult> {
+  const payload = await teamRequest(`/team/members/${encodeURIComponent(id)}/resend-invite`, { method: "POST" });
+  const result = unwrapPayload(payload);
+  if (!asRecord(result)) throw new Error("The resend response was invalid.");
+  return result as InviteTeamMemberResult;
+}
+
+export async function updateTeamMember(id: string, input: UpdateTeamMemberInput): Promise<TeamMember> {
+  const payload = await teamRequest(`/team/members/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  const result = unwrapPayload(payload);
+  if (!asRecord(result)) throw new Error("The update response was invalid.");
+  return result as TeamMember;
+}
+
+export async function suspendTeamMember(id: string, input: SuspendTeamMemberInput): Promise<void> {
+  await teamRequest(`/team/members/${encodeURIComponent(id)}/suspend`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function reactivateTeamMember(id: string): Promise<void> {
+  await teamRequest(`/team/members/${encodeURIComponent(id)}/reactivate`, { method: "POST" });
+}
+
+export async function removeTeamMember(id: string): Promise<void> {
+  await teamRequest(`/team/members/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function getTeamMemberEscalationPreference(id: string): Promise<EscalationPreference> {
+  const payload = await teamRequest(`/team/members/${encodeURIComponent(id)}/escalation-preference`);
+  const result = unwrapPayload(payload);
+  if (!asRecord(result)) throw new Error("The escalation preference response was invalid.");
+  return result as EscalationPreference;
+}
+
+export async function updateTeamMemberEscalationPreference(
+  id: string,
+  input: UpdateEscalationPreferenceInput,
+): Promise<EscalationPreference> {
+  const payload = await teamRequest(`/team/members/${encodeURIComponent(id)}/escalation-preference`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  const result = unwrapPayload(payload);
+  if (!asRecord(result)) throw new Error("The escalation preference response was invalid.");
+  return result as EscalationPreference;
+}
+

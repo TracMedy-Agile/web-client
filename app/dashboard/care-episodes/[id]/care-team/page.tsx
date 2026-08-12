@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Plus, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -19,7 +18,6 @@ import {
 import { createPlaceholderEpisode, formatLongDate, getAvatarColor, getInitials, humanizeSlug } from "../_shared/utils";
 import { AddClinicianModal } from "./components/AddClinicianModal";
 
-const HOSPITAL_ADMIN_ROLE = ["hospital_admin"] as const;
 function roleBadgeClass(role: string) {
   const normalized = role.toLowerCase();
   if (normalized.includes("nurse")) return "bg-violet-50 text-violet-600";
@@ -99,7 +97,7 @@ export default function CareTeamPage() {
             Shared ownership and coordinated care for {displayEpisode.patient?.name || "this patient"}.
           </p>
         </div>
-        <RoleGate allowedRoles={HOSPITAL_ADMIN_ROLE}>
+
           <Button
             type="button"
             onClick={() => {
@@ -111,7 +109,7 @@ export default function CareTeamPage() {
             <Plus className="h-4 w-4" />
             Add Clinician
           </Button>
-        </RoleGate>
+
       </div>
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
@@ -150,7 +148,7 @@ export default function CareTeamPage() {
                       <p className="mt-1 text-xs font-medium text-slate-500">Added {formatLongDate(member.assignedAt)}</p>
                     </div>
                   </div>
-                  <RoleGate allowedRoles={HOSPITAL_ADMIN_ROLE}>
+
                     <Button
                       type="button"
                       variant="ghost"
@@ -160,7 +158,7 @@ export default function CareTeamPage() {
                     >
                       {removingClinicianId === member.clinicianId ? "Removing..." : "Remove"}
                     </Button>
-                  </RoleGate>
+
                 </div>
               ))}
             </div>

@@ -19,6 +19,7 @@ export type MonitoringItem = {
   cadence: string;
   criticalLow: string;
   criticalHigh: string;
+  criticalUnit: string;
   severityThreshold: string;
   persistenceReports: string;
   minimumCompletion: string;
@@ -83,3 +84,4 @@ export type CarePlanForm = {
 };
 
 export type AddTaskKind = "lab" | "monitoring" | "homeCare" | "lifestyle" | "warning";
+

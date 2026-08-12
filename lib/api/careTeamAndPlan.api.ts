@@ -80,6 +80,7 @@ export async function getAssessmentHistory(
       date: event.timestamp,
       escalationStatus: isEscalationStatus(escalationValue) ? escalationValue : "Stable",
       outcome: isAssessmentOutcome(outcomeValue) ? outcomeValue : "Stable",
+      keyObservation: stringValue(event.payload, ["keyObservation"], "No key observation recorded."),
       clinicianNotes: stringValue(event.payload, ["clinicianNotes", "notes", "message"], "No clinical notes recorded."),
       clinicianName: stringValue(event.payload, ["clinicianName"], event.source === "clinician" ? "Clinician" : event.source),
     };
@@ -114,6 +115,7 @@ export async function saveAssessment(episodeId: string, payload: SaveAssessmentP
     date: event.timestamp,
     escalationStatus: payload.escalationStatus,
     outcome: payload.outcome,
+    keyObservation: payload.keyObservation || "No key observation recorded.",
     clinicianNotes: payload.clinicianNotes,
     clinicianName: payload.clinicianName,
   };
