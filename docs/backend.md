@@ -1,12 +1,10 @@
 # Backend Work Required for Built Hospital Screens
 
-The published staging OpenAPI contract was re-audited on 2026-08-12. Endpoints that are now published have been connected in the web client and removed from the outstanding list below. Runtime issues listed here are based on observed staging responses from the web client.
+The published staging OpenAPI contract was re-audited on 2026-08-12. This file lists only missing backend contracts, backend contract gaps, or runtime backend issues affecting built hospital web-client screens.
 
 ## Dashboard
 
-- **Recovery Trend time-series endpoint needed:** The dashboard design includes a Recovery Trend chart with daily/period labels, active patient recovery scores, and facility mean recovery scores. Current available endpoints do not provide this exact time-series contract: `GET /api/v1/forecasts/facility/summary` returns aggregate forecast KPIs only, and `GET /api/v1/analytics/readmission-trend` returns readmission trend rather than recovery-score trend. Please expose a dashboard recovery trend endpoint, for example `GET /api/v1/forecasts/facility/recovery-trend?range=7d|30d`, returning points like `{ label, active, mean }` or the backend-preferred equivalent.
-- **No backend blocker for Live Alerts:** `GET /api/v1/alerts` exists and can supply the dashboard Live Alerts panel. Remaining work is frontend connection only.
-- **No backend blocker for Clinician Workload:** `GET /api/v1/analytics/clinician-workload` exists and can supply the dashboard Clinician Workload Status panel. Remaining work is frontend connection only.
+- **Recovery Trend time-series endpoint needed:** The dashboard design needs a true Recovery Trend chart contract with daily/period labels, active patient recovery scores, and facility mean recovery scores. Current available endpoints do not provide this exact time-series data: `GET /api/v1/forecasts/facility/summary` returns aggregate forecast KPIs only, and `GET /api/v1/analytics/readmission-trend` returns readmission trend rather than recovery-score trend. Please expose a dashboard recovery trend endpoint, for example `GET /api/v1/forecasts/facility/recovery-trend?range=7d|30d`, returning points like `{ label, active, mean }` or the backend-preferred equivalent.
 
 ## Settings
 - Facility/hospital settings update endpoint for Phase 08 Hospital Profile: logo URL/upload association, hospital name, address, contact email, contact phone, and timezone. The web client can currently read facility details from `GET /api/v1/auth/hospital`, but no facility settings update contract exists.
@@ -22,6 +20,8 @@ The published staging OpenAPI contract was re-audited on 2026-08-12. Endpoints t
 
 ## Team Management
 
+
+- **Team Management clinician permission enforcement needed:** The OpenAPI contract currently marks Team Management routes as `hospital_admin only`, including `GET /api/v1/team/members`, `POST /api/v1/team/members`, `PATCH /api/v1/team/members/{id}`, suspend/reactivate/delete, activity, resend-invite, and escalation-preference routes. The web-client permission model allows hospitals to grant clinicians access to Team Management through team permissions. Backend should authorize clinicians based on those granted permissions/facility policy instead of blocking all non-admin staff when permission is enabled.
 - **Team member ID mismatch:** `GET /api/v1/team/members` can return rows with an `id` value like `legacy-cmqv2qopz00004c3sl0sm31fd`, but mutation endpoints expect the real Staff member ID. Example failing request: `PATCH /api/v1/team/members/legacy-cmqv2qopz00004c3sl0sm31fd` returns `404 Team member not found`. Ensure the list endpoint returns the same Staff member `id` accepted by `PATCH /team/members/{id}`, `POST /team/members/{id}/suspend`, `POST /team/members/{id}/reactivate`, `DELETE /team/members/{id}`, `POST /team/members/{id}/resend-invite`, and escalation preference routes. The web client already passes the row `id` from `GET /team/members`; it cannot safely edit legacy/fallback IDs that the backend does not accept.
 
 ## Audit Log

@@ -5,6 +5,7 @@ import { AlertTriangle, HeartPulse, ShieldAlert, TrendingUp, Users } from "lucid
 import MetricCard from "@/components/dashboard/MetricCard";
 import { getAlertsSnapshot } from "@/lib/api/alerts";
 import { getCareEpisodes, type CareEpisodeRecord } from "@/lib/api/care-episodes";
+import { getFacilityForecastSummary } from "@/lib/api/dashboard";
 import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
 
 type Trend = { change: string; type: "positive" | "negative" };
@@ -99,6 +100,7 @@ function buildMetrics(
   episodes: Awaited<ReturnType<typeof getCareEpisodes>>,
   alerts: Awaited<ReturnType<typeof getAlertsSnapshot>>,
   report: Awaited<ReturnType<typeof getReportsSnapshot>> | null,
+  forecast: Awaited<ReturnType<typeof getFacilityForecastSummary>> | null,
 ): DashboardMetrics {
   const today = dateKeyForOffset(0);
   const currentStart = dateKeyForOffset(-29);
@@ -120,10 +122,10 @@ function buildMetrics(
   const previousCriticalAlerts = criticalAlerts.filter((alert) => inRange(alert.timestamp, alertPreviousStart, alertPreviousEnd)).length;
 
   return {
-    activePatients: episodes.activeCount || activeEpisodes.length,
-    highRiskToday: episodes.highRiskCount || activeEpisodes.filter(isHighRiskEpisode).length,
+    activePatients: forecast?.activeEpisodeCount ?? (episodes.activeCount || activeEpisodes.length),
+    highRiskToday: forecast?.atRiskCount ?? (episodes.highRiskCount || activeEpisodes.filter(isHighRiskEpisode).length),
     criticalAlerts: criticalAlerts.length,
-    recovery: average(allRecovery),
+    recovery: forecast?.avgRecoveryPercentage ?? average(allRecovery),
     readmissionRate: report?.readmissionRatePercent ?? null,
     activePatientsTrend: calculateTrend(currentEpisodes.length, previousEpisodes.length),
     highRiskTrend: calculateTrend(currentHighRisk, previousHighRisk),
@@ -145,12 +147,13 @@ export default function DashboardMetricCards() {
       if (showLoading) setIsLoading(true);
       setHasError(false);
       try {
-        const [episodes, alerts, report] = await Promise.all([
+        const [episodes, alerts, report, forecast] = await Promise.all([
           getCareEpisodes({ page: 1, limit: 500 }),
           getAlertsSnapshot(),
           getReportsSnapshot(getReportsDateRange(30)).catch(() => null),
+          getFacilityForecastSummary().catch(() => null),
         ]);
-        if (!ignore) setMetrics(buildMetrics(episodes, alerts, report));
+        if (!ignore) setMetrics(buildMetrics(episodes, alerts, report, forecast));
       } catch {
         if (!ignore) {
           setMetrics(emptyMetrics);
