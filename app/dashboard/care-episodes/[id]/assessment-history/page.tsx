@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Download } from "lucide-react";
+import { ChevronLeft, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -47,6 +47,7 @@ export default function AssessmentHistoryPage() {
   const [dateTo, setDateTo] = useState("");
   const [clinicianFilter, setClinicianFilter] = useState("all");
   const [outcomeFilter, setOutcomeFilter] = useState("all");
+  const [selectedAssessment, setSelectedAssessment] = useState<Assessment | null>(null);
 
   useEffect(() => {
     if (!episodeId) return;
@@ -86,6 +87,11 @@ export default function AssessmentHistoryPage() {
     setOutcomeFilter("all");
   };
 
+  const openAssessmentModal = (assessment: Assessment) => {
+    setSelectedAssessment(assessment);
+    capturePostHogEvent("assessment_history_item_opened", { episode_id: episodeId, assessment_id: assessment.id });
+  };
+
   const exportCsv = () => {
     capturePostHogEvent("assessment_history_exported", { episode_id: episodeId, result_count: filtered.length });
     const header = ["Date", "Time", "Escalation Status", "Assessment Outcome", "Clinician Notes", "Clinician Name"];
@@ -123,7 +129,7 @@ export default function AssessmentHistoryPage() {
         <div>
           <h1 className="text-lg font-bold text-slate-900 md:text-2xl">Assessment History</h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            {displayEpisode.patient?.name || "Patient"} · {displayEpisode.patient?.hospitalId || "--"} · <strong>{assessments.length} Assessments</strong>
+            {displayEpisode.patient?.name || "Patient"} - {displayEpisode.patient?.hospitalId || "--"} - <strong>{assessments.length} Assessments</strong>
           </p>
         </div>
         <Button
@@ -218,7 +224,20 @@ export default function AssessmentHistoryPage() {
                 </thead>
                 <tbody>
                   {filtered.map((assessment) => (
-                    <tr key={assessment.id} className="border-b border-slate-200 last:border-0">
+                    <tr
+                      key={assessment.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View assessment from ${formatLongDate(assessment.date)}`}
+                      onClick={() => openAssessmentModal(assessment)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openAssessmentModal(assessment);
+                        }
+                      }}
+                      className="cursor-pointer border-b border-slate-200 transition-colors hover:bg-blue-50/50 focus:bg-blue-50/60 focus:outline-none last:border-0"
+                    >
                       <td className="px-4 py-5 align-top">
                         <span className="block font-bold text-slate-900">{formatLongDate(assessment.date)}</span>
                         <span className="mt-1 block text-xs font-medium text-slate-500">{formatTime(assessment.date)}</span>
@@ -260,6 +279,62 @@ export default function AssessmentHistoryPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <AssessmentDetailModal
+        assessment={selectedAssessment}
+        onClose={() => setSelectedAssessment(null)}
+      />
+    </div>
+  );
+}
+
+function AssessmentDetailModal({ assessment, onClose }: { assessment: Assessment | null; onClose: () => void }) {
+  if (!assessment) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="assessment-detail-title">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-[0_24px_72px_rgba(15,23,42,0.28)]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">Clinical Assessment</p>
+            <h2 id="assessment-detail-title" className="mt-1 text-lg font-bold text-slate-900">Assessment Details</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              {formatLongDate(assessment.date)} at {formatTime(assessment.date)} - {assessment.clinicianName}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close assessment details"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-5 py-5 sm:px-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Escalation Status</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{assessment.escalationStatus}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Assessment Outcome</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{assessment.outcome}</p>
+            </div>
+          </div>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-[0.06em] text-slate-900">Key Observation</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{assessment.keyObservation || "No key observation recorded."}</p>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-[0.06em] text-slate-900">Clinical Assessment Notes</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{assessment.clinicianNotes || "No clinical assessment notes recorded."}</p>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

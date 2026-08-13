@@ -18,6 +18,10 @@ export type ReviewImpactData = {
   expected: string;
   actual: string;
   trend: string;
+  analysisSummary?: string;
+  generatedAt?: string;
+  source?: string;
+  suggestedReview?: string[];
   expectedLabel?: string;
   actualLabel?: string;
   evidence: ReviewImpactEvidenceRow[];
@@ -53,6 +57,8 @@ export function ReviewImpactModal({
   open,
   alert,
   onOpenChange,
+  onAcknowledge,
+  acknowledgementAvailable = false,
   careEpisodeHref,
   isLoading = false,
 }: ReviewImpactModalProps) {
@@ -99,7 +105,22 @@ export function ReviewImpactModal({
                 Trend direction: {alert.trend}
               </p>
             </section>
+            {alert.analysisSummary ? (
+              <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">AI advisory insight</p>
+                <p className="mt-2 text-sm font-medium leading-6 text-foreground/80">{alert.analysisSummary}</p>
+                <p className="mt-3 text-xs font-medium text-muted-foreground">Clinician review is required before any alert action is taken.</p>
+              </section>
+            ) : null}
 
+            {alert.suggestedReview?.length ? (
+              <section className="mt-4 rounded-xl border border-border bg-muted/30 px-4 py-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Suggested Review Areas</p>
+                <ul className="mt-2 space-y-2 text-sm font-medium leading-6 text-foreground/80">
+                  {alert.suggestedReview.map((item) => <li key={item}>- {item}</li>)}
+                </ul>
+              </section>
+            ) : null}
             <p className="mb-4 mt-8 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
               Supporting Evidence
             </p>
@@ -141,7 +162,11 @@ export function ReviewImpactModal({
                   Cancel
                 </Button>
               </DialogPrimitive.Close>
-              {careEpisodeHref ? (
+              {acknowledgementAvailable ? (
+                <Button type="button" onClick={onAcknowledge} className="h-12 rounded-xl px-5 text-sm font-bold">
+                  Acknowledge Alert
+                </Button>
+              ) : careEpisodeHref ? (
                 <Button asChild className="h-12 rounded-xl px-5 text-sm font-bold">
                   <Link href={careEpisodeHref}>Open Care Episode</Link>
                 </Button>
@@ -153,3 +178,5 @@ export function ReviewImpactModal({
     </DialogPrimitive.Root>
   );
 }
+
+

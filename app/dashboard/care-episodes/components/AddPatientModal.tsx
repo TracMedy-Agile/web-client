@@ -62,6 +62,12 @@ const FOLLOW_UP_DURATION_DAYS: Record<FollowUpDuration, number> = {
 const SEARCH_MIN_CHARS = 3;
 const SEARCH_DEBOUNCE_MS = 300;
 
+function getLocalDateInputValue() {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
 const INITIAL_FORM_DATA: AddPatientFormData = {
   patientName: "",
   phoneNumber: "",
@@ -351,6 +357,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
   const [selectedClinicianId, setSelectedClinicianId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [consultationDate, setConsultationDate] = useState(getLocalDateInputValue);
 
   const updateFormData = <Key extends keyof AddPatientFormData>(
     key: Key,
@@ -364,6 +371,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
     setFormData(INITIAL_FORM_DATA);
     setSelectedPatientId("");
     setSelectedClinicianId("");
+    setConsultationDate(getLocalDateInputValue());
     setError("");
   };
 
@@ -408,6 +416,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
     if (!selectedPatientId) return "Select a patient from the search results.";
     if (!formData.clinicianName.trim()) return "Search for and select the clinician.";
     if (!selectedClinicianId) return "Select a clinician from the search results.";
+    if (!consultationDate) return "Select a consultation date.";
     if (!formData.diagnosis.trim()) return "Enter a diagnosis.";
     if (!formData.clinicianNotes.trim()) return "Enter the clinician notes.";
     if (formData.reasons.length === 0) return "Select at least one reason for the care episode.";
@@ -438,6 +447,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
         conditionSeverity: formData.conditionSeverity.toLowerCase(),
         clinicalConcern: formData.clinicalConcern,
         followUpReasons: formData.reasons.map((reason) => CARE_EPISODE_REASON_SLUGS[reason]),
+        consultationDate: new Date(`${consultationDate}T12:00:00`).toISOString(),
         expectedDurationDays: FOLLOW_UP_DURATION_DAYS[formData.followUpDuration],
         clinicianNotes: formData.clinicianNotes.trim(),
       });
@@ -558,11 +568,14 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
               </div>
               <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
                 <label className="block">
-                  <FieldLabel>Queue Date</FieldLabel>
+                  <FieldLabel>Consultation Date</FieldLabel>
                   <Input
-                    value="Set automatically"
-                    className={cn(fieldClassName, "text-slate-500")}
-                    readOnly
+                    type="date"
+                    value={consultationDate}
+                    onChange={(event) => setConsultationDate(event.target.value)}
+                    aria-label="Consultation date"
+                    className={fieldClassName}
+                    required
                   />
                 </label>
                 <FormSelect
@@ -572,8 +585,13 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   onChange={(value) => updateFormData("encounterType", value as AddPatientFormData["encounterType"])}
                 />
                 <label className="block">
-                  <FieldLabel>Initial Status</FieldLabel>
-                  <Input value="Pending Review" className={cn(fieldClassName, "text-slate-500")} readOnly />
+                  <FieldLabel>Discharge Status</FieldLabel>
+                  <Input
+                    value="Not yet discharged"
+                    aria-label="Discharge status"
+                    className={cn(fieldClassName, "text-slate-500")}
+                    readOnly
+                  />
                 </label>
                 <FormSelect
                   label="Follow-up Duration"

@@ -4,11 +4,17 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Plus, UsersRound } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { getCareEpisodeById, type CareEpisodeDetail, type CareTeamMember } from "@/lib/api/care-episodes";
+import {
+  getCareEpisodeById,
+  removeCareTeamMember,
+  type CareEpisodeDetail,
+  type CareTeamMember,
+} from "@/lib/api/care-episodes";
 import { createPlaceholderEpisode, formatLongDate, getAvatarColor, getInitials, humanizeSlug } from "../_shared/utils";
 import { AddClinicianModal } from "./components/AddClinicianModal";
 
@@ -28,7 +34,31 @@ export default function CareTeamPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [removingClinicianId, setRemovingClinicianId] = useState("");
   const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
+
+  async function refreshTeam() {
+    const detail = await getCareEpisodeById(episodeId);
+    setEpisode(detail);
+    setTeam(detail.careTeam);
+  }
+
+  async function removeMember(member: CareTeamMember) {
+    setRemovingClinicianId(member.clinicianId);
+    try {
+      await removeCareTeamMember(episodeId, member.clinicianId);
+      capturePostHogEvent("care_team_member_removed", {
+        episode_id: episodeId,
+        clinician_id: member.clinicianId,
+      });
+      await refreshTeam();
+      toast.success(`${member.name} was removed from the care team.`);
+    } catch (requestError) {
+      toast.error(requestError instanceof Error ? requestError.message : "Unable to remove this clinician.");
+    } finally {
+      setRemovingClinicianId("");
+    }
+  }
 
   useEffect(() => {
     if (!episodeId) return;
@@ -67,17 +97,19 @@ export default function CareTeamPage() {
             Shared ownership and coordinated care for {displayEpisode.patient?.name || "this patient"}.
           </p>
         </div>
-        <Button
-          type="button"
-          onClick={() => {
-            capturePostHogEvent("add_clinician_opened", { episode_id: episodeId });
-            setIsModalOpen(true);
-          }}
-          className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          Add Clinician
-        </Button>
+
+          <Button
+            type="button"
+            onClick={() => {
+              capturePostHogEvent("add_clinician_opened", { episode_id: episodeId });
+              setIsModalOpen(true);
+            }}
+            className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Clinician
+          </Button>
+
       </div>
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
@@ -116,15 +148,17 @@ export default function CareTeamPage() {
                       <p className="mt-1 text-xs font-medium text-slate-500">Added {formatLongDate(member.assignedAt)}</p>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled
-                    title="Care-team removal is not available in the current API"
-                    className="h-9 self-start px-3 text-sm font-bold text-red-600 sm:self-center"
-                  >
-                    Remove
-                  </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={removingClinicianId === member.clinicianId}
+                      onClick={() => void removeMember(member)}
+                      className="h-9 self-start px-3 text-sm font-bold text-red-600 sm:self-center"
+                    >
+                      {removingClinicianId === member.clinicianId ? "Removing..." : "Remove"}
+                    </Button>
+
                 </div>
               ))}
             </div>
@@ -137,6 +171,7 @@ export default function CareTeamPage() {
         onOpenChange={setIsModalOpen}
         episodeId={episodeId}
         existingClinicianIds={team.map((member) => member.clinicianId)}
+        onAdded={refreshTeam}
       />
     </div>
   );

@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Loader2, Mail, Search, UsersRound, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getFacilityClinicians, type ClinicianDirectoryEntry } from "@/lib/api/clinicians";
+import { addCareTeamMember } from "@/lib/api/care-episodes";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getAvatarColor, getInitials } from "../../_shared/utils";
 
 type AddClinicianModalProps = {
@@ -13,14 +16,16 @@ type AddClinicianModalProps = {
   onOpenChange: (open: boolean) => void;
   episodeId: string;
   existingClinicianIds: string[];
+  onAdded: () => void | Promise<void>;
 };
 
-export function AddClinicianModal({ open, onOpenChange, episodeId, existingClinicianIds }: AddClinicianModalProps) {
+export function AddClinicianModal({ open, onOpenChange, episodeId, existingClinicianIds, onAdded }: AddClinicianModalProps) {
   const [query, setQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [results, setResults] = useState<ClinicianDirectoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [addingClinicianId, setAddingClinicianId] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -53,6 +58,25 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
     }
     onOpenChange(nextOpen);
   };
+
+  async function addClinician(clinician: ClinicianDirectoryEntry) {
+    setAddingClinicianId(clinician.id);
+    setError("");
+    try {
+      await addCareTeamMember(episodeId, { clinicianId: clinician.id, role: "doctor" });
+      capturePostHogEvent("care_team_member_added", {
+        episode_id: episodeId,
+        clinician_id: clinician.id,
+      });
+      await onAdded();
+      toast.success(`${clinician.name || "Clinician"} was added to the care team.`);
+      handleOpenChange(false);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to add this clinician.");
+    } finally {
+      setAddingClinicianId("");
+    }
+  }
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
@@ -117,13 +141,21 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
                         <p className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium text-primary"><Mail className="h-3.5 w-3.5" />{clinician.email}</p>
                       </div>
                     </div>
-                    <Button type="button" disabled title="Adding care-team members is not available in the current API" className="h-10 shrink-0 rounded-lg bg-primary px-4 text-sm font-bold text-white sm:w-auto">+ Add</Button>
+                    <Button
+                      type="button"
+                      disabled={Boolean(addingClinicianId)}
+                      onClick={() => void addClinician(clinician)}
+                      className="h-10 shrink-0 rounded-lg bg-primary px-4 text-sm font-bold text-white sm:w-auto"
+                    >
+                      {addingClinicianId === clinician.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {addingClinicianId === clinician.id ? "Adding..." : "+ Add"}
+                    </Button>
                   </div>
                 ))}
               </div>
             )}
-            <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              The clinician directory is live. Team assignment will be enabled when the care-team membership endpoint is available for episode {episodeId}.
+            <p className="mt-4 rounded-lg bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
+              Clinicians added here are assigned to episode {episodeId} and recorded in its care timeline.
             </p>
           </div>
         </DialogPrimitive.Content>

@@ -26,18 +26,36 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import {
+  decideAiSuggestion,
+  generateBiometricsInsight,
+  generateEpisodeInsight,
+  getEpisodeSuggestions,
+  getLatestRecoverySummary,
+  type BiometricsInsightPayload,
+  type EpisodeInsightPayload,
+  type SuggestionListItem,
+} from "@/lib/api/ai";
 import { cn } from "@/lib/utils";
 import {
   asRecord,
   getCareEpisodeById,
+  getCareEpisodeCheckins,
   getCareEpisodeDailyVitals,
+  getCareEpisodeMedia,
   getCareEpisodeMedicationAdherence,
+  getCareEpisodeMedicationLogs,
+  getCareEpisodeTimelinePage,
   getNumber,
   getString,
   type ApiRecord,
   type CareEpisodeDetail,
+  type CheckInHistoryRecord,
   type DailyVitalsRecord,
+  type EpisodeMediaItem,
   type MedicationAdherenceRecord,
+  type MedicationLogHistory,
+  type TimelineEventRecord,
 } from "@/lib/api/care-episodes";
 import { CareEpisodeSubHeader, SubHeaderSkeleton } from "../_shared/SubHeader";
 import { MediaViewerModal, type MediaViewerData } from "../components/MediaViewerModal";
@@ -112,7 +130,7 @@ const VITAL_DEFS: VitalDef[] = [
     key: "temperature",
     label: "Temperature",
     Icon: Thermometer,
-    unit: "°C",
+    unit: "deg C",
     resolve: (vitals) => {
       const value = getNumber(vitals, ["temperature", "temp"]);
       if (value === null) return null;
@@ -174,8 +192,8 @@ const VITAL_STATUS_BADGE: Record<VitalStatus, string> = {
 
 const VITAL_STATUS_DESCRIPTION: Record<VitalStatus, string> = {
   NORMAL: "Within expected range for this patient.",
-  ELEVATED: "Above expected range — monitor closely.",
-  LOW: "Below expected range — monitor closely.",
+  ELEVATED: "Above expected range - monitor closely.",
+  LOW: "Below expected range - monitor closely.",
   "--": "No recent reading logged.",
 };
 
@@ -292,11 +310,11 @@ function formatDateTimeLabel(value: string) {
   if (!Number.isFinite(parsed)) return "--";
   const date = new Date(parsed);
   const datePart = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
-  return `${datePart} · ${formatTime(value)}`;
+  return `${datePart} - ${formatTime(value)}`;
 }
 
 // The care-episode API only exposes images attached to the patient's latest check-in
-// (PatientCheckInDto.images) — there is no dedicated "list all clinical media" endpoint.
+  // (PatientCheckInDto.images) - there is no dedicated "list all clinical media" endpoint.
 function buildClinicalMedia(checkin: ApiRecord | null, patientCode: string): ClinicalMediaItem[] {
   if (!checkin) return [];
   const images = checkin.images;
@@ -322,6 +340,27 @@ function buildClinicalMedia(checkin: ApiRecord | null, patientCode: string): Cli
       patientId: patientCode,
       patientDescription: notes || "No description provided by patient.",
       imageUrl: url,
+    }));
+}
+
+function buildMediaHistory(items: EpisodeMediaItem[], patientCode: string): ClinicalMediaItem[] {
+  return items
+    .filter((item) => Boolean(item.url))
+    .map((item, index) => ({
+      id: `${item.checkInId}-${index}`,
+      title: item.caption || `Check-in Upload ${index + 1}`,
+      type: item.type || "Check-in Image",
+      status: "Pending review" as const,
+      priority: null,
+      uploadedAt: formatDateTimeLabel(item.submittedAt),
+      kind: "image" as const,
+      captureContext: item.type || "Check-in Image",
+      dateCaptured: formatDateTimeLabel(item.submittedAt),
+      capturedAt: item.submittedAt,
+      uploadTimestamp: formatTime(item.submittedAt),
+      patientId: patientCode,
+      patientDescription: item.caption || "No description provided by patient.",
+      imageUrl: item.url ?? "",
     }));
 }
 
@@ -363,8 +402,7 @@ const NOTE_TYPE_BADGE: Record<NoteType, string> = {
 
 type PatientNote = { id: string; type: NoteType; text: string; linked: string; time: string };
 
-// The API only exposes a single free-text note per check-in (PatientCheckInDto.notes) —
-// there is no dedicated notes list/typing endpoint, so this surfaces the latest note as-is.
+// Patient Notes combines patient check-in notes with patient-authored timeline note events.
 function buildPatientNotes(checkin: ApiRecord | null): PatientNote[] {
   if (!checkin) return [];
   const notes = getString(checkin, ["notes"]);
@@ -382,6 +420,42 @@ function buildPatientNotes(checkin: ApiRecord | null): PatientNote[] {
   ];
 }
 
+function noteTypeFromTimelineEvent(event: TimelineEventRecord): NoteType {
+  const eventType = event.eventType.toLowerCase();
+  if (eventType.includes("symptom")) return "Symptom";
+  if (eventType.includes("concern") || eventType.includes("alert")) return "Concern";
+  return "Observation";
+}
+
+function buildTimelinePatientNote(event: TimelineEventRecord): PatientNote | null {
+  const eventType = event.eventType.toLowerCase();
+  const source = event.source.toLowerCase();
+  const isPatientSource = source.includes("patient");
+  const isNoteLike = eventType.includes("note") || eventType.includes("check");
+  if (!isPatientSource && !isNoteLike) return null;
+
+  const note = getString(event.payload, ["notes", "patientNotes", "patientNote", "note", "description", "details", "summary", "message", "title"]);
+  if (!note) return null;
+
+  return {
+    id: `timeline-${event.id}`,
+    type: noteTypeFromTimelineEvent(event),
+    text: `"${note}"`,
+    linked: eventType.includes("check") ? "CHECK-IN TIMELINE" : "CARE TIMELINE",
+    time: event.timestamp ? formatRelativeTime(event.timestamp) : "--",
+  };
+}
+
+function dedupePatientNotes(notes: PatientNote[]) {
+  const seen = new Set<string>();
+  return notes.filter((note) => {
+    const key = `${note.text.toLowerCase()}-${note.time}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function getMedicationStatus(medication: MedicationAdherenceRecord) {
   if (medication.totalDoses > 0 && medication.takenCount >= medication.totalDoses) {
     return { label: "Completed", className: "bg-emerald-50 text-emerald-500", barColor: "var(--color-emerald-500)" };
@@ -392,6 +466,42 @@ function getMedicationStatus(medication: MedicationAdherenceRecord) {
   return { label: "Taken", className: "bg-emerald-50 text-emerald-500", barColor: "var(--color-emerald-500)" };
 }
 
+
+function formatAiTimestamp(value?: string) {
+  if (!value) return "Not generated yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatAiConfidence(value?: number) {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}% confidence` : "Confidence unavailable";
+}
+
+function biometricAliases(metric: BiometricMetric) {
+  if (metric === "Blood Pressure") return ["blood_pressure", "bp", "bp_systolic", "bp_diastolic", "bloodPressure", "bloodPressureSystolic", "bloodPressureDiastolic"];
+  if (metric === "Heart Rate") return ["heart_rate", "heartRate", "hr", "pulse"];
+  if (metric === "SpO2") return ["spo2", "sp_o2", "oxygen", "oxygenSaturation"];
+  if (metric === "Temperature") return ["temperature", "temp", "fever"];
+  return [];
+}
+
+
+function aiDataNoticeForInsight(insight: EpisodeInsightPayload | null | undefined) {
+  if (!insight) return "AI needs more patient check-ins, vitals, medication logs, or timeline activity before it can create a reviewable suggestion.";
+  if (insight.dataSufficiency === "insufficient") {
+    return "AI does not have enough episode data yet. Add more check-ins, vitals, medication logs, or timeline notes to generate a reliable suggestion.";
+  }
+  if (insight.dataSufficiency === "partial") {
+    return "AI generated this with partial episode data. More check-ins and clinical activity will improve the recommendation quality.";
+  }
+  return "";
+}
+function findBiometricMetric(insight: BiometricsInsightPayload | null, metric: BiometricMetric) {
+  if (!insight) return null;
+  const aliases = biometricAliases(metric).map((item) => item.toLowerCase());
+  return insight.metrics.find((item) => aliases.includes(item.type.toLowerCase())) ?? null;
+}
 export default function CareEpisodeInsightsPage() {
   const params = useParams<{ id: string }>();
   const episodeId = params?.id ?? "";
@@ -405,19 +515,186 @@ export default function CareEpisodeInsightsPage() {
   const [medsLoading, setMedsLoading] = useState(true);
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
   const [vitalsLoading, setVitalsLoading] = useState(true);
+  const [checkins, setCheckins] = useState<CheckInHistoryRecord[]>([]);
+  const [mediaHistory, setMediaHistory] = useState<EpisodeMediaItem[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEventRecord[]>([]);
 
   const [biometricMetric, setBiometricMetric] = useState<BiometricMetric>("Blood Pressure");
   const [biometricRange, setBiometricRange] = useState<BiometricRange>("14d");
   const [metricMenuOpen, setMetricMenuOpen] = useState(false);
 
   const [expandedMedicationId, setExpandedMedicationId] = useState<string | null>(null);
+  const [medicationLogs, setMedicationLogs] = useState<Record<string, MedicationLogHistory | "loading" | "error">>({});
   const [notesTab, setNotesTab] = useState<"All" | NoteType>("All");
   const [activeMedia, setActiveMedia] = useState<ClinicalMediaItem | null>(null);
+  const [aiSummary, setAiSummary] = useState<EpisodeInsightPayload | null>(null);
+  const [aiGeneratedAt, setAiGeneratedAt] = useState("");
+  const [aiSuggestionId, setAiSuggestionId] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "generating" | "error">("idle");
+  const [aiError, setAiError] = useState("");
+  const [aiDataNotice, setAiDataNotice] = useState("");
+  const [biometricsInsight, setBiometricsInsight] = useState<BiometricsInsightPayload | null>(null);
+  const [biometricsAiStatus, setBiometricsAiStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [biometricsAiError, setBiometricsAiError] = useState("");
+  const [suggestions, setSuggestions] = useState<SuggestionListItem[]>([]);
+  const [suggestionsError, setSuggestionsError] = useState("");
+  const [suggestionNotes, setSuggestionNotes] = useState<Record<string, string>>({});
+  const [decidingSuggestionId, setDecidingSuggestionId] = useState<string | null>(null);
 
+  function toggleMedication(medicationId: string) {
+    const nextExpanded = expandedMedicationId === medicationId ? null : medicationId;
+    setExpandedMedicationId(nextExpanded);
+    if (nextExpanded && !medicationLogs[nextExpanded]) {
+      setMedicationLogs((current) => ({ ...current, [nextExpanded]: "loading" }));
+      getCareEpisodeMedicationLogs(episodeId, nextExpanded)
+        .then((history) => setMedicationLogs((current) => ({ ...current, [nextExpanded]: history })))
+        .catch(() => setMedicationLogs((current) => ({ ...current, [nextExpanded]: "error" })));
+    }
+  }
+
+
+  async function refreshAiSuggestions() {
+    try {
+      const response = await getEpisodeSuggestions(episodeId);
+      setSuggestions(response.data);
+      setSuggestionsError("");
+    } catch (requestError) {
+      setSuggestions([]);
+      setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to load AI suggestions.");
+    }
+  }
+
+  async function generateSummary() {
+    if (!episodeId) return;
+    setAiStatus("generating");
+    setAiError("");
+    setAiDataNotice("");
+    try {
+      const response = await generateEpisodeInsight(episodeId);
+      if (response.status === "success" && response.insight) {
+        setAiSummary(response.insight);
+        setAiSuggestionId(response.suggestionId ?? null);
+        setAiGeneratedAt(new Date().toISOString());
+        setAiDataNotice(aiDataNoticeForInsight(response.insight));
+        capturePostHogEvent("ai_insight_viewed", { source: "episode", episode_id: episodeId });
+        await refreshAiSuggestions();
+      } else {
+        setAiDataNotice(aiDataNoticeForInsight(response.insight));
+        setAiError("AI could not generate a usable insight from the available episode data.");
+      }
+    } catch (requestError) {
+      setAiError(requestError instanceof Error ? requestError.message : "Unable to generate AI insight.");
+    } finally {
+      setAiStatus("idle");
+    }
+  }
+
+  async function recordSuggestionDecision(suggestion: SuggestionListItem, decision: "accepted" | "ignored" | "annotated") {
+    setDecidingSuggestionId(suggestion.id);
+    try {
+      const annotation = suggestionNotes[suggestion.id]?.trim();
+      const result = await decideAiSuggestion(suggestion.id, {
+        decision,
+        ...(annotation ? { annotation } : {}),
+      });
+      setSuggestions((current) => current.map((item) => item.id === suggestion.id ? {
+        ...item,
+        status: "decided",
+        decision: result.decision,
+        annotation: annotation || item.annotation,
+        decidedAt: result.decidedAt,
+      } : item));
+      capturePostHogEvent("ai_insight_viewed", { source: "suggestion_decision", episode_id: episodeId, suggestion_id: suggestion.id, decision: result.decision });
+    } catch (requestError) {
+      setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to record AI suggestion decision.");
+    } finally {
+      setDecidingSuggestionId(null);
+    }
+  }
   useEffect(() => {
     capturePostHogEvent("patient_insights_viewed", { episode_id: episodeId });
   }, [episodeId]);
 
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+
+    (async () => {
+      setAiStatus("loading");
+      setAiError("");
+      setAiDataNotice("");
+      try {
+        const response = await getLatestRecoverySummary(episodeId);
+        if (ignore) return;
+        if (response.status === "success" && response.summary) {
+          setAiSummary(response.summary);
+          setAiSuggestionId(response.suggestionId ?? null);
+          setAiGeneratedAt(response.generatedAt ?? "");
+          setAiDataNotice(aiDataNoticeForInsight(response.summary));
+          capturePostHogEvent("ai_insight_viewed", { source: "recovery_summary", episode_id: episodeId });
+        } else {
+          setAiSummary(null);
+          setAiSuggestionId(null);
+          setAiGeneratedAt("");
+          setAiDataNotice(aiDataNoticeForInsight(null));
+        }
+      } catch (requestError) {
+        if (!ignore) setAiError(requestError instanceof Error ? requestError.message : "Unable to load latest AI summary.");
+      } finally {
+        if (!ignore) setAiStatus("idle");
+      }
+      try {
+        const suggestionsResponse = await getEpisodeSuggestions(episodeId);
+        if (!ignore) {
+          setSuggestions(suggestionsResponse.data);
+          setSuggestionsError("");
+        }
+      } catch (requestError) {
+        if (!ignore) {
+          setSuggestions([]);
+          setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to load AI suggestions.");
+        }
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    const days = BIOMETRIC_RANGES.find((range) => range.key === biometricRange)?.days ?? 14;
+
+    (async () => {
+      setBiometricsAiStatus("loading");
+      setBiometricsAiError("");
+      try {
+        const response = await generateBiometricsInsight(episodeId, days);
+        if (ignore) return;
+        if (response.status === "success" && response.insight) {
+          setBiometricsInsight(response.insight);
+          capturePostHogEvent("ai_insight_viewed", { source: "biometrics", episode_id: episodeId, days });
+        } else {
+          setBiometricsInsight(null);
+          setBiometricsAiError("AI could not interpret the current biometric data yet.");
+        }
+      } catch (requestError) {
+        if (!ignore) {
+          setBiometricsInsight(null);
+          setBiometricsAiError(requestError instanceof Error ? requestError.message : "Unable to load biometric AI interpretation.");
+        }
+      } finally {
+        if (!ignore) setBiometricsAiStatus("idle");
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [biometricRange, episodeId, refreshKey]);
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
@@ -438,6 +715,24 @@ export default function CareEpisodeInsightsPage() {
       }
     })();
 
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    Promise.allSettled([
+      getCareEpisodeCheckins(episodeId),
+      getCareEpisodeMedia(episodeId),
+      getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
+    ]).then(([checkinResult, mediaResult, timelineResult]) => {
+      if (ignore) return;
+      setCheckins(checkinResult.status === "fulfilled" ? checkinResult.value : []);
+      setMediaHistory(mediaResult.status === "fulfilled" ? mediaResult.value : []);
+      setTimelineEvents(timelineResult.status === "fulfilled" ? timelineResult.value.data : []);
+    });
     return () => {
       ignore = true;
     };
@@ -496,12 +791,25 @@ export default function CareEpisodeInsightsPage() {
   );
 
   const clinicalMedia = useMemo(
-    () => buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? ""),
-    [episode],
+    () => mediaHistory.length
+      ? buildMediaHistory(mediaHistory, episode?.patient?.hospitalId ?? "")
+      : buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? ""),
+    [episode, mediaHistory],
   );
-  const patientNotes = useMemo(() => buildPatientNotes(episode?.latestCheckin ?? null), [episode]);
+  const patientNotes = useMemo(() => {
+    const checkinNotes = checkins.length
+      ? checkins.flatMap((checkin) => buildPatientNotes(checkin as unknown as ApiRecord))
+      : buildPatientNotes(episode?.latestCheckin ?? null);
+    const timelineNotes = timelineEvents.map(buildTimelinePatientNote).filter((note): note is PatientNote => note !== null);
+    return dedupePatientNotes([...checkinNotes, ...timelineNotes]);
+  }, [checkins, episode, timelineEvents]);
   const filteredNotes = notesTab === "All" ? patientNotes : patientNotes.filter((note) => note.type === notesTab);
-  const symptoms = useMemo(() => buildSymptoms(episode?.latestCheckin ?? null), [episode]);
+  const symptoms = useMemo(
+    () => checkins.length
+      ? checkins.flatMap((checkin) => buildSymptoms(checkin as unknown as ApiRecord))
+      : buildSymptoms(episode?.latestCheckin ?? null),
+    [checkins, episode],
+  );
 
   const severeCount = symptoms.filter((symptom) => symptom.severity >= 7).length;
   const worseningCount = symptoms.filter((symptom) => symptom.trend === "Worsening").length;
@@ -529,6 +837,10 @@ export default function CareEpisodeInsightsPage() {
         clinicalMedia.length > 0 ? clinicalMedia.length + " image" + (clinicalMedia.length === 1 ? " is" : "s are") + " attached to the latest check-in." : "",
       ].filter(Boolean).join(" ")
     : "";
+  const aiDisplaySummary = aiSummary?.summary || clinicalSummary;
+  const selectedBiometricInsight = findBiometricMetric(biometricsInsight, biometricMetric);
+  const aiKeyDrivers = aiSummary?.keyDrivers ?? [];
+  const aiReviewAreas = aiSummary?.suggestedReview ?? [];
 
   if (isLoading && !episode) {
     return <SubHeaderSkeleton episodeId={episodeId} />;
@@ -572,24 +884,42 @@ export default function CareEpisodeInsightsPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
             <div>
-              <p className="text-sm font-medium leading-relaxed text-slate-700">{clinicalSummary}</p>
+              <p className="text-sm font-medium leading-relaxed text-slate-700">{aiStatus === "loading" ? "Loading latest AI summary..." : aiDisplaySummary}</p>
+              <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-primary">AI output is advisory only. Clinician review is required before care decisions.</p>
+              {aiError ? <p className="mt-3 text-sm font-semibold text-red-500">{aiError}</p> : null}
+              {aiDataNotice ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{aiDataNotice}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2">
-                {summaryTags.map((tag) => (
+                {(aiSummary ? [{ label: aiSummary.recoveryStatus.toUpperCase(), className: "bg-blue-50 text-primary" }, { label: aiSummary.dataSufficiency.toUpperCase(), className: "bg-slate-100 text-slate-600" }] : summaryTags).map((tag) => (
                   <span key={tag.label} className={cn("rounded-full px-3 py-1 text-xs font-bold", tag.className)}>
                     {tag.label}
                   </span>
                 ))}
+                {aiSummary ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600">{formatAiConfidence(aiSummary.confidence)}</span> : null}
               </div>
-              <Button
-                asChild
-                type="button"
-                className="mt-5 h-10 gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
-              >
-                <Link href={"/dashboard/care-episodes/" + episodeId + "/assessment"}>
-                  <Plus className="h-4 w-4" />
-                  Add Clinical Assessment
-                </Link>
-              </Button>
+              {aiKeyDrivers.length > 0 || aiReviewAreas.length > 0 ? (
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {aiKeyDrivers.length > 0 ? <div className="rounded-lg border border-border bg-slate-50 p-3"><p className="text-xs font-bold uppercase text-slate-500">Key Drivers</p><ul className="mt-2 space-y-1 text-sm font-medium text-slate-700">{aiKeyDrivers.slice(0, 3).map((driver) => <li key={`${driver.factor}-${driver.direction}`}>- {driver.factor}: {driver.direction}{driver.evidence ? ` (${driver.evidence})` : ""}</li>)}</ul></div> : null}
+                  {aiReviewAreas.length > 0 ? <div className="rounded-lg border border-border bg-slate-50 p-3"><p className="text-xs font-bold uppercase text-slate-500">Suggested Review</p><ul className="mt-2 space-y-1 text-sm font-medium text-slate-700">{aiReviewAreas.slice(0, 3).map((item) => <li key={item}>- {item}</li>)}</ul></div> : null}
+                </div>
+              ) : null}
+              <p className="mt-3 text-xs font-medium text-slate-500">Last AI update: {formatAiTimestamp(aiGeneratedAt)}{aiSuggestionId ? ` - Suggestion ${aiSuggestionId}` : ""}</p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  disabled={aiStatus === "generating"}
+                  onClick={generateSummary}
+                  className="h-10 gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {aiStatus === "generating" ? "Generating..." : aiSummary ? "Refresh AI Summary" : "Generate AI Summary"}
+                </Button>
+                <Button asChild type="button" variant="outline" className="h-10 gap-2 rounded-lg px-4 text-sm font-bold">
+                  <Link href={"/dashboard/care-episodes/" + episodeId + "/assessment"}>
+                    <Plus className="h-4 w-4" />
+                    Add Clinical Assessment
+                  </Link>
+                </Button>
+              </div>
             </div>
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="mb-3 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Data Sources Integrated</p>
@@ -608,7 +938,48 @@ export default function CareEpisodeInsightsPage() {
           </div>
         </CardContent>
       </Card>
-
+      <Card className="rounded-xl border-border bg-white shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">AI Suggestions</h2>
+              <p className="mt-1 text-sm font-medium text-slate-500">Clinician review decisions are recorded for audit. AI does not change the care plan.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={refreshAiSuggestions} className="h-9 rounded-lg text-xs font-bold">Refresh</Button>
+          </div>
+          {suggestionsError ? <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-500">{suggestionsError}</p> : null}
+          <div className="mt-4 space-y-3">
+            {suggestions.length === 0 ? <p className="py-5 text-center text-sm font-medium text-slate-500">{aiDataNotice || "No AI suggestions are available yet. Generate an AI summary to create a reviewable suggestion."}</p> : null}
+            {suggestions.map((suggestion) => (
+              <div key={suggestion.id} className="rounded-lg border border-border bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{suggestion.summary}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">{suggestion.service} - {formatAiTimestamp(suggestion.createdAt)}</p>
+                  </div>
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold uppercase", suggestion.status === "decided" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")}>{suggestion.decision ?? suggestion.status}</span>
+                </div>
+                {suggestion.annotation ? <p className="mt-2 text-xs font-medium italic text-slate-500">Note: {suggestion.annotation}</p> : null}
+                {suggestion.status === "pending" ? (
+                  <div className="mt-3 space-y-3">
+                    <textarea
+                      value={suggestionNotes[suggestion.id] ?? ""}
+                      onChange={(event) => setSuggestionNotes((current) => ({ ...current, [suggestion.id]: event.target.value }))}
+                      placeholder="Optional clinician note"
+                      className="min-h-20 w-full resize-y rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" disabled={decidingSuggestionId === suggestion.id} onClick={() => recordSuggestionDecision(suggestion, "accepted")} className="h-9 rounded-lg text-xs font-bold">Accept</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={decidingSuggestionId === suggestion.id} onClick={() => recordSuggestionDecision(suggestion, "ignored")} className="h-9 rounded-lg text-xs font-bold">Ignore</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={decidingSuggestionId === suggestion.id || !(suggestionNotes[suggestion.id] ?? "").trim()} onClick={() => recordSuggestionDecision(suggestion, "annotated")} className="h-9 rounded-lg text-xs font-bold">Save Note</Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -764,6 +1135,22 @@ export default function CareEpisodeInsightsPage() {
             </span>
           </div>
           ) : null}
+
+          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">AI biometric interpretation</p>
+              <span className="text-xs font-medium text-slate-500">{biometricsInsight ? `${biometricsInsight.timeRange.days} days analyzed` : "No AI range yet"}</span>
+            </div>
+            {biometricsAiStatus === "loading" ? <p className="mt-2 text-sm font-medium text-slate-600">Generating biometric interpretation...</p> : null}
+            {biometricsAiError ? <p className="mt-2 text-sm font-semibold text-red-500">{biometricsAiError}</p> : null}
+            {selectedBiometricInsight ? (
+              <div className="mt-2">
+                <p className="text-sm font-semibold capitalize text-slate-900">{selectedBiometricInsight.direction.replaceAll("_", " ")}</p>
+                <p className="mt-1 text-sm font-medium leading-6 text-slate-700">{selectedBiometricInsight.interpretation}</p>
+                <p className="mt-2 text-xs font-medium text-slate-500">Source time range: {formatAiTimestamp(biometricsInsight?.timeRange.from)} to {formatAiTimestamp(biometricsInsight?.timeRange.to)}. Clinician review is required.</p>
+              </div>
+            ) : biometricsInsight && biometricsAiStatus !== "loading" ? <p className="mt-2 text-sm font-medium text-slate-600">No AI interpretation was returned for {biometricMetric.toLowerCase()} in this window.</p> : null}
+          </div>
         </CardContent>
       </Card>
 
@@ -788,7 +1175,7 @@ export default function CareEpisodeInsightsPage() {
                     <div key={medication.medicationId} className="rounded-lg border border-slate-200">
                       <button
                         type="button"
-                        onClick={() => setExpandedMedicationId(isExpanded ? null : medication.medicationId)}
+                        onClick={() => toggleMedication(medication.medicationId)}
                         className="flex w-full flex-col gap-2 p-4 text-left"
                       >
                         <div className="flex items-center justify-between">
@@ -817,13 +1204,46 @@ export default function CareEpisodeInsightsPage() {
                       {isExpanded ? (
                         <div className="border-t border-slate-200 px-4 py-3">
                           <p className="mb-2 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">
-                            Patient-Reported Side Effects
+                            Dose Log History
                           </p>
-                          <p className="text-sm font-medium text-slate-500">
-                            {medication.missedCount > 0
-                              ? `${medication.missedCount} missed dose${medication.missedCount === 1 ? "" : "s"} logged. No side effects reported.`
-                              : "No side effects reported."}
-                          </p>
+                          {(() => {
+                            const logState = medicationLogs[medication.medicationId];
+                            if (!logState || logState === "loading") {
+                              return <p className="text-sm font-medium text-slate-500">Loading dose history...</p>;
+                            }
+                            if (logState === "error") {
+                              return <p className="text-sm font-medium text-red-500">Unable to load dose history.</p>;
+                            }
+                            if (logState.logs.length === 0) {
+                              return <p className="text-sm font-medium text-slate-500">No doses logged yet.</p>;
+                            }
+                            return (
+                              <ul className="space-y-2">
+                                {logState.logs.map((log) => (
+                                  <li key={log.id} className="flex items-start justify-between gap-3 text-sm">
+                                    <div>
+                                      <span className="font-semibold text-slate-900">{formatDateTimeLabel(log.loggedAt)}</span>
+                                      {log.notes ? (
+                                        <p className="mt-0.5 text-xs font-medium italic text-slate-500">{log.notes}</p>
+                                      ) : null}
+                                    </div>
+                                    <span
+                                      className={cn(
+                                        "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase",
+                                        log.action === "TAKEN"
+                                          ? "bg-emerald-50 text-emerald-600"
+                                          : log.action === "MISSED"
+                                            ? "bg-red-50 text-red-500"
+                                            : "bg-amber-50 text-amber-700",
+                                      )}
+                                    >
+                                      {log.action}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            );
+                          })()}
                         </div>
                       ) : null}
                     </div>
@@ -840,7 +1260,7 @@ export default function CareEpisodeInsightsPage() {
               <h2 className="text-base font-bold text-slate-900">Symptom Tracking</h2>
               <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-primary">{symptoms.length} Active</span>
             </div>
-            <p className="mt-1 text-sm font-medium text-slate-500">Patient-reported · NRS 0-10 Pain/Severity scale</p>
+            <p className="mt-1 text-sm font-medium text-slate-500">Patient-reported - NRS 0-10 Pain/Severity scale</p>
 
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-red-50 py-2">

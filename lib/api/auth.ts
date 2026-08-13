@@ -1,3 +1,4 @@
+import type { components } from '@/docs/types/api'
 import type { LoginResponse } from '@/lib/types/auth'
 import { apiClient } from '@/lib/services/auth/api-client'
 
@@ -18,6 +19,7 @@ export function getAuthErrorMessage(code: string, fallback?: string): string {
 interface ApiSuccess<T> { ok: true; data: T }
 interface ApiError { ok: false; code: string; message: string; statusCode: number }
 export type ApiResult<T = unknown> = ApiSuccess<T> | ApiError
+type AcceptInviteResult = components['schemas']['AcceptInviteResultDto']
 
 async function readJson(response: Response) {
   const text = await response.text()
@@ -71,6 +73,36 @@ export const apiForgotPassword = (data: { email: string }) =>
 export const apiResetPassword = (data: { token: string; newPassword: string }) =>
   post('/auth/reset-password', data)
 
+
+export async function apiAcceptTeamInvite(data: components['schemas']['AcceptInviteDto']): Promise<ApiResult<AcceptInviteResult>> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/team/members/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    const json = await readJson(res)
+
+    if (res.ok) {
+      return { ok: true, data: (json?.data ?? json) as AcceptInviteResult }
+    }
+
+    const code: string = json?.message ?? 'UNKNOWN_ERROR'
+    return {
+      ok: false,
+      code,
+      message: json?.message ?? 'Unable to accept this invite. Please request a new invitation.',
+      statusCode: json?.statusCode ?? res.status,
+    }
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Network error. Please check your connection.',
+      statusCode: 0,
+    }
+  }
+}
 export async function storeTokens(tokens: { accessToken: string; refreshToken: string; expiresIn: number }) {
   try {
     const res = await fetch('/api/auth/set-tokens', {
@@ -88,7 +120,7 @@ export async function storeTokens(tokens: { accessToken: string; refreshToken: s
 }
 
 export async function logout() {
-  await fetch('/api/auth/set-tokens', { method: 'DELETE', credentials: 'include' })
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 }
 
 export const apiSubmitWaitlist = (data: { fullName: string; email: string; phone: string }) =>

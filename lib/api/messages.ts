@@ -13,7 +13,8 @@ export type MessageThread = {
 
 export type MessageRecord = {
   id: string;
-  episodeId: string;
+  episodeId: string | null;
+  appointmentId: string | null;
   senderId: string;
   senderName: string;
   senderRole: string;
@@ -33,13 +34,17 @@ export type MessageTemplate = {
   content: string;
 };
 
-export type SendMessagePayload = {
-  episodeId: string;
+type MessageContent = {
   content: string;
   templateUsed?: string;
   contextType?: MessageContextType;
   contextId?: string;
 };
+
+export type SendMessagePayload = MessageContent & (
+  | { episodeId: string; appointmentId?: never }
+  | { appointmentId: string; episodeId?: never }
+);
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -108,12 +113,16 @@ function toThread(value: unknown): MessageThread | null {
 
 function toMessage(value: unknown): MessageRecord | null {
   const record = asRecord(value);
-  if (!record || typeof record.id !== "string" || typeof record.episodeId !== "string") return null;
+  if (!record || typeof record.id !== "string") return null;
+  const episodeId = asString(record.episodeId);
+  const appointmentId = asString(record.appointmentId);
+  if (!episodeId && !appointmentId) return null;
   const status = asString(record.status, "sent") as MessageStatus;
   const contextType = asString(record.contextType) as MessageContextType;
   return {
     id: record.id,
-    episodeId: record.episodeId,
+    episodeId: episodeId || null,
+    appointmentId: appointmentId || null,
     senderId: asString(record.senderId),
     senderName: asString(record.senderName, "Clinician"),
     senderRole: asString(record.senderRole),

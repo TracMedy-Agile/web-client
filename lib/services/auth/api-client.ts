@@ -1,4 +1,5 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL
+let refreshPromise: Promise<boolean> | null = null
 
 async function getAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') {
@@ -20,7 +21,22 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-async function request(path: string, options?: RequestInit) {
+async function refreshAccessToken() {
+  if (refreshPromise === null) {
+    refreshPromise = fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
+async function request(path: string, options?: RequestInit, allowRefresh = true) {
   const headers = new Headers({
     'Content-Type': 'application/json',
     ...options?.headers,
@@ -35,6 +51,14 @@ async function request(path: string, options?: RequestInit) {
     ...options,
     headers,
   })
+
+  if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
+    if (allowRefresh && await refreshAccessToken()) {
+      return request(path, options, false)
+    }
+    window.dispatchEvent(new Event('tracmedy:session-expired'))
+  }
+
   return res
 }
 

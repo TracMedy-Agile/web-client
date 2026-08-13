@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import AppointmentDateRangePicker from "../components/AppointmentDateRangePicker";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
+import ScheduleAppointmentModal from "../components/ScheduleAppointmentModal";
 
 type MetricCardData = {
   title: string;
@@ -420,6 +421,7 @@ export default function VirtualConsultationsPage() {
   const [clinicianFilter, setClinicianFilter] = useState("all");
   const [dateRange, setDateRange] = useState({ dateFrom: "", dateTo: "" });
   const [reschedulingAppointment, setReschedulingAppointment] = useState<Consultation | null>(null);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   const loadConsultations = useCallback(async (refreshing = false) => {
     if (refreshing) setIsRefreshing(true);
@@ -572,7 +574,7 @@ export default function VirtualConsultationsPage() {
             </button>
             <button
               type="button"
-              onClick={() => toast.info("Video scheduling workflow is coming soon.")}
+              onClick={() => setIsScheduleModalOpen(true)}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
             >
               <Plus className="h-5 w-5" />
@@ -748,6 +750,14 @@ export default function VirtualConsultationsPage() {
         onSuccess={() => {
           toast.success("Appointment rescheduled successfully.");
           setReschedulingAppointment(null);
+          void loadConsultations(true);
+        }}
+      />
+      <ScheduleAppointmentModal
+        open={isScheduleModalOpen}
+        onOpenChange={setIsScheduleModalOpen}
+        initialAppointmentType="teleconsultation"
+        onAppointmentCreated={() => {
           void loadConsultations(true);
         }}
       />

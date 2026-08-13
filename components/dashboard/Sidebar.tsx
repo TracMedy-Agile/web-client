@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { label: "Messages", href: "/dashboard/messages", icon: MessageSquare },
   { label: "Report & Analytics", href: "/dashboard/reports", icon: BarChart2 },
   { label: "Team", href: "/dashboard/team", icon: UserCog },
-  { label: "Audit", href: "/dashboard/audit", icon: ClipboardCheck },
+  { label: "Audit Log", href: "/dashboard/audit-logs", icon: ClipboardCheck },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 

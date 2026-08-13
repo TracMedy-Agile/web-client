@@ -450,6 +450,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/facilities/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List facility audit logs
+         * @description Returns a paginated, filterable list of audit entries for the authenticated hospital admin facility. Facility is derived from the session — out-of-facility entries are impossible by construction.
+         */
+        get: operations["AuditController_findAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/facilities/audit-logs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get audit log entry
+         * @description Returns a single audit entry including metadata, IP, and user-agent. Only entries belonging to the authenticated admin facility are visible.
+         */
+        get: operations["AuditController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/waitlist/submit": {
         parameters: {
             query?: never;
@@ -870,7 +910,51 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update facility-managed patient demographics and hospital patient ID
+         * @description Updates patient demographics (date of birth, gender, phone, email, blood group) and/or the hospital patient ID (externalPatientId). Hospital patient ID must be unique within the facility. Facility-scoped to the authenticated staff member.
+         */
+        patch: operations["FacilityController_updatePatient"];
+        trace?: never;
+    };
+    "/facilities/{facilityId}/patients/{patientId}/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Disconnect patient from facility
+         * @description Marks the patient-facility link as disconnected, records the timestamp, and appends a connection history event. Facility-scoped to the authenticated staff member.
+         */
+        patch: operations["FacilityController_disconnectPatient"];
+        trace?: never;
+    };
+    "/facilities/{facilityId}/patients/{patientId}/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Reconnect patient to facility
+         * @description Reactivates a disconnected patient-facility link: status active, connectedAt refreshed, disconnectedAt cleared, and a reconnected history event appended. Facility-scoped to the authenticated staff member.
+         */
+        patch: operations["FacilityController_reconnectPatient"];
         trace?: never;
     };
     "/facility-invites/preview": {
@@ -905,6 +989,26 @@ export interface paths {
          * @description Returns all facilities the patient is connected to, with facility details and connection info.
          */
         get: operations["PatientController_getMyFacilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/patients/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look up a single patient by email or patient ID
+         * @description Returns minimal patient profile (name, email, avatar, patient ID) for a single user matching the given email or tracmedyPatientId. Used by hospital staff to verify a patient exists before sending an invite. Searches globally — not scoped to any facility.
+         */
+        get: operations["PatientController_lookup"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1115,6 +1219,26 @@ export interface paths {
          * @description Marks an appointment as no-show. Restricted to clinicians and hospital admins.
          */
         patch: operations["AppointmentController_markNoShow"];
+        trace?: never;
+    };
+    "/appointments/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Complete an appointment (hospital staff)
+         * @description Marks an appointment as completed. Restricted to clinicians and hospital admins within the appointment facility. A clinician can only complete appointments assigned to them; a hospital_admin can complete any appointment in their facility. Appends a completed entry with actor and timestamp to the status history and records an audit entry.
+         */
+        patch: operations["AppointmentController_complete"];
         trace?: never;
     };
     "/appointments/{id}/checkin": {
@@ -1330,7 +1454,7 @@ export interface paths {
         };
         /**
          * Get full care episode detail
-         * @description Returns episode with nested patient summary, current care plan, latest check-in, care team members, risk score, day progress, and recent timeline events.
+         * @description Returns episode with nested patient summary, current care plan, latest check-in, care team members, risk score, day progress, and recent timeline events. When closed, includes a closure summary section. Removed care team members are excluded unless includeRemoved=true.
          */
         get: operations["CareEpisodesController_findOne"];
         put?: never;
@@ -1338,7 +1462,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update episode fields (consultation, discharge, follow-up)
+         * @description Updates consultationDate, dischargeStatus, and/or structured followUp on an episode. Requires clinician, hospital_admin, or tracmedy_admin role with facility access.
+         */
+        patch: operations["CareEpisodesController_updateEpisode"];
         trace?: never;
     };
     "/care-episodes/{id}/close": {
@@ -1361,6 +1489,106 @@ export interface paths {
         patch: operations["CareEpisodesController_close"];
         trace?: never;
     };
+    "/care-episodes/{id}/care-team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add clinician to care team
+         * @description Adds a clinician to the episode care team. Re-activates a previously soft-removed member instead of duplicating. Records care_team_changed timeline event and audit entry.
+         */
+        post: operations["CareEpisodesController_addCareTeamMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/care-episodes/{id}/care-team/{clinicianId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove clinician from care team (soft removal)
+         * @description Soft-removes a care team member by setting removedAt/removedBy. The member is hidden from default queries but preserved for history. Records timeline event and audit entry.
+         */
+        delete: operations["CareEpisodesController_removeCareTeamMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/care-episodes/{id}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get historical media across check-ins
+         * @description Returns all images/media submitted across the episode check-ins, newest first. Paginated. Access is role- and facility-scoped.
+         */
+        get: operations["CareEpisodesController_getEpisodeMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/care-episodes/{id}/checkins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get check-in history with severity and trends
+         * @description Returns all patient check-ins for the episode, newest first, plus symptom severity trend and vitals trend series computed across the full history. Access is role- and facility-scoped.
+         */
+        get: operations["CareEpisodesController_getCheckinsHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/care-episodes/{id}/tasks/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get task completion statistics by date
+         * @description Returns daily task completion counts (total due, completed, missed, overdue) across all care plan versions. Defaults to today; pass date=YYYY-MM-DD for a specific day.
+         */
+        get: operations["CareEpisodesController_getTaskCompletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/care-episodes/{id}/care-plan": {
         parameters: {
             query?: never;
@@ -1369,8 +1597,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get current active care plan
-         * @description Returns the active CarePlan (where isActive = true) for the episode. Returns 404 if no active plan exists.
+         * Get current active care plan with version history
+         * @description Returns the active CarePlan (where isActive = true) for the episode plus all historical care plan versions (newest first) and total version count. Returns 404 if no active plan exists.
          */
         get: operations["CareEpisodesController_getCarePlan"];
         put?: never;
@@ -1631,6 +1859,146 @@ export interface paths {
          * @description Sets readAt to now for the specified notification. Idempotent — calling this on an already-read notification returns success. Returns 404 if the notification is not owned by the authenticated user.
          */
         patch: operations["NotificationsController_markAsRead"];
+        trace?: never;
+    };
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List alerts for a facility
+         * @description Returns alerts scoped to the authenticated user's facility. Supports filtering by severity, status, patient, care episode, and date range. Facility-scoped via RBAC.
+         */
+        get: operations["AlertsController_listAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alert acknowledgement history
+         * @description Returns all acknowledged alerts with clinician name and acknowledgement timestamp. Facility-scoped. Paginated. Also filterable by care episode.
+         */
+        get: operations["AlertsController_getAlertHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Acknowledge an alert
+         * @description Marks an alert as acknowledged. Logs the clinician ID and acknowledgement timestamp. Facility-scoped.
+         */
+        patch: operations["AlertsController_acknowledgeAlert"];
+        trace?: never;
+    };
+    "/alerts/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Resolve an acknowledged alert
+         * @description Marks an acknowledged alert as resolved with resolution notes and outcome. Only acknowledged alerts are resolvable (409 otherwise). Facility-scoped. Records audit entry alert_resolved.
+         */
+        patch: operations["AlertsController_resolveAlert"];
+        trace?: never;
+    };
+    "/alerts/{id}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Escalate an alert
+         * @description Escalates an open or acknowledged alert to a destination/specialist with urgency, reason, and notes. Persists escalation fields and status escalated. Facility-scoped. Records audit entry alert_escalated.
+         */
+        patch: operations["AlertsController_escalateAlert"];
+        trace?: never;
+    };
+    "/alerts/{id}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get AI impact analysis for an alert (stub)
+         * @description Returns structured impact analysis data shape. AI-powered analysis will be available in Phase 12.
+         */
+        get: operations["AlertsController_getAlertImpact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk-scores/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get risk score for a care episode
+         * @description Returns the current risk score (score, category, trend, trigger_factors) and paginated historical scores for a care episode.
+         */
+        get: operations["RiskScoresController_getRiskScore"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/health-profiles": {
@@ -2093,6 +2461,170 @@ export interface paths {
         patch: operations["ProfileController_updateProfile"];
         trace?: never;
     };
+    "/profile/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user profile (alias)
+         * @description Alias for GET /profile. Returns the same profile data.
+         */
+        get: operations["ProfileController_getProfileMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update profile preferences (alias)
+         * @description Alias for PATCH /profile. Updates the same fields.
+         */
+        patch: operations["ProfileController_updateProfileMe"];
+        trace?: never;
+    };
+    "/profile/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload profile avatar
+         * @description Upload an image file to Cloudinary and update the user avatar URL.
+         */
+        post: operations["ProfileController_uploadAvatar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get notification preferences
+         * @description Returns the notification preferences object for the current user.
+         */
+        get: operations["ProfileController_getNotificationPreferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/language-preference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get language preference
+         * @description Returns the locale/language setting for the current user.
+         */
+        get: operations["ProfileController_getLanguagePreference"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get account details
+         * @description Returns account identity details including full name, email, phone, date of birth, gender, and Trac ID.
+         */
+        get: operations["ProfileController_getAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/email-change/initiate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initiate email change
+         * @description Sends a verification OTP to the user phone and returns a verification ID.
+         */
+        post: operations["ProfileController_initiateEmailChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/phone-change/initiate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initiate phone change
+         * @description Sends a verification OTP to the new phone number and returns a verification ID.
+         */
+        post: operations["ProfileController_initiatePhoneChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/me/verify-otp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify OTP for email/phone change
+         * @description Validates the OTP code and updates the user email or phone. Returns updated profile.
+         */
+        post: operations["ProfileController_verifyOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/profile/health-summary": {
         parameters: {
             query?: never;
@@ -2121,8 +2653,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get message history for an episode
-         * @description Returns all messages for a given care episode, ordered by sent time ascending. Access-scoped to the episode participant.
+         * Get message history for an episode or appointment
+         * @description Returns all messages for a given care episode (episode_id) or appointment (appointment_id), ordered by sent time ascending. Exactly one of episode_id or appointment_id must be provided. Access-scoped to the conversation participant.
          */
         get: operations["MessagingController_getMessagesByEpisode"];
         put?: never;
@@ -2191,6 +2723,1326 @@ export interface paths {
         get: operations["MessagingController_getMessageTemplates"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List home care services
+         * @description Returns all available home care services. Optionally filter by category.
+         */
+        get: operations["HomeCareController_findAllServices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/services/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get home care service by ID
+         * @description Returns a single home care service with full details.
+         */
+        get: operations["HomeCareController_findServiceById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List patient home care requests
+         * @description Returns all home care requests for the authenticated patient. Optionally filter by status.
+         */
+        get: operations["HomeCareController_findRequestsByPatient"];
+        put?: never;
+        /**
+         * Create a home care request
+         * @description Creates a new home care request for the authenticated patient.
+         */
+        post: operations["HomeCareController_createRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get home care request by ID
+         * @description Returns a single home care request with full details.
+         */
+        get: operations["HomeCareController_findRequestById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Cancel a home care request
+         * @description Cancels an existing home care request. Only pending requests can be cancelled.
+         */
+        patch: operations["HomeCareController_cancelRequest"];
+        trace?: never;
+    };
+    "/home-care/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List home care providers
+         * @description Returns all available home care providers.
+         */
+        get: operations["HomeCareController_findProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{id}/assign-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign provider to a home care request
+         * @description Assigns a provider to an existing home care request.
+         */
+        post: operations["HomeCareController_assignProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get home care dashboard
+         * @description Returns aggregated dashboard data: clinician-ordered plans, direct request plans, active requests, and recent completed visits preview.
+         */
+        get: operations["HomeCareController_getDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/completed-visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get completed home care visits
+         * @description Returns paginated completed visits for the authenticated patient. Filterable by source type.
+         */
+        get: operations["HomeCareController_getCompletedVisits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get home care plan detail
+         * @description Returns a single home care plan with clinical orders and timeline.
+         */
+        get: operations["HomeCareController_getPlanDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/request-draft/{draftId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get request draft
+         * @description Returns draft home care request details.
+         */
+        get: operations["HomeCareController_getRequestDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/quotes/{quoteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get home care quote
+         * @description Returns quote details including cost breakdown and payment methods.
+         */
+        get: operations["HomeCareController_getQuoteDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{requestId}/visit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get visit detail
+         * @description Returns visit detail for a direct home care request including progress and timeline.
+         */
+        get: operations["HomeCareController_getVisitDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{requestId}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check request availability
+         * @description Returns availability check result for a home care request.
+         */
+        get: operations["HomeCareController_getRequestAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/services/{serviceId}/document-requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get document requirements for a service
+         * @description Returns required documents for a given home care service.
+         */
+        get: operations["HomeCareController_getDocumentRequirements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{draftId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload document for a request draft
+         * @description Accepts a document upload for a home care request draft. Cloudinary integration deferred.
+         */
+        post: operations["HomeCareController_uploadDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/faq": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get FAQ list
+         * @description Returns static FAQ entries. No authentication required.
+         */
+        get: operations["SupportController_getFaq"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get support categories
+         * @description Returns available support ticket categories. No authentication required.
+         */
+        get: operations["SupportController_getCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a support ticket
+         * @description Submit a new support ticket. Authentication required.
+         */
+        post: operations["SupportController_createTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/privacy-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get privacy policy summary
+         * @description Returns a concise summary of the privacy policy. No authentication required.
+         */
+        get: operations["LegalController_getPrivacySummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get terms of service
+         * @description Returns the full terms of service content. No authentication required.
+         */
+        get: operations["LegalController_getTerms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/referrals/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user referral data
+         * @description Returns referral code, link, counts, and reward balance for the authenticated user.
+         */
+        get: operations["ReferralsController_getMyReferrals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user subscription
+         * @description Returns the current subscription plan for the authenticated user. Stub for Phase 14 — returns free plan by default.
+         */
+        get: operations["SubscriptionsController_getMySubscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite a caregiver
+         * @description Patient sends an invitation to a trusted person to join their care circle. Generates a secure single-use token for acceptance.
+         */
+        post: operations["CaregiversController_inviteCaregiver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup caregiver by email
+         * @description Check if an email belongs to an existing Tracmedy user. Returns minimal info (exists, name) so the client can conditionally show or hide full name/DOB fields.
+         */
+        get: operations["CaregiversController_lookupByEmail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List caregivers for patient
+         * @description Returns all active and pending caregivers for the authenticated patient, including member count and limit.
+         */
+        get: operations["CaregiversController_listCaregivers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get caregiver detail
+         * @description Returns full caregiver profile including permissions and recent activity for the authenticated patient.
+         */
+        get: operations["CaregiversController_getCaregiverDetail"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove caregiver
+         * @description Patient removes a caregiver from their care circle. Access is revoked immediately.
+         */
+        delete: operations["CaregiversController_removeCaregiver"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/{id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update caregiver permissions
+         * @description Patient updates what data a caregiver can view. Changes take effect immediately.
+         */
+        patch: operations["CaregiversController_updatePermissions"];
+        trace?: never;
+    };
+    "/caregivers/{id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update caregiver notification preferences
+         * @description Patient toggles health alert notification preference for a specific caregiver.
+         */
+        patch: operations["CaregiversController_updateNotificationPrefs"];
+        trace?: never;
+    };
+    "/caregivers/invitations/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup caregiver invitation
+         * @description Returns invitation details (patient name, relationship, status, expiry) for the given token. Requires authentication.
+         */
+        get: operations["CaregiversController_lookupInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/invitations/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept caregiver invitation
+         * @description Authenticated caregiver accepts the invitation. Activates the relationship and notifies the patient.
+         */
+        post: operations["CaregiversController_acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/invitations/{token}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline caregiver invitation
+         * @description Authenticated caregiver declines the invitation. No access is granted.
+         */
+        post: operations["CaregiversController_declineInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * People I Care For
+         * @description Returns active patient cards for the authenticated caregiver with relationship, last activity, and supportive status.
+         */
+        get: operations["CaregiversController_getPeopleICareFor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/people/{patientId}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Care overview for patient
+         * @description Returns permitted read-only care overview including episode summary, vitals, and symptoms. Respects caregiver permissions.
+         */
+        get: operations["CaregiversController_getCareOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/{id}/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit supportive observation
+         * @description Caregiver submits a supportive observation for a patient. The observation is labeled as non-medical and stored with affects_medical_record=false. Does not affect symptoms, charts, or risk scoring.
+         */
+        post: operations["CaregiversController_createObservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity feed
+         * @description Returns paginated supportive activity feed for the authenticated caregiver. Optionally filtered by patient.
+         */
+        get: operations["CaregiversController_getActivityFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Educational resource library
+         * @description Returns educational resources filtered by category. Includes bookmark status for the authenticated caregiver.
+         */
+        get: operations["CaregiversController_getResources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/resources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resource detail
+         * @description Returns full resource content, bookmark status, helpful count, and related resources.
+         */
+        get: operations["CaregiversController_getResourceDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/resources/{id}/bookmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Toggle resource bookmark
+         * @description Toggles bookmark status for a resource. Returns the updated bookmark state and saved count.
+         */
+        post: operations["CaregiversController_toggleBookmark"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/resources/{id}/helpful": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark resource as helpful
+         * @description Records helpful feedback for a resource. Increments the helpful count.
+         */
+        post: operations["CaregiversController_markHelpful"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat with the AI care assistant
+         * @description Advisory-only care companion chat. Uses the patient's active episode, medications, recent symptoms, and missed doses as context. Returns a structured reply with suggested actions. Conversation history is persisted per user and can be deleted message-by-message.
+         */
+        post: operations["AiController_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/insights/episode/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate an episode insight for clinician review
+         * @description Structured episode assessment (recovery status, drivers, concerns, confidence). Creates a reviewable AI suggestion. The AI never decides — clinicians confirm or change the assessment.
+         */
+        post: operations["AiController_episodeInsight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/episodes/{id}/recovery-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get latest recovery summary for an episode
+         * @description Returns the most recent AI assessment (episode insight or recovery summary) for the dashboard recovery screen. status=empty when none has been generated. Facility-scoped; clinicians only see episodes they are assigned to.
+         */
+        get: operations["AiController_latestEpisodeSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/episodes/{id}/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List CDS suggestions for an episode
+         * @description Returns contextual AI suggestions (newest first) for the dashboard. Clinicians review and decide via POST /ai/suggestions/:id/decision. Facility-scoped; clinicians only see episodes they are assigned to.
+         */
+        get: operations["AiController_listEpisodeSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/insights/alert/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate an alert insight for clinician review
+         * @description Explains an alert with context, trend interpretation, and baseline comparison. Advisory only — the AI never acknowledges, resolves, or escalates alerts.
+         */
+        post: operations["AiController_alertInsight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/insights/biometrics/{episodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate biometric trend insights
+         * @description Interprets vitals trends from patient check-ins over a configurable window (3-30 days). Trend observations only — never a diagnosis.
+         */
+        post: operations["AiController_biometricsInsight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/reports/episode/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft a clinician review report for an episode
+         * @description Draft summary only. Clinicians edit and approve before it becomes part of the medical record. Never includes fabricated events.
+         */
+        post: operations["AiController_episodeReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/suggestions/{id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a clinician decision on an AI suggestion
+         * @description Audited accept/ignore/annotate decision. Deciding a suggestion never mutates clinical state — it only records the clinician's review.
+         */
+        post: operations["AiController_decideSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/forecasts/episodes/{episodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get care episode forecast
+         * @description Composite recovery forecast for the care-episode detail and recovery screens: recovery percentage, deterioration risk, relapse probability, adherence and check-in compliance. Facility-scoped; clinicians only see episodes they are assigned to.
+         */
+        get: operations["ForecastsController_getEpisodeForecast"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/forecasts/episodes/{episodeId}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh care episode forecast
+         * @description Recomputes the deterministic forecast from the latest persisted signals and records a forecast_refreshed audit event.
+         */
+        post: operations["ForecastsController_refreshEpisodeForecast"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/forecasts/facility/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facility forecast summary
+         * @description Aggregated forecast KPIs for the hospital dashboard: active episodes, risk distribution, at-risk count, average recovery percentage and days.
+         */
+        get: operations["ForecastsController_getFacilitySummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analytics overview KPIs
+         * @description Avg alert response time, readmission rate, and active clinicians with period-over-period change, plus active episodes, open alerts and avg recovery days.
+         */
+        get: operations["AnalyticsController_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/readmission-trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readmission and recovery trend
+         * @description Monthly or weekly buckets of readmission rate and average recovery days for closed episodes.
+         */
+        get: operations["AnalyticsController_readmissionTrend"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/risk-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Risk distribution
+         * @description Counts of active episodes by risk category.
+         */
+        get: operations["AnalyticsController_riskDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/ward-performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ward performance
+         * @description Per-ward active episodes, open alerts, avg alert response time and avg recovery days.
+         */
+        get: operations["AnalyticsController_wardPerformance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/clinician-workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Clinician workload
+         * @description Per-clinician active episodes, open alerts, avg alert response time and outcome counts. Role-scoped: clinicians see only their own row (PRD §7.11.4).
+         */
+        get: operations["AnalyticsController_clinicianWorkload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export analytics report
+         * @description Downloads a report file. xlsx (SpreadsheetML) or a minimal hand-rolled PDF. Server-side export is implemented without third-party libraries.
+         */
+        get: operations["AnalyticsController_export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List facility team members
+         * @description Directory of facility staff: role, ward, specialty, access profile, permissions, assignment counts and invite state. hospital_admin only.
+         */
+        get: operations["TeamController_directory"];
+        put?: never;
+        /**
+         * Invite a team member
+         * @description Creates (or reuses) the staff user, stores a hashed 48h invite token, emails the team-invite template and returns the raw token for manual sharing.
+         */
+        post: operations["TeamController_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a team invite
+         * @description Exchanges a valid invite token for an active account with a password. No auth required — the token is the credential.
+         */
+        post: operations["TeamController_acceptInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{id}/resend-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a team invite
+         * @description Rotates the invite token, extends expiry, and re-emails the invitee.
+         */
+        post: operations["TeamController_resendInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a team member
+         * @description Soft-removes the member. Refuses when the member still has active care episodes or upcoming appointments (reassign first).
+         */
+        delete: operations["TeamController_removeMember"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a team member
+         * @description Update name, role, ward, specialty, access profile or permissions. Changes are audited.
+         */
+        patch: operations["TeamController_updateMember"];
+        trace?: never;
+    };
+    "/team/members/{id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend a team member
+         * @description Immediately blocks sign-in (JWT strategy rejects suspended accounts) and records the reason. Cannot suspend yourself.
+         */
+        post: operations["TeamController_suspendMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivate a suspended team member
+         * @description Restores sign-in and clears suspension metadata.
+         */
+        post: operations["TeamController_reactivateMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Member activity feed
+         * @description Audit entries involving the member (as actor or target): auth, team management, forecast and export events.
+         */
+        get: operations["TeamController_memberActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{id}/escalation-preference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get escalation preference
+         * @description Preferred alert escalation channels for the member (PRD §7.7.7).
+         */
+        get: operations["TeamController_getEscalationPreference"];
+        put?: never;
+        /**
+         * Update escalation preference
+         * @description Set preferred escalation channels. WhatsApp is accepted but is web-specified only (pending confirmation) — delivery falls back to sms/email/in_app.
+         */
+        post: operations["TeamController_updateEscalationPreference"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2327,6 +4179,57 @@ export interface components {
             /** @example cmpqz48g00000uo3so853nqfc */
             userId: string;
         };
+        AuditTargetEntityDto: {
+            /** @description Entity type (e.g. patient, care_episode) */
+            type: string;
+            /** @description Entity ID */
+            id: string;
+            /**
+             * @description Human-readable summary of the target
+             * @example Patient: John Doe
+             */
+            summary?: string;
+        };
+        AuditLogResponseDto: {
+            /** @description Audit entry ID */
+            id: string;
+            /** @description Facility this entry belongs to */
+            facilityId: string;
+            /** @description Actor user ID */
+            actorId: string;
+            /** @description Actor display name */
+            actorName?: Record<string, never> | null;
+            /** @description Actor role */
+            actorRole?: Record<string, never> | null;
+            /** @description Audit module (e.g. patient_management) */
+            module: string;
+            /** @description Action (e.g. patient_disconnected) */
+            action: string;
+            /** @description Target entity reference */
+            targetEntity?: components["schemas"]["AuditTargetEntityDto"] | null;
+            /** @description IP address of the actor */
+            ipAddress?: Record<string, never>;
+            /** @description User-agent of the actor */
+            userAgent?: Record<string, never>;
+            /** @description Free-form metadata */
+            metadata?: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description When the entry was created
+             */
+            createdAt: string;
+        };
+        AuditLogListResponseDto: {
+            /** @description List of audit entries */
+            data: components["schemas"]["AuditLogResponseDto"][];
+            /** @description Pagination metadata */
+            meta: {
+                page?: number;
+                limit?: number;
+                total?: number;
+                totalPages?: number;
+            };
+        };
         SubmitWaitlistDto: {
             /** @example John Doe */
             fullName: string;
@@ -2446,6 +4349,11 @@ export interface components {
             refillThreshold: number;
             /** @description Today scheduled time slots */
             scheduledTimes: components["schemas"]["TodayMedicationSlotDto"][];
+            /**
+             * @description Consecutive days (ending today or yesterday) with all scheduled doses taken
+             * @example 5
+             */
+            adherenceStreakDays: number | null;
         };
         CalendarMedicationSlotDto: {
             /**
@@ -3006,6 +4914,39 @@ export interface components {
             /** @description Appointments scoped to this facility (newest first) */
             appointments: components["schemas"]["FacilityAppointmentRowDto"][];
         };
+        UpdateFacilityPatientDto: {
+            /**
+             * Format: date-time
+             * @description Patient date of birth (ISO 8601 date)
+             * @example 1990-05-15
+             */
+            dateOfBirth?: string;
+            /**
+             * @description Patient gender
+             * @example female
+             */
+            gender?: string;
+            /**
+             * @description Patient phone number
+             * @example +2348012345678
+             */
+            phone?: string;
+            /**
+             * @description Patient email
+             * @example patient@example.com
+             */
+            email?: string;
+            /**
+             * @description Patient blood group
+             * @example O+
+             */
+            bloodGroup?: string;
+            /**
+             * @description Hospital patient ID (externalPatientId). Must be unique within this facility.
+             * @example HOS-00421
+             */
+            externalPatientId?: string;
+        };
         InvitePreviewResponseDto: {
             /** @description Facility name */
             facilityName: string;
@@ -3028,6 +4969,28 @@ export interface components {
              * @example This invite is ready to be used.
              */
             message: string;
+        };
+        PatientLookupResponseDto: {
+            /**
+             * @description Patient full name
+             * @example John Doe
+             */
+            name: Record<string, never> | null;
+            /**
+             * @description Patient email address
+             * @example patient@example.com
+             */
+            email: string;
+            /**
+             * @description Patient profile picture URL
+             * @example https://res.cloudinary.com/...
+             */
+            avatarUrl: Record<string, never> | null;
+            /**
+             * @description Tracmedy patient ID
+             * @example TRC-2529-001
+             */
+            tracmedyPatientId: Record<string, never> | null;
         };
         CreateAppointmentDto: {
             /**
@@ -3235,6 +5198,18 @@ export interface components {
              * @example Patient no longer available
              */
             reason: string;
+        };
+        CompleteAppointmentDto: {
+            /**
+             * @description Completion notes recorded by staff
+             * @example Procedure went well; follow-up in 2 weeks
+             */
+            notes?: string;
+            /**
+             * @description Outcome of the completed appointment
+             * @example successful
+             */
+            outcome?: string;
         };
         AssignAppointmentDto: {
             /**
@@ -3549,6 +5524,41 @@ export interface components {
              */
             coveringClinicianId?: string | null;
         };
+        FollowUpInputDto: {
+            /**
+             * @description Follow-up type
+             * @example telehealth
+             */
+            type?: string;
+            /**
+             * @description Reason for follow-up
+             * @example BP recheck
+             */
+            reason?: string;
+            /**
+             * Format: date-time
+             * @description Scheduled follow-up date (ISO 8601)
+             * @example 2026-08-15T10:00:00.000Z
+             */
+            scheduledDate?: string;
+            /**
+             * @description Clinician responsible for the follow-up
+             * @example clx...
+             */
+            clinicianId?: string;
+            /**
+             * @description Follow-up status
+             * @example open
+             * @enum {string}
+             */
+            status?: "open" | "completed";
+            /**
+             * Format: date-time
+             * @description When the follow-up was completed
+             * @example 2026-08-20T10:00:00.000Z
+             */
+            completedAt?: string;
+        };
         CreateCareEpisodeDto: {
             /**
              * @description Patient ID
@@ -3599,6 +5609,20 @@ export interface components {
              */
             followUpReasons?: string[];
             /**
+             * Format: date-time
+             * @description Consultation date (ISO 8601)
+             * @example 2026-07-01T09:00:00.000Z
+             */
+            consultationDate?: string;
+            /**
+             * @description Structured discharge status
+             * @example PLANNED
+             * @enum {string}
+             */
+            dischargeStatus?: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE";
+            /** @description Structured follow-up trigger */
+            followUp?: components["schemas"]["FollowUpInputDto"];
+            /**
              * @description Expected duration in days
              * @example 14
              */
@@ -3608,6 +5632,29 @@ export interface components {
              * @example Patient needs close BP monitoring
              */
             clinicianNotes?: string;
+        };
+        FollowUpDto: {
+            /** @description Follow-up type */
+            type?: string;
+            /** @description Reason for follow-up */
+            reason?: string;
+            /**
+             * Format: date-time
+             * @description Scheduled follow-up date
+             */
+            scheduledDate?: string;
+            /** @description Clinician responsible */
+            clinicianId?: string;
+            /**
+             * @description Status
+             * @enum {string}
+             */
+            status?: "open" | "completed";
+            /**
+             * Format: date-time
+             * @description Completion date
+             */
+            completedAt?: string;
         };
         CareEpisodeSummaryDto: {
             /** @description Episode ID */
@@ -3642,6 +5689,18 @@ export interface components {
             encounterType?: string;
             /** @description Condition severity */
             conditionSeverity?: string;
+            /**
+             * Format: date-time
+             * @description Consultation date
+             */
+            consultationDate?: string;
+            /**
+             * @description Structured discharge status
+             * @enum {string}
+             */
+            dischargeStatus?: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE";
+            /** @description Structured follow-up trigger */
+            followUp?: components["schemas"]["FollowUpDto"];
             /**
              * Format: date-time
              * @description Created at
@@ -3745,6 +5804,15 @@ export interface components {
              * @description Assigned at
              */
             assignedAt: string;
+            /** @description Assigned by (user ID) */
+            assignedBy?: string;
+            /**
+             * Format: date-time
+             * @description Removed at (soft removal)
+             */
+            removedAt?: string;
+            /** @description Removed by (user ID) */
+            removedBy?: string;
         };
         CareTimelineEventDto: {
             /** @description Event ID */
@@ -3770,6 +5838,23 @@ export interface components {
             name: string;
             /** @description Facility Trac ID */
             tracId: string;
+        };
+        ClosureInfoDto: {
+            /** @description Closure reason */
+            closureReason: string;
+            /** @description Outcome status */
+            outcomeStatus: string;
+            /** @description Final notes */
+            finalNotes?: string;
+            /** @description Structured discharge status */
+            dischargeStatus?: string;
+            /** @description Structured follow-up trigger */
+            followUp?: components["schemas"]["FollowUpDto"];
+            /**
+             * Format: date-time
+             * @description Closed at
+             */
+            closedAt: string;
         };
         CareEpisodeDetailDto: {
             /** @description Episode ID */
@@ -3806,6 +5891,18 @@ export interface components {
             conditionSeverity?: string;
             /**
              * Format: date-time
+             * @description Consultation date
+             */
+            consultationDate?: string;
+            /**
+             * @description Structured discharge status
+             * @enum {string}
+             */
+            dischargeStatus?: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE";
+            /** @description Structured follow-up trigger */
+            followUp?: components["schemas"]["FollowUpDto"];
+            /**
+             * Format: date-time
              * @description Created at
              */
             createdAt: string;
@@ -3828,6 +5925,8 @@ export interface components {
             clinicianName?: string;
             /** @description Facility info */
             facility?: components["schemas"]["FacilityInfoDto"];
+            /** @description Closure summary (present when episode is closed) */
+            closure?: components["schemas"]["ClosureInfoDto"];
         };
         CloseEpisodeDto: {
             /**
@@ -3847,6 +5946,149 @@ export interface components {
              * @example Patient fully recovered and discharged
              */
             finalNotes?: string;
+            /**
+             * @description Structured discharge status at closure
+             * @example COMPLETED
+             * @enum {string}
+             */
+            dischargeStatus?: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE";
+            /** @description Structured follow-up trigger at closure */
+            followUp?: components["schemas"]["FollowUpInputDto"];
+        };
+        UpdateEpisodeDto: {
+            /**
+             * Format: date-time
+             * @description Consultation date (ISO 8601)
+             * @example 2026-07-01T09:00:00.000Z
+             */
+            consultationDate?: string;
+            /**
+             * @description Structured discharge status
+             * @example PLANNED
+             * @enum {string}
+             */
+            dischargeStatus?: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE";
+            /** @description Structured follow-up trigger */
+            followUp?: components["schemas"]["FollowUpInputDto"];
+        };
+        AddCareTeamMemberDto: {
+            /**
+             * @description Clinician ID to add to the care team
+             * @example clx...
+             */
+            clinicianId: string;
+            /**
+             * @description Role on the care team
+             * @default doctor
+             * @example nurse
+             */
+            role: string;
+        };
+        MediaItemDto: {
+            /** @description Check-in ID the image came from */
+            checkInId: string;
+            /**
+             * Format: date-time
+             * @description Check-in date
+             */
+            submittedAt: string;
+            /** @description Image URL */
+            url?: string;
+            /** @description Image caption/type */
+            caption?: string;
+            /** @description Media type */
+            type?: string;
+        };
+        CheckInHistoryDto: {
+            /** @description Check-in ID */
+            id: string;
+            /** @description Symptoms with severity */
+            symptoms: Record<string, never>;
+            /** @description Vitals series value */
+            vitals: Record<string, never>;
+            /** @description Notes */
+            notes?: string;
+            /**
+             * Format: date-time
+             * @description Submitted at
+             */
+            submittedAt: string;
+            /** @description Symptom severity trend */
+            symptomTrend?: Record<string, never>;
+            /** @description Vitals trend */
+            vitalsTrend?: Record<string, never>;
+        };
+        TaskCompletionDto: {
+            /** @description Date (YYYY-MM-DD) */
+            date: string;
+            /** @description Total tasks due */
+            totalDue: number;
+            /** @description Completed count */
+            completed: number;
+            /** @description Missed count */
+            missed: number;
+            /** @description Overdue count */
+            overdue?: number;
+            /** @description Completion rate (0-1) */
+            completionRate: number;
+        };
+        CarePlanVersionDto: {
+            /** @description Care plan ID */
+            id: string;
+            /** @description Episode ID */
+            episodeId: string;
+            /** @description Version number */
+            version: number;
+            /** @description Tasks */
+            tasks?: Record<string, never>;
+            /** @description Lifestyle recommendations */
+            lifestyleRecommendations?: Record<string, never>;
+            /** @description Monitoring frequency */
+            monitoringFrequency?: string;
+            /** @description Medications */
+            medications?: Record<string, never>;
+            /** @description Episode duration */
+            episodeDuration?: string;
+            /** @description Change reason */
+            changeReason?: string;
+            /** @description Is active */
+            isActive: boolean;
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+        };
+        CarePlanDetailResponseDto: {
+            /** @description Care plan ID */
+            id: string;
+            /** @description Episode ID */
+            episodeId: string;
+            /** @description Version number */
+            version: number;
+            /** @description Tasks */
+            tasks?: Record<string, never>;
+            /** @description Lifestyle recommendations */
+            lifestyleRecommendations?: Record<string, never>;
+            /** @description Monitoring frequency */
+            monitoringFrequency?: string;
+            /** @description Medications */
+            medications?: Record<string, never>;
+            /** @description Episode duration */
+            episodeDuration?: string;
+            /** @description Change reason */
+            changeReason?: string;
+            /** @description Is active */
+            isActive: boolean;
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+            /** @description All care plan versions for the episode (newest first) */
+            versions: components["schemas"]["CarePlanVersionDto"][];
+            /** @description Total version count */
+            versionCount: number;
         };
         CreateCarePlanDto: {
             /**
@@ -4160,6 +6402,122 @@ export interface components {
             /** @description Message describing the result */
             message?: string;
         };
+        AlertActorDto: {
+            /** @description User ID */
+            id: string;
+            /** @description User name */
+            name: Record<string, never>;
+        };
+        AlertEscalationDto: {
+            /** @description Escalation destination */
+            destination?: string;
+            /** @description Specialist / department */
+            specialist?: string;
+            /** @description Escalation urgency */
+            urgency?: string;
+            /** @description Escalation reason */
+            reason?: string;
+            /** @description Escalation notes */
+            notes?: string;
+        };
+        AlertResponseDto: {
+            /** @description Alert ID */
+            id: string;
+            /** @description Care episode ID */
+            episodeId?: string;
+            /** @description Patient ID */
+            patientId: string;
+            /** @description Patient name */
+            patientName: string;
+            /** @description Facility ID */
+            facilityId: string;
+            /** @description Facility name */
+            facilityName: string;
+            /** @description Alert type */
+            type: string;
+            /** @description Alert severity */
+            severity: string;
+            /** @description Trigger source */
+            triggerSource?: string;
+            /** @description Trigger data */
+            triggerData?: Record<string, never>;
+            /** @description Alert status */
+            status: string;
+            /** @description Acknowledger */
+            acknowledgedBy?: components["schemas"]["AlertActorDto"];
+            /** @description Acknowledged at */
+            acknowledgedAt?: Record<string, never>;
+            /** @description Resolver */
+            resolvedBy?: components["schemas"]["AlertActorDto"];
+            /** @description Resolved at */
+            resolvedAt?: Record<string, never>;
+            /** @description Resolution notes */
+            resolutionNotes?: Record<string, never>;
+            /** @description Resolution outcome */
+            resolutionOutcome?: Record<string, never>;
+            /** @description Escalator */
+            escalatedBy?: components["schemas"]["AlertActorDto"];
+            /** @description Escalated at */
+            escalatedAt?: Record<string, never>;
+            /** @description Escalation details */
+            escalation?: components["schemas"]["AlertEscalationDto"];
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+        };
+        AlertListResponseDto: {
+            /** @description Alert list */
+            data: components["schemas"]["AlertResponseDto"][];
+            /** @description Total count */
+            total: number;
+            /** @description Current page */
+            page: number;
+            /** @description Page size */
+            limit: number;
+            /** @description Total pages */
+            totalPages: number;
+        };
+        ResolveAlertDto: {
+            /**
+             * @description Resolution notes recorded by the resolver
+             * @example Patient contacted, medication adjusted
+             */
+            resolutionNotes?: string;
+            /**
+             * @description Resolution outcome
+             * @example resolved
+             */
+            outcome?: string;
+        };
+        EscalateAlertDto: {
+            /**
+             * @description Escalation destination
+             * @example cardiology_department
+             */
+            destination?: string;
+            /**
+             * @description Specialist or department name
+             * @example Dr. Adeyemi — Cardiology
+             */
+            specialist?: string;
+            /**
+             * @description Escalation urgency
+             * @example high
+             */
+            urgency?: string;
+            /**
+             * @description Reason for escalation
+             * @example Symptoms worsening despite treatment
+             */
+            reason?: string;
+            /**
+             * @description Additional escalation notes
+             * @example Patient reported chest pain this morning
+             */
+            notes?: string;
+        };
         HealthProfileResponseDto: {
             /** @description Profile ID */
             id: string;
@@ -4249,7 +6607,7 @@ export interface components {
              * @example Child
              * @enum {string}
              */
-            relationship: "Child" | "Parent" | "Spouse" | "Relative" | "Friend" | "Other";
+            relationship: "Self" | "Child" | "Parent" | "Spouse" | "Relative" | "Friend" | "Other";
             /**
              * @description Date of birth (ISO 8601)
              * @example 2018-05-15
@@ -4288,7 +6646,7 @@ export interface components {
              * @example Child
              * @enum {string}
              */
-            relationship?: "Child" | "Parent" | "Spouse" | "Relative" | "Friend" | "Other";
+            relationship?: "Self" | "Child" | "Parent" | "Spouse" | "Relative" | "Friend" | "Other";
             /**
              * @description Date of birth (ISO 8601)
              * @example 2018-05-15
@@ -4669,7 +7027,7 @@ export interface components {
              * @example blood_pressure
              * @enum {string}
              */
-            type: "blood_pressure" | "heart_rate" | "temperature" | "spo2" | "weight" | "blood_glucose" | "respiratory_rate";
+            type: "blood_pressure" | "heart_rate" | "temperature" | "spo2" | "weight" | "blood_glucose" | "respiratory_rate" | "urine_output";
             /**
              * @description Vital value
              * @example 120/80
@@ -4897,6 +7255,11 @@ export interface components {
             /** @description User ID */
             id: string;
             /**
+             * @description Tracmedy patient identifier
+             * @example TRC-2629-0003
+             */
+            tracId?: Record<string, never>;
+            /**
              * @description Full name
              * @example John Doe
              */
@@ -4968,8 +7331,23 @@ export interface components {
              * @example John Doe
              */
             name?: string;
+            /**
+             * @description Full name (alias for name)
+             * @example John Doe
+             */
+            fullName?: string;
             /** @description Avatar/photo URL */
             avatarUrl?: string;
+            /**
+             * @description Date of birth (ISO date string)
+             * @example 1990-05-15
+             */
+            dateOfBirth?: string;
+            /**
+             * @description Gender
+             * @example Female
+             */
+            gender?: string;
             /**
              * @description Timezone (IANA)
              * @example Africa/Lagos
@@ -4999,6 +7377,52 @@ export interface components {
             marketingPrefs?: {
                 [key: string]: unknown;
             };
+        };
+        EmailChangeDto: {
+            /**
+             * @description New email address
+             * @example newemail@example.com
+             */
+            email: string;
+            /**
+             * @description New email address (alias)
+             * @example newemail@example.com
+             */
+            newEmail: string;
+        };
+        InitiateChangeResponseDto: {
+            /** @example true */
+            success: boolean;
+            /** @example Verification code sent */
+            message: string;
+            /** @example j***@email.com */
+            maskedDestination: string;
+            /** @example 550e8400-e29b-41d4-a716-446655440000 */
+            verificationId: string;
+        };
+        PhoneChangeDto: {
+            /**
+             * @description New phone number
+             * @example +2348012345678
+             */
+            phone: string;
+            /**
+             * @description New phone number (alias)
+             * @example +2348012345678
+             */
+            newPhone: string;
+        };
+        ProfileVerifyOtpDto: {
+            /**
+             * @description 6-digit verification code
+             * @example 123456
+             */
+            code: string;
+            /**
+             * @description Verification ID returned from initiate endpoint
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            verificationId: string;
         };
         HealthSummaryAllergyDto: {
             /**
@@ -5101,7 +7525,12 @@ export interface components {
              * @description ID of the care episode this message belongs to
              * @example clx1234567890
              */
-            episodeId: string;
+            episodeId?: string;
+            /**
+             * @description ID of the appointment this message belongs to
+             * @example clx1234567890
+             */
+            appointmentId?: string;
             /**
              * @description Message content to send to the patient
              * @example Please remember to take your medication as prescribed.
@@ -5134,7 +7563,12 @@ export interface components {
              * @description Care episode ID
              * @example clx1234567890
              */
-            episodeId: string;
+            episodeId: Record<string, never> | null;
+            /**
+             * @description Appointment ID
+             * @example clx1234567890
+             */
+            appointmentId?: Record<string, never> | null;
             /**
              * @description Sender user ID
              * @example clx1234567890
@@ -5231,6 +7665,1439 @@ export interface components {
              * @example 12
              */
             totalMessages: number;
+        };
+        CreateHomeCareRequestDto: {
+            patientId: string;
+            serviceId: string;
+            /** @enum {string} */
+            requestType: "patient_initiated" | "clinician_initiated";
+            episodeId?: string;
+            /** Format: date-time */
+            preferredDate?: string;
+            preferredTime?: string;
+            address?: string;
+            landmark?: string;
+            city?: string;
+            state?: string;
+            contactPhone?: string;
+            notes?: string;
+        };
+        CreateTicketDto: {
+            /**
+             * @description Support category
+             * @example technical
+             * @enum {string}
+             */
+            category: "account" | "billing" | "technical" | "records";
+            /**
+             * @description Description of the issue
+             * @example I cannot log my medication after updating the app.
+             */
+            description: string;
+        };
+        InviteCaregiverDto: {
+            /**
+             * @description Email address of the caregiver to invite
+             * @example sarah.jones@example.com
+             */
+            email: string;
+            /**
+             * @description Full name of the caregiver (optional if email belongs to existing user)
+             * @example Sarah Jones
+             */
+            fullName?: string;
+            /**
+             * @description Date of birth of the caregiver (optional)
+             * @example 1990-05-15
+             */
+            dateOfBirth?: string;
+            /**
+             * @description Relationship to the patient
+             * @example spouse
+             * @enum {string}
+             */
+            relationship: "parent" | "sibling" | "spouse" | "friend" | "child" | "guardian" | "other";
+            /**
+             * @description Caregiver role (defaults to support_member)
+             * @example support_member
+             * @enum {string}
+             */
+            role?: "primary_caregiver" | "secondary_caregiver" | "support_member" | "emergency_contact";
+        };
+        CaregiverLookupResponseDto: {
+            /**
+             * @description Whether the email belongs to an existing Tracmedy user
+             * @example true
+             */
+            exists: boolean;
+            /**
+             * @description Name of the user if exists, null otherwise
+             * @example Sarah Jones
+             */
+            name: string | null;
+            /**
+             * @description Profile picture URL of the user if exists, null otherwise
+             * @example https://res.cloudinary.com/.../avatar.jpg
+             */
+            avatarUrl: string | null;
+            /**
+             * @description Tracmedy ID (e.g. TRC-2632-001) of the user if set, null otherwise
+             * @example TRC-2632-001
+             */
+            tracmedyId: string | null;
+        };
+        CaregiverListResponseDto: {
+            /**
+             * @description Relationship ID
+             * @example clx1234567890
+             */
+            id: string;
+            /**
+             * @description Caregiver user ID
+             * @example clx1234567890
+             */
+            caregiverId: string;
+            /**
+             * @description Caregiver name
+             * @example Sarah Jones
+             */
+            name: string;
+            /** @description Caregiver avatar URL */
+            avatarUrl?: Record<string, never>;
+            /**
+             * @description Caregiver initials
+             * @example SJ
+             */
+            initials: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /**
+             * @description Caregiver role
+             * @example support_member
+             */
+            role: string;
+            /**
+             * @description Relationship status
+             * @example active
+             * @enum {string}
+             */
+            status: "pending" | "active" | "declined" | "removed";
+            /**
+             * @description Date when caregiver joined
+             * @example 2026-07-20T10:00:00.000Z
+             */
+            joinedAt?: Record<string, never>;
+            /** @description Date when caregiver was removed */
+            removedAt?: Record<string, never>;
+        };
+        CaregiverListResultDto: {
+            /** @description List of caregivers */
+            caregivers: components["schemas"]["CaregiverListResponseDto"][];
+            /**
+             * @description Total active + pending count
+             * @example 2
+             */
+            memberCount: number;
+            /**
+             * @description Maximum allowed caregivers
+             * @example 2
+             */
+            memberLimit: number;
+        };
+        CaregiverPermissionsDto: {
+            /** @example true */
+            viewCareEpisodes: boolean;
+            /** @example true */
+            viewMedications: boolean;
+            /** @example true */
+            viewAppointments: boolean;
+            /** @example true */
+            viewHealthData: boolean;
+            /** @example true */
+            viewVitals: boolean;
+            /** @example true */
+            viewSymptoms: boolean;
+            /** @example true */
+            viewLabResults: boolean;
+            /** @example true */
+            viewHealthRecords: boolean;
+            /** @example true */
+            healthAlertNotifications: boolean;
+        };
+        CaregiverActivityEntryDto: {
+            /** @description Activity ID */
+            id: string;
+            /**
+             * @description Activity type
+             * @example observation_submitted
+             */
+            activityType: string;
+            /** @description Activity description */
+            description: string;
+            /**
+             * Format: date-time
+             * @description Activity timestamp
+             */
+            createdAt: string;
+        };
+        CaregiverDetailResponseDto: {
+            /**
+             * @description Relationship ID
+             * @example clx1234567890
+             */
+            id: string;
+            /**
+             * @description Caregiver user ID
+             * @example clx1234567890
+             */
+            caregiverId: string;
+            /**
+             * @description Caregiver name
+             * @example Sarah Jones
+             */
+            name: string;
+            /** @description Caregiver avatar URL */
+            avatarUrl?: Record<string, never>;
+            /**
+             * @description Caregiver initials
+             * @example SJ
+             */
+            initials: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /**
+             * @description Caregiver role
+             * @example support_member
+             */
+            role: string;
+            /**
+             * @description Relationship status
+             * @example active
+             * @enum {string}
+             */
+            status: "pending" | "active" | "declined" | "removed";
+            /** @description Date when caregiver joined */
+            joinedAt?: Record<string, never>;
+            /** @description Caregiver permissions */
+            permissions: components["schemas"]["CaregiverPermissionsDto"];
+            /** @description Recent activity entries */
+            recentActivity: components["schemas"]["CaregiverActivityEntryDto"][];
+        };
+        UpdatePermissionsDto: {
+            /**
+             * @description Can view care episodes
+             * @example true
+             */
+            viewCareEpisodes?: boolean;
+            /**
+             * @description Can view medications
+             * @example true
+             */
+            viewMedications?: boolean;
+            /**
+             * @description Can view appointments
+             * @example true
+             */
+            viewAppointments?: boolean;
+            /**
+             * @description Can view health data
+             * @example true
+             */
+            viewHealthData?: boolean;
+            /**
+             * @description Can view vitals
+             * @example true
+             */
+            viewVitals?: boolean;
+            /**
+             * @description Can view symptoms
+             * @example true
+             */
+            viewSymptoms?: boolean;
+            /**
+             * @description Can view lab results
+             * @example true
+             */
+            viewLabResults?: boolean;
+            /**
+             * @description Can view health records
+             * @example true
+             */
+            viewHealthRecords?: boolean;
+        };
+        UpdateNotificationPrefsDto: {
+            /**
+             * @description Whether to receive health alert notifications for this patient
+             * @example true
+             */
+            healthAlertNotifications: boolean;
+        };
+        InvitationLookupResponseDto: {
+            /**
+             * @description Relationship ID
+             * @example clx1234567890
+             */
+            id: string;
+            /**
+             * @description Patient name
+             * @example John Doe
+             */
+            patientName: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /**
+             * @description Caregiver role
+             * @example support_member
+             */
+            role: string;
+            /**
+             * @description Invitation status
+             * @example pending
+             */
+            status: string;
+            /**
+             * @description Whether invitation has expired
+             * @example false
+             */
+            expired: boolean;
+        };
+        PeopleCardDto: {
+            /**
+             * @description Patient user ID
+             * @example clx1234567890
+             */
+            patientId: string;
+            /**
+             * @description Relationship ID
+             * @example clx1234567890
+             */
+            relationshipId: string;
+            /**
+             * @description Patient name
+             * @example John Doe
+             */
+            patientName: string;
+            /** @description Patient avatar URL */
+            avatarUrl?: Record<string, never>;
+            /**
+             * @description Patient initials
+             * @example JD
+             */
+            initials: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /** @description Last activity description */
+            lastActivity?: Record<string, never>;
+            /** @description Last activity timestamp */
+            lastActivityAt?: Record<string, never>;
+            /**
+             * @description Supportive status summary
+             * @example On Track
+             */
+            statusSummary: string;
+        };
+        CareUpdateEntryDto: {
+            /**
+             * @description Update type
+             * @example medication
+             */
+            type: string;
+            /** @description Update description */
+            description: string;
+            /**
+             * Format: date-time
+             * @description Update timestamp
+             */
+            timestamp: string;
+        };
+        VitalsSummaryDto: {
+            /** @description Blood pressure reading */
+            bloodPressure?: Record<string, never>;
+            /** @description Heart rate reading */
+            heartRate?: Record<string, never>;
+            /** @description Temperature reading */
+            temperature?: Record<string, never>;
+            /** @description SpO2 reading */
+            spo2?: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description Timestamp of vitals reading
+             */
+            recordedAt: string;
+        };
+        SymptomSummaryEntryDto: {
+            /**
+             * @description Symptom name
+             * @example fatigue
+             */
+            name: string;
+            /**
+             * @description Severity level
+             * @example moderate
+             */
+            severity: string;
+            /**
+             * Format: date-time
+             * @description When symptom was logged
+             */
+            loggedAt: string;
+        };
+        CaregiverOverviewPermissionsDto: {
+            /** @example true */
+            viewCareEpisodes: boolean;
+            /** @example true */
+            viewMedications: boolean;
+            /** @example true */
+            viewAppointments: boolean;
+            /** @example true */
+            viewHealthData: boolean;
+            /** @example true */
+            viewVitals: boolean;
+            /** @example true */
+            viewSymptoms: boolean;
+            /** @example true */
+            viewLabResults: boolean;
+            /** @example true */
+            viewHealthRecords: boolean;
+        };
+        CareOverviewDto: {
+            /**
+             * @description Patient name
+             * @example John Doe
+             */
+            patientName: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /** @description Active care episode summary */
+            episode?: components["schemas"]["CareEpisodeSummaryDto"];
+            /** @description Care updates */
+            careUpdates: components["schemas"]["CareUpdateEntryDto"][];
+            /** @description Vitals summary */
+            vitalsSummary?: components["schemas"]["VitalsSummaryDto"];
+            /** @description Symptoms summary */
+            symptomsSummary: components["schemas"]["SymptomSummaryEntryDto"][];
+            /** @description Permissions applied for this caregiver */
+            permissions: components["schemas"]["CaregiverOverviewPermissionsDto"];
+            /**
+             * Format: date-time
+             * @description Last synced timestamp
+             */
+            syncedAt: string;
+        };
+        CreateObservationDto: {
+            /**
+             * @description Observation title
+             * @example Patient seemed more energetic today
+             */
+            title: string;
+            /**
+             * @description Observation description
+             * @example Patient walked around the garden without assistance and smiled more than usual.
+             */
+            description?: string;
+            /**
+             * @description Severity level
+             * @example mild
+             * @enum {string}
+             */
+            severity: "mild" | "moderate" | "severe";
+            /**
+             * @description Whether this is a new observation
+             * @example true
+             */
+            isNew: boolean;
+            /**
+             * @description When the observation was made (ISO date). Defaults to now.
+             * @example 2026-07-27T10:00:00.000Z
+             */
+            observedAt?: string;
+        };
+        ObservationResponseDto: {
+            /** @description Observation ID */
+            id: string;
+            /** @description Observation title */
+            title: string;
+            /** @description Observation description */
+            description?: Record<string, never>;
+            /**
+             * @description Severity level
+             * @enum {string}
+             */
+            severity: "mild" | "moderate" | "severe";
+            /** @description Whether this is a new observation */
+            isNew: boolean;
+            /**
+             * @description Always false — caregiver observations never affect medical records
+             * @example false
+             */
+            affectsMedicalRecord: boolean;
+            /**
+             * Format: date-time
+             * @description When the observation was made
+             */
+            observedAt: string;
+            /**
+             * Format: date-time
+             * @description Creation timestamp
+             */
+            createdAt: string;
+        };
+        ActivityFeedEntryDto: {
+            /** @description Activity ID */
+            id: string;
+            /**
+             * @description Activity type
+             * @example observation_submitted
+             */
+            activityType: string;
+            /** @description Activity description */
+            description: string;
+            /** @description Actor name (caregiver or patient) */
+            actorName: string;
+            /**
+             * @description Actor relationship
+             * @example spouse
+             */
+            actorRelationship: string;
+            /**
+             * Format: date-time
+             * @description Activity timestamp
+             */
+            createdAt: string;
+            /** @description Patient name if activity is patient-scoped */
+            patientName?: Record<string, never>;
+        };
+        ActivityFeedResultDto: {
+            /** @description Activity entries */
+            activities: components["schemas"]["ActivityFeedEntryDto"][];
+            /**
+             * @description Total count
+             * @example 25
+             */
+            total: number;
+            /**
+             * @description Current page
+             * @example 1
+             */
+            page: number;
+            /**
+             * @description Items per page
+             * @example 20
+             */
+            limit: number;
+            /**
+             * @description Total pages
+             * @example 2
+             */
+            totalPages: number;
+        };
+        ResourceListItemDto: {
+            /** @description Resource ID */
+            id: string;
+            /** @description Resource title */
+            title: string;
+            /** @description Resource summary */
+            summary?: Record<string, never>;
+            /**
+             * @description Category
+             * @example caregiving_basics
+             */
+            category: string;
+            /**
+             * @description Estimated read time in minutes
+             * @example 8
+             */
+            readTime: number;
+            /**
+             * @description Number of saves
+             * @example 12
+             */
+            savedCount: number;
+            /**
+             * @description Whether caregiver has bookmarked this
+             * @example false
+             */
+            isBookmarked: boolean;
+            /** @description Image URL */
+            imageUrl?: Record<string, never>;
+        };
+        ResourceListResultDto: {
+            /** @description Resource items */
+            resources: components["schemas"]["ResourceListItemDto"][];
+            /** @description Available categories */
+            categories: string[];
+        };
+        ResourceDetailDto: {
+            /** @description Resource ID */
+            id: string;
+            /** @description Resource title */
+            title: string;
+            /** @description Resource summary */
+            summary?: Record<string, never>;
+            /**
+             * @description Category
+             * @example caregiving_basics
+             */
+            category: string;
+            /**
+             * @description Estimated read time in minutes
+             * @example 8
+             */
+            readTime: number;
+            /**
+             * @description Number of saves
+             * @example 12
+             */
+            savedCount: number;
+            /**
+             * @description Whether caregiver has bookmarked this
+             * @example false
+             */
+            isBookmarked: boolean;
+            /** @description Image URL */
+            imageUrl?: Record<string, never>;
+            /** @description Full article content */
+            content: string;
+            /** @description Reviewed by clinician name */
+            reviewedBy?: Record<string, never>;
+            /**
+             * @description Has been clinically reviewed
+             * @example true
+             */
+            clinicalReview: boolean;
+            /**
+             * @description Number of helpful votes
+             * @example 5
+             */
+            helpfulCount: number;
+            /** @description Related resources */
+            relatedResources: components["schemas"]["ResourceListItemDto"][];
+        };
+        BookmarkToggleResponseDto: {
+            /**
+             * @description Whether resource is now bookmarked
+             * @example true
+             */
+            isBookmarked: boolean;
+            /**
+             * @description Updated saved count
+             * @example 13
+             */
+            savedCount: number;
+        };
+        HelpfulResponseDto: {
+            /**
+             * @description Whether feedback was recorded
+             * @example true
+             */
+            recorded: boolean;
+            /**
+             * @description Updated helpful count
+             * @example 6
+             */
+            helpfulCount: number;
+        };
+        ChatRequestDto: {
+            /**
+             * @description The user message to the AI care assistant
+             * @example What should I do about my missed dose this morning?
+             */
+            message: string;
+            /** @description Existing conversation ID to continue */
+            conversationId?: string;
+            /** @description Active care episode to scope context to */
+            episodeId?: string;
+        };
+        SuggestedActionDto: {
+            /**
+             * @description Action type
+             * @enum {string}
+             */
+            type: "navigate" | "log_medication" | "contact_provider" | "complete_checkin" | "book_appointment" | "none";
+            /** @description Human-readable action label */
+            label: string;
+            /** @description Navigation target or payload reference */
+            target?: string;
+        };
+        SourceRefDto: {
+            /** @description Source type (episode, medication, checkin, alert, observation) */
+            type: string;
+            /** @description Source record ID */
+            id?: string;
+            /** @description Human-readable source label */
+            label: string;
+        };
+        ChatResponseDto: {
+            /** @description Conversation ID (empty when AI unavailable) */
+            conversationId: string;
+            /** @description Assistant reply */
+            reply: string;
+            /**
+             * @description Safety level of the reply
+             * @enum {string}
+             */
+            safetyLevel: "safe" | "caution" | "escalate" | "unavailable";
+            /** @description Detected user intent */
+            intent?: string;
+            /** @description Suggested actions for the UI */
+            suggestedActions: components["schemas"]["SuggestedActionDto"][];
+            /** @description Context sources referenced by the reply */
+            sources: components["schemas"]["SourceRefDto"][];
+            /** @description Whether the user should confirm before acting */
+            requiresConfirmation: boolean;
+            /** @description Provider generation ID */
+            requestId?: string;
+            /** @description Assistant message ID (for deletion) */
+            messageId?: string;
+        };
+        KeyDriverDto: {
+            /** @description Driver name */
+            factor: string;
+            /**
+             * @description Direction of influence on recovery
+             * @enum {string}
+             */
+            direction: "positive" | "negative" | "neutral";
+            /** @description Evidence supporting the driver */
+            evidence?: string;
+        };
+        EpisodeInsightPayloadDto: {
+            /**
+             * @description Overall recovery status
+             * @enum {string}
+             */
+            recoveryStatus: "improving" | "stable" | "worsening" | "delayed" | "insufficient_data" | "unclear";
+            /** @description 3-5 line recovery summary */
+            summary: string;
+            /** @description Key drivers of current trajectory */
+            keyDrivers: components["schemas"]["KeyDriverDto"][];
+            /** @description Positive progress points */
+            positiveProgress: string[];
+            /** @description Key concerns */
+            keyConcerns: string[];
+            /** @description Missing information that would improve the assessment */
+            missingInformation: string[];
+            /** @description Suggested clinician review areas */
+            suggestedReview: string[];
+            /** @description Confidence score 0-1 */
+            confidence: number;
+            /**
+             * @description Data sufficiency level
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+        };
+        EpisodeInsightResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success" | "failed";
+            /** @description Reviewable suggestion ID created from this insight */
+            suggestionId?: string;
+            /** @description Structured insight payload (present when status is success) */
+            insight?: components["schemas"]["EpisodeInsightPayloadDto"];
+        };
+        RecoverySummaryResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success" | "empty";
+            /** @description Suggestion row ID (when present) */
+            suggestionId?: string;
+            /** @description Latest AI recovery assessment */
+            summary?: components["schemas"]["EpisodeInsightPayloadDto"];
+            /** @description Suggestion decision (pending | accepted | ignored | annotated) */
+            decision?: string;
+            /** @description Generated at ISO */
+            generatedAt?: string;
+        };
+        SuggestionListItemDto: {
+            /** @description Suggestion ID */
+            id: string;
+            /** @description AI service that produced the suggestion */
+            service: string;
+            /** @description One-line summary */
+            summary: string;
+            /**
+             * @description Status
+             * @enum {string}
+             */
+            status: "pending" | "decided";
+            /** @description Decision (accepted | ignored | annotated) when decided */
+            decision?: string;
+            /** @description Decision annotation */
+            annotation?: string;
+            /** @description Decided at ISO */
+            decidedAt?: string;
+            /** @description Created at ISO */
+            createdAt: string;
+        };
+        SuggestionListResponseDto: {
+            /** @description Suggestions for the episode (newest first) */
+            data: components["schemas"]["SuggestionListItemDto"][];
+        };
+        AlertInsightPayloadDto: {
+            /** @description One-paragraph alert context */
+            contextSummary: string;
+            /** @description Trend interpretation behind the alert */
+            trendInterpretation: string;
+            /** @description Baseline comparison */
+            baselineComparison: string;
+            /** @description Supporting evidence points */
+            supportingEvidence: string[];
+            /** @description Related signals observed */
+            relatedSignals: string[];
+            /** @description What changed since the alert opened */
+            changesSinceAlert: string;
+            /** @description Missing information */
+            missingInformation: string[];
+            /** @description Suggested clinician review areas */
+            suggestedReview: string[];
+            /**
+             * @description Attention priority
+             * @enum {string}
+             */
+            attentionPriority: "standard" | "elevated";
+            /** @description Rationale for the attention priority */
+            priorityRationale: string;
+            /**
+             * @description Data sufficiency level
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+        };
+        AlertInsightResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success" | "failed";
+            /** @description Structured alert insight payload (present when status is success) */
+            insight?: components["schemas"]["AlertInsightPayloadDto"];
+        };
+        BiometricTimeRangeDto: {
+            /** @description Start date (ISO) */
+            from: string;
+            /** @description End date (ISO) */
+            to: string;
+            /** @description Analyzed window in days */
+            days: number;
+        };
+        MetricTrendDto: {
+            /** @description Metric key (bp_systolic, heart_rate, etc.) */
+            type: string;
+            /**
+             * @description Trend direction
+             * @enum {string}
+             */
+            direction: "improving" | "stable" | "worsening" | "fluctuating" | "insufficient_data";
+            /** @description Human-readable trend interpretation */
+            interpretation: string;
+            /** @description Number of readings used */
+            readingsCount?: number;
+        };
+        BiometricsInsightPayloadDto: {
+            /** @description Analyzed time range */
+            timeRange: components["schemas"]["BiometricTimeRangeDto"];
+            /** @description Per-metric trend interpretations */
+            metrics: components["schemas"]["MetricTrendDto"][];
+            /** @description Metrics with insufficient readings */
+            missingMeasurements: string[];
+            /** @description Overall interpretation across metrics */
+            overallInterpretation: string;
+            /**
+             * @description Data sufficiency level
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+        };
+        BiometricsInsightResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success" | "failed";
+            /** @description Structured biometrics insight payload (present when status is success) */
+            insight?: components["schemas"]["BiometricsInsightPayloadDto"];
+        };
+        ReportSectionDto: {
+            /** @description Section title */
+            title: string;
+            /** @description Section body text */
+            body: string;
+        };
+        EpisodeReportPayloadDto: {
+            /** @description Draft episode summary (advisory) */
+            draftSummary: string;
+            /** @description Report sections */
+            sections: components["schemas"]["ReportSectionDto"][];
+            /** @description Key events during the episode */
+            keyEvents: string[];
+            /** @description Adherence summary */
+            adherenceSummary: string;
+            /** @description Unresolved concerns */
+            unresolvedConcerns: string[];
+            /** @description Follow-up arrangements */
+            followUpArrangements: string[];
+            /** @description Missing information */
+            missingInformation: string[];
+            /**
+             * @description Data sufficiency level
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+        };
+        EpisodeReportResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success" | "failed";
+            /** @description Draft report payload (present when status is success) */
+            report?: components["schemas"]["EpisodeReportPayloadDto"];
+        };
+        SuggestionDecisionDto: {
+            /**
+             * @description Clinician decision on the AI suggestion
+             * @enum {string}
+             */
+            decision: "accepted" | "ignored" | "annotated";
+            /** @description Optional annotation for ignored/annotated decisions */
+            annotation?: string;
+        };
+        SuggestionDecisionResponseDto: {
+            /**
+             * @description Request status
+             * @enum {string}
+             */
+            status: "success";
+            /** @description AI suggestion ID */
+            suggestionId: string;
+            /**
+             * @description Recorded clinician decision
+             * @enum {string}
+             */
+            decision: "accepted" | "ignored" | "annotated";
+            /** @description Decision timestamp (ISO) */
+            decidedAt: string;
+            /** @description Acting clinician user ID */
+            actorId: string;
+            /** @description Human-readable confirmation message */
+            message: string;
+        };
+        ForecastEpisodeDto: {
+            /** @description Episode ID */
+            id: string;
+            /** @description Patient ID */
+            patientId: string;
+            /** @description Patient display name */
+            patientName: string;
+            /** @description Patient avatar URL */
+            patientAvatarUrl?: string | null;
+            /** @description Diagnosis */
+            diagnosis?: string | null;
+            /** @description Episode status */
+            status: string;
+            /** @description Care phase */
+            carePhase: string;
+            /** @description Day of episode (1-based) */
+            dayStart: number;
+            /** @description Expected duration in days */
+            expectedDurationDays?: number | null;
+            /** @description Created at ISO */
+            createdAt: string;
+            /** @description Assigned clinician ID */
+            clinicianId?: string | null;
+            /** @description Assigned clinician name */
+            clinicianName?: string | null;
+            /** @description Current risk score */
+            riskScore?: number | null;
+            /** @description Current risk category */
+            riskCategory?: string | null;
+            /** @description Current risk trend */
+            riskTrend?: string | null;
+        };
+        ForecastFactorDto: {
+            /**
+             * @description Factor key
+             * @example adherence
+             */
+            key: string;
+            /** @description Human-readable label */
+            label: string;
+            /**
+             * @description Impact direction on recovery
+             * @enum {string}
+             */
+            impact: "positive" | "negative" | "neutral";
+            /** @description Numeric value backing the factor (percent, score, days) */
+            value?: number | null;
+            /** @description Short explanatory text */
+            note?: string;
+        };
+        RecoveryForecastDto: {
+            /**
+             * @description Current recovery percentage (0-100), deterministic from risk signals
+             * @example 62
+             */
+            currentRecoveryPercentage: number;
+            /**
+             * @description Predicted recovery percentage after adjustment factors
+             * @example 68
+             */
+            predictedRecoveryPercentage: number;
+            /** @description Predicted days remaining in the episode (null when undeterminable) */
+            predictedTimelineDays?: number | null;
+            /** @description Expected recovery date */
+            expectedRecoveryDate?: string | null;
+            /**
+             * @description Confidence 0-100 in the forecast
+             * @example 72
+             */
+            confidence: number;
+            /**
+             * @description Data sufficiency
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+            /** @description Deterministic disclaimer */
+            disclaimer: string;
+            /** @description Contributing factors */
+            factors: components["schemas"]["ForecastFactorDto"][];
+        };
+        DeteriorationForecastDto: {
+            /**
+             * @description Risk level of deterioration within the horizon
+             * @enum {string}
+             */
+            riskLevel: "low" | "moderate" | "high" | "critical";
+            /** @description Adjusted risk score 0-100 */
+            riskScore: number;
+            /** @description Probability of deterioration within horizon (0-100) */
+            probabilityPercent: number;
+            /**
+             * @description Forecast horizon in days
+             * @example 7
+             */
+            horizonDays: number;
+            /** @description Current risk trend */
+            trend: string;
+            /** @description Key drivers identified */
+            keyDrivers: string[];
+            /**
+             * @description Forecast quality
+             * @enum {string}
+             */
+            quality: "high" | "medium" | "low";
+            /** @description Confidence 0-100 */
+            confidence: number;
+            /** @description Deterministic disclaimer */
+            disclaimer: string;
+        };
+        RelapseForecastDto: {
+            /** @description Probability of relapse within 30 days (null when no history/diagnosis) */
+            probabilityPercent?: number | null;
+            /**
+             * @description Horizon in days
+             * @example 30
+             */
+            horizonDays: number;
+            /**
+             * @description Risk level
+             * @enum {string|null}
+             */
+            riskLevel?: "low" | "moderate" | "high" | "critical" | null;
+            /** @description Key drivers */
+            keyDrivers: string[];
+            /** @description Confidence 0-100 */
+            confidence: number;
+            /**
+             * @description Data sufficiency
+             * @enum {string}
+             */
+            dataSufficiency: "sufficient" | "partial" | "insufficient";
+            /** @description Deterministic disclaimer */
+            disclaimer: string;
+        };
+        ForecastFlagsDto: {
+            /** @description True when clinician review is recommended */
+            requiresReview: boolean;
+            /** @description Reasons review is required */
+            reviewReasons: string[];
+        };
+        ComplianceMetricDto: {
+            /** @description Expected count */
+            expected: number;
+            /** @description Submitted/completed count */
+            completed: number;
+            /** @description Compliance percentage 0-100 */
+            percentage: number;
+        };
+        EpisodeForecastDto: {
+            episode: components["schemas"]["ForecastEpisodeDto"];
+            recoveryForecast: components["schemas"]["RecoveryForecastDto"];
+            deterioration: components["schemas"]["DeteriorationForecastDto"];
+            relapse: components["schemas"]["RelapseForecastDto"];
+            /**
+             * @description Web-compatible alias: recoveryForecast.currentRecoveryPercentage (0-100)
+             * @example 62
+             */
+            recoveryProbability: number;
+            /**
+             * @description Web-compatible alias: deterioration.probabilityPercent (0-100)
+             * @example 42
+             */
+            deteriorationRisk: number;
+            /** @description Web-compatible alias: relapse.probabilityPercent (null when no history/diagnosis) */
+            relapseRisk?: number | null;
+            flags: components["schemas"]["ForecastFlagsDto"];
+            /** @description Check-in compliance */
+            checkinCompliance: components["schemas"]["ComplianceMetricDto"];
+            /** @description Medication adherence (last 7 days) */
+            adherence: components["schemas"]["ComplianceMetricDto"];
+            /** @description As-of ISO timestamp */
+            generatedAt: string;
+            /** @description Forecast engine version */
+            engineVersion: string;
+        };
+        FacilityRiskDistributionDto: {
+            /** @description Active episodes classified low risk */
+            low: number;
+            /** @description Active episodes classified moderate risk */
+            moderate: number;
+            /** @description Active episodes classified high risk */
+            high: number;
+            /** @description Active episodes classified critical risk */
+            critical: number;
+        };
+        FacilityForecastSummaryDto: {
+            /** @description Active episode count */
+            activeEpisodeCount: number;
+            /** @description Episodes at risk (high or critical) */
+            atRiskCount: number;
+            /** @description Episodes critical */
+            criticalCount: number;
+            riskDistribution: components["schemas"]["FacilityRiskDistributionDto"];
+            /** @description Average recovery percentage across active episodes */
+            avgRecoveryPercentage: number;
+            /** @description Average recovery days from closed episodes (12 months) */
+            avgRecoveryDays?: number | null;
+            /** @description Episodes flagged for review */
+            flaggedCount: number;
+            /** @description As-of ISO timestamp */
+            generatedAt: string;
+        };
+        AnalyticsRangeDto: {
+            /** @description Period start (ISO) */
+            periodStart: string;
+            /** @description Period end (ISO) */
+            periodEnd: string;
+            /** @description Previous equal-length period start (ISO) */
+            previousPeriodStart: string;
+            /** @description Previous equal-length period end (ISO) */
+            previousPeriodEnd: string;
+        };
+        KpiMetricDto: {
+            /** @description Current period value */
+            value: number;
+            /** @description Percent change vs previous period (null when undeterminable) */
+            changePercent?: number | null;
+        };
+        OverviewKpisDto: {
+            /** @description Avg alert response time (minutes) */
+            avgAlertResponseTimeMinutes: components["schemas"]["KpiMetricDto"];
+            /** @description Readmission rate percent */
+            readmissionRatePercent: components["schemas"]["KpiMetricDto"];
+            /** @description Active clinicians count */
+            activeClinicians: components["schemas"]["KpiMetricDto"];
+        };
+        OverviewExtrasDto: {
+            /** @description Active episodes */
+            activeEpisodes: number;
+            /** @description Open alerts */
+            openAlerts: number;
+            /** @description Avg recovery days (closed episodes in range) */
+            avgRecoveryDays?: number | null;
+        };
+        AnalyticsOverviewDto: {
+            range: components["schemas"]["AnalyticsRangeDto"];
+            kpis: components["schemas"]["OverviewKpisDto"];
+            extras: components["schemas"]["OverviewExtrasDto"];
+        };
+        TrendPointDto: {
+            /** @description Bucket label (e.g. 2026-01 or 2026-01-05) */
+            label: string;
+            /** @description Readmission rate percent for the bucket */
+            readmissionRate: number | null;
+            /** @description Avg recovery days for the bucket */
+            avgRecoveryDays: number | null;
+        };
+        AnalyticsTrendDto: {
+            /** @description Bucket granularity */
+            granularity: string;
+            /** @description Trend series */
+            points: components["schemas"]["TrendPointDto"][];
+        };
+        RiskDistributionDto: {
+            /** @description Active episodes total */
+            activeEpisodes: number;
+            /** @description Low risk count */
+            low: number;
+            /** @description Moderate risk count */
+            moderate: number;
+            /** @description High risk count */
+            high: number;
+            /** @description Critical risk count */
+            critical: number;
+        };
+        WardPerformanceRowDto: {
+            /** @description Ward name (Unassigned when no staff mapping) */
+            ward: string;
+            /** @description Active episodes */
+            activeEpisodes: number;
+            /** @description Open alerts */
+            openAlerts: number;
+            /** @description Avg alert response time in minutes */
+            avgAlertResponseMinutes?: number | null;
+            /** @description Avg recovery days (closed episodes) */
+            avgRecoveryDays?: number | null;
+            /** @description Closed episodes with recovered outcome */
+            recoveredCount: number;
+        };
+        ClinicianOutcomesDto: {
+            /** @description Closed episodes: recovered */
+            recovered: number;
+            /** @description Closed episodes: ongoing_monitoring */
+            ongoingMonitoring: number;
+            /** @description Closed episodes: referred */
+            referred: number;
+            /** @description Closed episodes: deceased */
+            deceased: number;
+            /** @description Closed episodes: other/unknown outcome */
+            other: number;
+        };
+        ClinicianWorkloadRowDto: {
+            /** @description Clinician user ID */
+            clinicianId: string;
+            /** @description Clinician name */
+            clinicianName: string;
+            /** @description User role */
+            role: string;
+            /** @description Specialty */
+            specialty?: string | null;
+            /** @description Ward */
+            ward?: string | null;
+            /** @description Active episodes */
+            activeEpisodeCount: number;
+            /** @description Open alerts across assigned episodes */
+            openAlertCount: number;
+            /** @description Avg alert response minutes across assigned episodes */
+            avgAlertResponseMinutes?: number | null;
+            outcomes: components["schemas"]["ClinicianOutcomesDto"];
+        };
+        ClinicianWorkloadDto: {
+            /** @description Workload rows (role-scoped: clinicians see only themselves) */
+            data: components["schemas"]["ClinicianWorkloadRowDto"][];
+        };
+        InvitedByDto: {
+            /** @description Inviter user ID */
+            id: string;
+            /** @description Inviter name */
+            name: string;
+        };
+        TeamMemberRowDto: {
+            /** @description Staff member ID */
+            id: string;
+            /** @description User ID */
+            userId: string;
+            /** @description Full name */
+            name: string;
+            /** @description Email */
+            email: string;
+            /** @description Display role (admin | doctor | nurse) */
+            role: string;
+            /** @description System role (hospital_admin | clinician) */
+            systemRole: string;
+            /** @description Department / ward */
+            ward?: string | null;
+            /** @description Specialty */
+            specialty?: string | null;
+            /** @description Access profile */
+            accessProfile: string;
+            /** @description Granular permissions (PRD §7.11.2) */
+            permissions: string[];
+            /** @description Preferred escalation channels */
+            escalationChannels: string[];
+            /** @description Active episode assignment count */
+            assignedPatientCount: number;
+            /** @description Account status (pending | active | suspended) */
+            status: string;
+            /** @description Last login timestamp */
+            lastLoginAt?: string | null;
+            /** @description Invite state (pending | accepted | expired) */
+            inviteState: string;
+            /** @description Invited at ISO */
+            invitedAt: string;
+            /** @description Invite accepted at ISO */
+            inviteAcceptedAt?: string | null;
+            invitedBy?: components["schemas"]["InvitedByDto"] | null;
+            /** @description Suspended at ISO */
+            suspendedAt?: string | null;
+            /** @description Suspension reason */
+            suspensionReason?: string | null;
+        };
+        TeamDirectoryDto: {
+            data: components["schemas"]["TeamMemberRowDto"][];
+        };
+        InviteTeamMemberDto: {
+            /** @description Full name */
+            name: string;
+            /** @description Work email */
+            email: string;
+            /**
+             * @description Display role
+             * @enum {string}
+             */
+            role: "admin" | "doctor" | "nurse";
+            /** @description Department / ward */
+            ward?: string;
+            /** @description Specialty */
+            specialty?: string;
+            /**
+             * @description Access profile
+             * @default full_access
+             * @enum {string}
+             */
+            accessProfile: "full_access" | "limited";
+            /** @description Granular permissions (PRD §7.11.2) */
+            permissions?: ("care_episode" | "appointments" | "manage_team_members" | "audit_log" | "view_all_reports" | "configure_settings" | "full_system_access")[];
+        };
+        InviteResultDto: {
+            /** @description Staff member ID */
+            memberId: string;
+            /** @description Raw invite token (share with the invitee if email fails) */
+            inviteToken: string;
+            /** @description Invite state */
+            status: string;
+        };
+        AcceptInviteDto: {
+            /** @description Invite token from the invitation email */
+            token: string;
+            /** @description Full name (optional, defaults to invite name) */
+            name: string;
+            /** @description Password (min 8 chars) */
+            password: string;
+        };
+        AcceptInviteResultDto: {
+            /** @description User ID */
+            userId: string;
+            /** @description Account status after acceptance */
+            status: string;
+            /** @description System role after acceptance */
+            role: string;
+            /** @description Message */
+            message: string;
+        };
+        UpdateTeamMemberDto: {
+            /** @description Full name */
+            name?: string;
+            /**
+             * @description Display role
+             * @enum {string}
+             */
+            role?: "admin" | "doctor" | "nurse";
+            /** @description Department / ward */
+            ward?: string;
+            /** @description Specialty */
+            specialty?: string;
+            /**
+             * @description Access profile
+             * @enum {string}
+             */
+            accessProfile?: "full_access" | "limited";
+            /** @description Granular permissions */
+            permissions?: ("care_episode" | "appointments" | "manage_team_members" | "audit_log" | "view_all_reports" | "configure_settings" | "full_system_access")[];
+        };
+        SuspendTeamMemberDto: {
+            /** @description Reason for suspension */
+            reason: string;
+        };
+        TeamActivityRowDto: {
+            /** @description Audit entry ID */
+            id: string;
+            /** @description Audit module */
+            module: string;
+            /** @description Audit action */
+            action: string;
+            /** @description Actor name */
+            actorName?: string | null;
+            /** @description Target entity summary */
+            targetSummary?: string | null;
+            /** @description Metadata */
+            metadata?: Record<string, never>;
+            /** @description Created at ISO */
+            createdAt: string;
+        };
+        TeamActivityListDto: {
+            data: components["schemas"]["TeamActivityRowDto"][];
+            meta: {
+                page?: number;
+                limit?: number;
+                total?: number;
+                totalPages?: number;
+            };
+        };
+        EscalationPreferenceDto: {
+            /**
+             * @description Preferred channels for alert escalation
+             * @example [
+             *       "sms",
+             *       "email",
+             *       "in_app"
+             *     ]
+             */
+            channels: string[];
+            /**
+             * @description WhatsApp number for critical-alert escalation (E.164)
+             * @example +2348012345678
+             */
+            whatsappPhone: string | null;
+            /**
+             * @description Minimum alert severity escalated via WhatsApp (info | low | moderate | high | critical)
+             * @example critical
+             */
+            whatsappSeverityThreshold: string | null;
+        };
+        UpdateEscalationPreferenceDto: {
+            /** @description Preferred channels for alert escalation */
+            channels: ("sms" | "email" | "in_app" | "whatsapp")[];
+            /**
+             * @description WhatsApp number for critical-alert escalation (E.164)
+             * @example +2348012345678
+             */
+            whatsappPhone?: string;
+            /**
+             * @description Minimum alert severity escalated via WhatsApp: info, low, moderate, high, critical
+             * @enum {string}
+             */
+            whatsappSeverityThreshold?: "info" | "low" | "moderate" | "high" | "critical";
         };
         TestPushDto: {
             /**
@@ -6013,6 +9880,101 @@ export interface operations {
             };
             /** @description Invalid unsubscribe link */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuditController_findAll: {
+        parameters: {
+            query?: {
+                /** @description Search across target entity summary and actor name */
+                search?: string;
+                /** @description Filter by module */
+                module?: string;
+                /** @description Filter by action */
+                action?: string;
+                /** @description Filter by actor */
+                actorId?: string;
+                /** @description Start date (ISO) */
+                from?: string;
+                /** @description End date (ISO) */
+                to?: string;
+                /** @description Page (default 1) */
+                page?: number;
+                /** @description Items per page (default 20, max 100) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated audit log list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogListResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuditController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Audit log entry ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit log entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Entry not found in this facility */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7042,6 +11004,10 @@ export interface operations {
                 q?: string;
                 /** @description Filter by connection status (e.g. "active") */
                 status?: string;
+                /** @description Only links connected at or after this date (ISO 8601) */
+                connectedFrom?: string;
+                /** @description Only links connected at or before this date (ISO 8601) */
+                connectedTo?: string;
                 /** @description Page number (1-indexed, default 1) */
                 page?: number;
                 /** @description Items per page (default 20, max 100) */
@@ -7141,6 +11107,169 @@ export interface operations {
             };
         };
     };
+    FacilityController_updatePatient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Facility ID */
+                facilityId: string;
+                /** @description Patient user ID */
+                patientId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFacilityPatientDto"];
+            };
+        };
+        responses: {
+            /** @description Patient updated successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        patient?: Record<string, never>;
+                        externalPatientId?: string | null;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Validation error or duplicate hospital patient ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Staff member does not have access to this facility */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facility not found or patient not connected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityController_disconnectPatient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Facility ID */
+                facilityId: string;
+                /** @description Patient user ID */
+                patientId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Patient disconnected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example disconnected */
+                        status?: string;
+                        disconnectedAt?: string | null;
+                        connectedAt?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Staff member does not have access to this facility */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facility not found or patient not connected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityController_reconnectPatient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Facility ID */
+                facilityId: string;
+                /** @description Patient user ID */
+                patientId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Patient reconnected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example active */
+                        status?: string;
+                        disconnectedAt?: string | null;
+                        connectedAt?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Staff member does not have access to this facility */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facility not found or patient not connected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     FacilityInviteController_preview: {
         parameters: {
             query: {
@@ -7191,6 +11320,59 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PatientController_lookup: {
+        parameters: {
+            query?: {
+                /** @description Patient email address to look up */
+                email?: string;
+                /** @description Tracmedy patient ID to look up (e.g. TRC-2529-001) */
+                patientId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Patient found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientLookupResponseDto"];
+                };
+            };
+            /** @description Provide either email or patientId */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No patient found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7689,6 +11871,60 @@ export interface operations {
                 content?: never;
             };
             /** @description Forbidden — hospital staff only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AppointmentController_complete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteAppointmentDto"];
+            };
+        };
+        responses: {
+            /** @description Appointment completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppointmentResponseDto"];
+                };
+            };
+            /** @description Already completed or cancelled */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital staff only, out-of-facility, or appointment not assigned to actor */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8239,7 +12475,9 @@ export interface operations {
     };
     CareEpisodesController_findOne: {
         parameters: {
-            query?: never;
+            query?: {
+                includeRemoved?: boolean;
+            };
             header?: never;
             path: {
                 id: string;
@@ -8256,6 +12494,60 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CareEpisodeDetailDto"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_updateEpisode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEpisodeDto"];
+            };
+        };
+        responses: {
+            /** @description Episode updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareEpisodeSummaryDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
@@ -8334,6 +12626,245 @@ export interface operations {
             };
         };
     };
+    CareEpisodesController_addCareTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddCareTeamMemberDto"];
+            };
+        };
+        responses: {
+            /** @description Care team member added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid clinician or duplicate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_removeCareTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description Clinician user ID */
+                clinicianId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Care team member removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Member already removed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode or member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_getEpisodeMedia: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated media items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaItemDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_getCheckinsHistory: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Check-in history with trends */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckInHistoryDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_getTaskCompletion: {
+        parameters: {
+            query?: {
+                date?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task completion statistics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskCompletionDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CareEpisodesController_getCarePlan: {
         parameters: {
             query?: never;
@@ -8345,13 +12876,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Active care plan */
+            /** @description Active care plan with versions */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CarePlanDto"];
+                    "application/json": components["schemas"]["CarePlanDetailResponseDto"];
                 };
             };
             /** @description Unauthorized */
@@ -9063,6 +13594,386 @@ export interface operations {
             };
             /** @description Notification not found or not owned by user */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_listAlerts: {
+        parameters: {
+            query?: {
+                /** @description Filter by alert severity */
+                severity?: "low" | "moderate" | "high" | "critical";
+                /** @description Filter by alert status */
+                status?: "open" | "acknowledged" | "resolved" | "escalated";
+                /** @description Filter by patient ID */
+                patientId?: string;
+                /** @description Filter by care episode ID */
+                episodeId?: string;
+                /** @description Start date (YYYY-MM-DD) */
+                dateFrom?: string;
+                /** @description End date (YYYY-MM-DD) */
+                dateTo?: string;
+                /** @description Page number */
+                page?: number;
+                /** @description Items per page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated alert list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertListResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_getAlertHistory: {
+        parameters: {
+            query?: {
+                /** @description Filter by alert severity */
+                severity?: "low" | "moderate" | "high" | "critical";
+                /** @description Filter by alert status */
+                status?: "open" | "acknowledged" | "resolved" | "escalated";
+                /** @description Filter by patient ID */
+                patientId?: string;
+                /** @description Filter by care episode ID */
+                episodeId?: string;
+                /** @description Start date (YYYY-MM-DD) */
+                dateFrom?: string;
+                /** @description End date (YYYY-MM-DD) */
+                dateTo?: string;
+                /** @description Page number */
+                page?: number;
+                /** @description Items per page */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated acknowledgement history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertListResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_acknowledgeAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alert acknowledged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert already acknowledged or resolved */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_resolveAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveAlertDto"];
+            };
+        };
+        responses: {
+            /** @description Alert resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert is not acknowledged (only acknowledged alerts can be resolved) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_escalateAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EscalateAlertDto"];
+            };
+        };
+        responses: {
+            /** @description Alert escalated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resolved alerts cannot be escalated */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlertsController_getAlertImpact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Impact analysis data shape */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alert not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RiskScoresController_getRiskScore: {
+        parameters: {
+            query?: {
+                limit?: unknown;
+                page?: unknown;
+            };
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current score and history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found or no risk score computed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10281,6 +15192,287 @@ export interface operations {
             };
         };
     };
+    ProfileController_getProfileMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_updateProfileMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileDto"];
+            };
+        };
+        responses: {
+            /** @description Profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_uploadAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Avatar uploaded, profile returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponseDto"];
+                };
+            };
+            /** @description No file provided */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_getNotificationPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notification preferences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_getLanguagePreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Language preference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_getAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_initiateEmailChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailChangeDto"];
+            };
+        };
+        responses: {
+            /** @description OTP sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InitiateChangeResponseDto"];
+                };
+            };
+            /** @description Email already in use */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_initiatePhoneChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneChangeDto"];
+            };
+        };
+        responses: {
+            /** @description OTP sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InitiateChangeResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ProfileController_verifyOtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileVerifyOtpDto"];
+            };
+        };
+        responses: {
+            /** @description OTP verified, profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponseDto"];
+                };
+            };
+            /** @description Invalid or expired OTP */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ProfileController_getHealthSummary: {
         parameters: {
             query: {
@@ -10320,9 +15512,11 @@ export interface operations {
     };
     MessagingController_getMessagesByEpisode: {
         parameters: {
-            query: {
+            query?: {
                 /** @description ID of the care episode */
-                episode_id: string;
+                episode_id?: string;
+                /** @description ID of the appointment */
+                appointment_id?: string;
             };
             header?: never;
             path?: never;
@@ -10339,6 +15533,13 @@ export interface operations {
                     "application/json": components["schemas"]["MessageResponseDto"][];
                 };
             };
+            /** @description Provide exactly one of episode_id or appointment_id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -10353,7 +15554,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Care episode not found */
+            /** @description Care episode or appointment not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -10514,6 +15715,2875 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — clinicians and admins only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_findAllServices: {
+        parameters: {
+            query?: {
+                category?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of home care services */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_findServiceById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Home care service details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_findRequestsByPatient: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of home care requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_createRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateHomeCareRequestDto"];
+            };
+        };
+        responses: {
+            /** @description Home care request created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_findRequestById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Home care request details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_cancelRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request cannot be cancelled — already in progress or completed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_findProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_assignProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Provider ID to assign */
+                    providerId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Provider assigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request or provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Home care dashboard data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getCompletedVisits: {
+        parameters: {
+            query?: {
+                query?: string;
+                sourceType?: string;
+                page?: string;
+                limit?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated completed visits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getPlanDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Home care plan detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Plan not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getRequestDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request draft details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Draft not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getQuoteDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quoteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Quote details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Quote not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getVisitDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visit detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getRequestAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability check result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_getDocumentRequirements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document requirements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_uploadDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Document type */
+                    type?: string;
+                    /** @description Original file name */
+                    fileName?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Document uploaded (stub) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Draft not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SupportController_getFaq: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description FAQ list returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SupportController_getCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Categories returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SupportController_createTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTicketDto"];
+            };
+        };
+        responses: {
+            /** @description Ticket created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LegalController_getPrivacySummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Privacy summary returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    LegalController_getTerms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terms content returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ReferralsController_getMyReferrals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Referral data returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SubscriptionsController_getMySubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscription data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_inviteCaregiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCaregiverDto"];
+            };
+        };
+        responses: {
+            /** @description Invitation created successfully */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        /** @example pending */
+                        status?: string;
+                        /** @description Secure token for invitation link */
+                        inviteToken?: string;
+                    };
+                };
+            };
+            /** @description Validation error or limit reached */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — patients only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Duplicate active caregiver */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_lookupByEmail: {
+        parameters: {
+            query: {
+                /** @description Email address to look up */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lookup result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaregiverLookupResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — patients only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_listCaregivers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caregiver list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaregiverListResultDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — patients only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getCaregiverDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caregiver detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaregiverDetailResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_removeCaregiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caregiver removed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_updatePermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePermissionsDto"];
+            };
+        };
+        responses: {
+            /** @description Updated permissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaregiverPermissionsDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_updateNotificationPrefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNotificationPrefsDto"];
+            };
+        };
+        responses: {
+            /** @description Updated notification preference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_lookupInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invitation token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLookupResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invitation token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation expired or no longer pending */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_declineInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invitation token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation declined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation no longer pending */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invitation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getPeopleICareFor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description People list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeopleCardDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getCareOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Patient user ID */
+                patientId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Care overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CareOverviewDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — no active relationship */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_createObservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateObservationDto"];
+            };
+        };
+        responses: {
+            /** @description Observation created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationResponseDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — no active relationship */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getActivityFeed: {
+        parameters: {
+            query?: {
+                /** @description Filter by patient ID */
+                patient_id?: string;
+                /** @description Page number (default: 1) */
+                page?: number;
+                /** @description Items per page (default: 20) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activity feed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityFeedResultDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getResources: {
+        parameters: {
+            query?: {
+                /** @description Filter by resource category */
+                category?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceListResultDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getResourceDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Resource ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceDetailDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_toggleBookmark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Resource ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bookmark toggled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookmarkToggleResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_markHelpful: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Resource ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Helpful feedback recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpfulResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequestDto"];
+            };
+        };
+        responses: {
+            /** @description Assistant reply */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — access to another patient context */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — conversation or care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — AI daily request limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_episodeInsight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Episode insight + suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeInsightResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — AI daily or per-minute limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service unavailable — AI not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_latestEpisodeSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest recovery summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoverySummaryResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_listEpisodeSuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Suggestion feed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionListResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_alertInsight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Alert ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alert insight */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertInsightResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — alert */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — AI daily or per-minute limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service unavailable — AI not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_biometricsInsight: {
+        parameters: {
+            query?: {
+                /** @description Number of days to analyze (3-30, default 7) */
+                days?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                episodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Biometrics insight */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BiometricsInsightResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — AI daily or per-minute limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service unavailable — AI not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_episodeReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Report draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeReportResponseDto"];
+                };
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — wrong role or cross-facility access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — care episode */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — AI daily or per-minute limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service unavailable — AI not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AiController_decideSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description AI suggestion ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionDecisionDto"];
+            };
+        };
+        responses: {
+            /** @description Decision recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionDecisionResponseDto"];
+                };
+            };
+            /** @description Bad Request — invalid decision value */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized — missing or invalid JWT */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — cross-facility access or already decided */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found — AI suggestion */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too Many Requests — request limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ForecastsController_getEpisodeForecast: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                episodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Episode forecast */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeForecastDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found in facility */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ForecastsController_refreshEpisodeForecast: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                episodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refreshed episode forecast */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeForecastDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode not found in facility */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ForecastsController_getFacilitySummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Facility forecast summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityForecastSummaryDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_overview: {
+        parameters: {
+            query?: {
+                /** @description Start date (ISO) */
+                from?: string;
+                /** @description End date (ISO) */
+                to?: string;
+                /** @description Trend bucket granularity */
+                granularity?: "weekly" | "monthly";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Overview KPIs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsOverviewDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_readmissionTrend: {
+        parameters: {
+            query?: {
+                /** @description Start date (ISO) */
+                from?: string;
+                /** @description End date (ISO) */
+                to?: string;
+                /** @description weekly or monthly (default monthly) */
+                granularity?: "weekly" | "monthly";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trend series */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsTrendDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_riskDistribution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Risk distribution */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskDistributionDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_wardPerformance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ward performance rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WardPerformanceRowDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_clinicianWorkload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Clinician workload rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClinicianWorkloadDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AnalyticsController_export: {
+        parameters: {
+            query?: {
+                /** @description Start date (ISO) */
+                from?: string;
+                /** @description End date (ISO) */
+                to?: string;
+                /** @description xlsx (default) or pdf */
+                format?: "xlsx" | "pdf";
+                /** @description clinical (default) or operational */
+                type?: "clinical" | "operational";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Report file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_directory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team directory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDirectoryDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteTeamMemberDto"];
+            };
+        };
+        responses: {
+            /** @description Invite created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResultDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Email already in use / member */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_acceptInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInviteDto"];
+            };
+        };
+        responses: {
+            /** @description Invite accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptInviteResultDto"];
+                };
+            };
+            /** @description Invalid or expired invite */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_resendInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invite resent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResultDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cannot remove self */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Member still assigned */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTeamMemberDto"];
+            };
+        };
+        responses: {
+            /** @description Updated member */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberRowDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_suspendMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuspendTeamMemberDto"];
+            };
+        };
+        responses: {
+            /** @description Member suspended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cannot suspend self */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_reactivateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member reactivated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_memberActivity: {
+        parameters: {
+            query?: {
+                /** @description Page (default 1) */
+                page?: string;
+                /** @description Items per page (default 20, max 100) */
+                limit?: string;
+                /** @description Filter by audit action */
+                action?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activity feed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamActivityListDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_getEscalationPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Escalation preference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationPreferenceDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamController_updateEscalationPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Staff member ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEscalationPreferenceDto"];
+            };
+        };
+        responses: {
+            /** @description Channels updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationPreferenceDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — hospital_admin only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team member not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

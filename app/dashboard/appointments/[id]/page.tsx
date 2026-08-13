@@ -26,14 +26,16 @@ import {
   X,
 } from "lucide-react";
 import {
-  checkInAppointment,
+  completeAppointment,
   confirmAppointment,
   getAppointmentById,
   markNoShow,
 } from "@/lib/api/appointments";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { cn } from "@/lib/utils";
 import CancelAppointmentModal from "../components/CancelAppointmentModal";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
+import { AppointmentMessageModal } from "../components/AppointmentMessageModal";
 
 type ApiRecord = Record<string, unknown>;
 
@@ -171,7 +173,6 @@ function normalizeClinician(record: ApiRecord): ClinicianOption {
 function isClinicianUnavailableError(error: unknown) {
   return error instanceof Error && error.name === "CLINICIAN_UNAVAILABLE";
 }
-
 
 function getInitials(name: string) {
   return name
@@ -386,6 +387,7 @@ export default function AppointmentDetailsPage() {
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [messageMode, setMessageMode] = useState<"message" | "update" | null>(null);
   const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
   const [isDoctorSelectorOpen, setIsDoctorSelectorOpen] = useState(false);
   const [isLoadingClinicians, setIsLoadingClinicians] = useState(false);
@@ -441,7 +443,6 @@ export default function AppointmentDetailsPage() {
     };
   }, [appointment?.clinicianId]);
 
-
   const historySteps = useMemo(() => appointment?.history ?? [], [appointment]);
 
   const runAction = async (label: string, action: () => Promise<unknown>) => {
@@ -457,7 +458,6 @@ export default function AppointmentDetailsPage() {
       setIsActionsOpen(false);
     }
   };
-
 
   const loadClinicians = async () => {
     setIsDoctorSelectorOpen(true);
@@ -593,8 +593,17 @@ export default function AppointmentDetailsPage() {
               </button>
             ) : null}
             {canComplete ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => runAction("Appointment marked as completed", () => checkInAppointment(appointmentId))} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
-                {activeAction === "Appointment marked as completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              <button
+                type="button"
+                disabled={!appointment || Boolean(activeAction)}
+                onClick={() => void runAction("Appointment completed", async () => {
+                  const result = await completeAppointment(appointmentId);
+                  capturePostHogEvent("appointment_completed", { appointment_id: appointmentId });
+                  return result;
+                })}
+                className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {activeAction === "Appointment completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Mark as Completed
               </button>
             ) : null}
@@ -711,9 +720,11 @@ export default function AppointmentDetailsPage() {
                           {appointment.clinicianId ? resolvedDoctorName ?? "Loading..." : appointment.service.assignedDoctor}
                         </span>
                         {!appointment.clinicianId ? (
-                          <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
-                            {isLoadingClinicians ? "Loading..." : "Assign"}
-                          </button>
+
+                            <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
+                              {isLoadingClinicians ? "Loading..." : "Assign"}
+                            </button>
+
                         ) : null}
                       </div>
                       {isDoctorSelectorOpen && !appointment.clinicianId ? (
@@ -786,8 +797,10 @@ export default function AppointmentDetailsPage() {
                   <p className="mt-5 text-xs font-bold uppercase text-[#344054]">{appointment.communication.timestamp}</p>
                 </div>
                 <div className="mt-6 space-y-5">
-                  <button type="button" className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
-                  <button type="button" className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
+
+                    <button type="button" onClick={() => setMessageMode("message")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
+
+                  <button type="button" onClick={() => setMessageMode("update")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
                 </div>
               </Card>
             </div>
@@ -819,16 +832,20 @@ export default function AppointmentDetailsPage() {
           void loadAppointment();
         }}
       />
+      <AppointmentMessageModal
+        key={messageMode ?? "closed"}
+        open={Boolean(messageMode)}
+        appointmentId={appointment?.id ?? appointmentId}
+        patientName={appointment?.patient.name ?? "Patient"}
+        title={messageMode === "update" ? "Send appointment update" : "Send message"}
+        initialContent={messageMode === "update" ? `Update for appointment ${appointment?.appointmentCode ?? appointmentId}: ` : ""}
+        onOpenChange={(open) => { if (!open) setMessageMode(null); }}
+        onSent={() => {
+          capturePostHogEvent("appointment_message_sent", { appointment_id: appointmentId, message_type: messageMode });
+          toast.success("Message sent successfully.");
+          void loadAppointment();
+        }}
+      />
     </>
   );
 }
-
-
-
-
-
-
-
-
-
-

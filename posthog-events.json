@@ -15,14 +15,18 @@
       "appointment_booked": "New appointment created",
       "appointment_confirmed": "Appointment confirmed by staff",
       "appointment_cancelled": "Appointment cancelled",
-      "appointment_rescheduled": "Appointment rescheduled"
+      "appointment_rescheduled": "Appointment rescheduled",
+      "appointment_completed": "Appointment completed by hospital staff",
+      "appointment_message_sent": "Staff sent an appointment-linked patient message"
     },
     "alerts": {
       "alerts_viewed": "User viewed active clinical alerts",
       "alerts_history_viewed": "User viewed alert history",
       "alerts_exported": "User exported the current alert view",
       "alerts_reloaded": "User reloaded alert data",
-      "alert_review_opened": "User opened an alert review"
+      "alert_review_opened": "User opened an alert review",
+      "alert_escalated": "Clinician escalated an alert",
+      "alert_resolved": "Clinician resolved an acknowledged alert"
     },
     "care_episodes": {
       "care_episode_created": "New care episode created",
@@ -49,6 +53,7 @@
       "recovery_outcomes_viewed": "User viewed recovery and outcomes",
       "recovery_action_opened": "User opened an action from recovery and outcomes",
       "recovery_alert_impact_opened": "User reviewed an alert's supporting evidence",
+      "recovery_alert_acknowledged": "User acknowledged an alert from recovery and outcomes",
       "care_plan_adjust_viewed": "User viewed the care plan adjustment workspace",
       "care_plan_save_opened": "User opened care plan save confirmation",
       "care_plan_updated": "User updated the active care plan",
@@ -56,7 +61,11 @@
       "care_timeline_viewed": "User viewed a care episode timeline",
       "care_timeline_filtered": "User filtered a care episode timeline",
       "closed_episode_summary_viewed": "User viewed a closed episode summary",
-      "care_episode_empty_state_viewed": "User viewed an empty care episode tab"
+      "care_episode_empty_state_viewed": "User viewed an empty care episode tab",
+      "care_team_member_added": "Hospital admin added a clinician to an episode care team",
+      "care_team_member_removed": "Hospital admin removed a clinician from an episode care team",
+      "home_care_request_created": "Staff member created a clinician-initiated home-care request for an episode patient",
+      "ai_insight_viewed": "Clinician viewed a generated AI insight"
     },
     "connected_patients": {
       "connected_patients_viewed": "User viewed the connected patients page",
@@ -66,7 +75,85 @@
       "connection_code_generated": "User generated a patient connection code",
       "connection_code_copied": "User copied a patient connection code",
       "connection_code_sent_sms": "User opened an SMS containing a patient connection code",
-      "connection_code_sent_email": "User opened an email containing a patient connection code"
+      "connection_code_sent_email": "User opened an email containing a patient connection code",
+      "connected_patient_updated": "Staff member updated facility-managed patient information",
+      "connected_patient_disconnected": "Staff member disconnected a patient from the facility",
+      "connected_patient_reconnected": "Staff member reconnected a patient to the facility"
+    },
+    "reports": {
+      "reports_analytics_viewed": "User viewed reports and analytics",
+      "reports_empty_state_viewed": "User viewed the reports empty state",
+      "reports_period_changed": "User changed the reports date period",
+      "reports_refreshed": "User refreshed reports data",
+      "reports_exported": "User exported a reports summary",
+      "clinician_workload_opened": "User opened clinician workload from reports",
+      "clinician_workload_viewed": "User viewed the full clinician workload page",
+      "clinician_workload_exported": "User exported clinician workload"
+    },
+    "team": {
+      "team_viewed": "User viewed the hospital team directory",
+      "team_member_viewed": "User viewed a team member profile",
+      "team_member_invite_opened": "User opened the team member invitation flow",
+      "team_member_edit_opened": "User opened the team member edit flow",
+      "team_member_status_opened": "User opened suspend or reactivate confirmation",
+      "team_member_remove_opened": "User opened team member removal confirmation",
+      "team_api_unavailable": "User reached a team action without an available API contract",
+      "team_member_invited": "User invited a team member",
+      "team_member_updated": "User updated a team member profile or permissions",
+      "team_member_suspended": "User suspended a team member",
+      "team_member_reactivated": "User reactivated a team member",
+      "team_member_removed": "User removed a team member",
+      "team_member_invite_resent": "User resent a team member invitation",
+      "team_escalation_preference_updated": "User updated a team member alert escalation preference"
+    },
+    "audit": {
+      "audit_log_viewed": "User viewed the facility audit log",
+      "audit_log_filtered": "User filtered the facility audit log",
+      "audit_log_entry_viewed": "User opened an audit log entry",
+      "audit_log_exported": "User exported audit log records",
+      "audit_log_refreshed": "User refreshed the audit log history"
+    },
+    "settings": {
+      "settings_hospital_profile_viewed": "User viewed hospital profile settings",
+      "settings_hospital_profile_saved": "User saved hospital profile settings",
+      "settings_hospital_profile_reset": "User reset hospital profile settings",
+      "settings_logo_selected": "User selected a hospital logo image",
+      "settings_configuration_viewed": "User viewed configuration settings",
+      "settings_configuration_saved": "User saved configuration settings",
+      "settings_configuration_reset": "User reset configuration settings",
+      "settings_notifications_viewed": "User viewed notification preferences",
+      "settings_notifications_saved": "User saved notification preferences",
+      "settings_notifications_reset": "User reset notification preferences",
+      "settings_security_viewed": "User viewed security settings",
+      "settings_password_changed": "User changed account password from settings",
+      "settings_security_saved": "User saved security settings",
+      "settings_appointment_viewed": "User viewed appointment settings",
+      "settings_appointment_saved": "User saved appointment settings",
+      "settings_appointment_reset": "User reset appointment settings",
+      "settings_billing_viewed": "User viewed billing and subscription settings",
+      "settings_billing_exported": "User exported billing draft",
+      "settings_billing_action_unavailable": "User clicked an unavailable billing action",
+      "settings_invoice_state_viewed": "User viewed a billing invoice state screen",
+      "settings_invoice_downloaded": "User downloaded a frontend-generated invoice file",
+      "settings_invoices_viewed": "User viewed billing invoice history",
+      "settings_invoices_exported": "User exported billing invoice history",
+      "settings_integrations_viewed": "User viewed integrations settings",
+      "settings_integration_action_unavailable": "User clicked an unavailable integration action",
+      "settings_cancel_subscription_viewed": "User viewed the cancel subscription flow",
+      "settings_cancel_subscription_confirmed": "User confirmed subscription cancellation in settings",
+      "settings_post_cancellation_overdue_viewed": "User viewed overdue invoice after cancellation",
+      "settings_roles_viewed": "User viewed roles and permissions settings",
+      "settings_roles_reset": "User reset roles and permissions changes",
+      "settings_roles_action_unavailable": "User clicked an unavailable roles and permissions action"
+    },
+    "system": {
+      "network_error_viewed": "User viewed the network error state",
+      "network_retry_clicked": "User retried the network connection",
+      "network_reload_clicked": "User reloaded from the network error state",
+      "session_expired_viewed": "User viewed the session expired screen",
+      "session_login_clicked": "User returned to login from the session expired screen",
+      "access_denied_viewed": "User viewed the access denied state",
+      "access_denied_returned": "User returned to the dashboard from access denied"
     }
   }
 }

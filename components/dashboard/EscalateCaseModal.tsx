@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { AlertTriangle, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Loader2, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type EscalateCaseContext = {
@@ -16,7 +16,7 @@ type EscalateCaseModalProps = {
   open: boolean;
   context: EscalateCaseContext;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (reason: string, notes: string) => void;
+  onConfirm: (reason: string, notes: string) => void | Promise<void>;
   submissionAvailable?: boolean;
 };
 
@@ -38,16 +38,26 @@ export function EscalateCaseModal({
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [showValidation, setShowValidation] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!reason) {
       setShowValidation(true);
       return;
     }
     if (!submissionAvailable) return;
-    onConfirm(reason, notes.trim());
-    onOpenChange(false);
+    setIsSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(reason, notes.trim());
+      onOpenChange(false);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "Unable to escalate this alert.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -130,15 +140,20 @@ export function EscalateCaseModal({
                   Case escalation will be enabled when the backend escalation endpoint is available.
                 </div>
               ) : null}
+              {error ? (
+                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-medium text-destructive">
+                  {error}
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col-reverse gap-3 border-t border-border p-6 sm:flex-row sm:justify-end">
               <DialogPrimitive.Close asChild>
                 <Button type="button" variant="ghost" className="h-10 px-4 font-bold text-foreground hover:bg-muted">Cancel</Button>
               </DialogPrimitive.Close>
-              <Button type="submit" disabled={!submissionAvailable} className="h-10 rounded-lg bg-red-600 px-5 font-bold text-white hover:bg-red-700">
-                <ShieldAlert className="h-4 w-4" />
-                Confirm Escalation
+              <Button type="submit" disabled={!submissionAvailable || isSubmitting} className="h-10 rounded-lg bg-red-600 px-5 font-bold text-white hover:bg-red-700">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
+                {isSubmitting ? "Escalating..." : "Confirm Escalation"}
               </Button>
             </div>
           </form>

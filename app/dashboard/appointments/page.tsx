@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, List, Loader2, Plus, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
@@ -15,6 +16,20 @@ import ScheduleAppointmentModal from "./components/ScheduleAppointmentModal";
 
 type AppointmentView = "table" | "calendar";
 type CalendarMode = "day" | "week";
+
+const appointmentStatuses = new Set([
+  "pending",
+  "confirmed",
+  "upcoming",
+  "checked_in",
+  "completed",
+  "cancelled",
+  "no_show",
+]);
+
+function getInitialStatusFilter(value: string | null) {
+  return value && appointmentStatuses.has(value) ? value : "all";
+}
 
 function addDays(date: Date, days: number) {
   const nextDate = new Date(date);
@@ -71,19 +86,20 @@ function hasAppointments(payload: unknown) {
   return getAppointmentItems(payload).length > 0 || getAppointmentTotal(payload) > 0;
 }
 
-export default function AppointmentsPage() {
+function AppointmentsPageContent() {
+  const searchParams = useSearchParams();
   const [view, setView] = useState<AppointmentView>("table");
   const [calendarMode, setCalendarMode] = useState<CalendarMode>("day");
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [appointmentFilters, setAppointmentFilters] = useState<AppointmentListFilters>({
-    status: "all",
+  const [appointmentFilters, setAppointmentFilters] = useState<AppointmentListFilters>(() => ({
+    status: getInitialStatusFilter(searchParams.get("status")),
     dateFrom: "",
     dateTo: "",
     search: "",
     department: "all",
     type: "all",
-  });
+  }));
   const [refreshKey, setRefreshKey] = useState(0);
   const [exportRequestKey, setExportRequestKey] = useState(0);
   const [isCheckingAppointments, setIsCheckingAppointments] = useState(true);
@@ -160,13 +176,15 @@ export default function AppointmentsPage() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <Link
-            href="/dashboard/appointments/availability"
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
-          >
-            <CalendarCheck className="h-5 w-5 text-[#71809B]" />
-            Availability Management
-          </Link>
+
+            <Link
+              href="/dashboard/appointments/availability"
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
+            >
+              <CalendarCheck className="h-5 w-5 text-[#71809B]" />
+              Availability Management
+            </Link>
+
           <Link
             href="/dashboard/appointments/virtual-consultations"
             className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
@@ -174,14 +192,16 @@ export default function AppointmentsPage() {
             <Video className="h-5 w-5 text-[#71809B]" />
             Virtual Consultation
           </Link>
-          <button
-            type="button"
-            onClick={() => setIsScheduleModalOpen(true)}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
-          >
-            <Plus className="h-5 w-5" />
-            Add Appointment
-          </button>
+
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
+            >
+              <Plus className="h-5 w-5" />
+              Add Appointment
+            </button>
+
         </div>
       </div>
 
@@ -266,7 +286,19 @@ export default function AppointmentsPage() {
   );
 }
 
-
-
-
-
+export default function AppointmentsPage() {
+  return (
+    <Suspense
+      fallback={(
+        <div className="flex min-h-[560px] items-center justify-center">
+          <div className="flex items-center gap-3 text-sm font-semibold text-[#71809B]">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            Loading appointments
+          </div>
+        </div>
+      )}
+    >
+      <AppointmentsPageContent />
+    </Suspense>
+  );
+}

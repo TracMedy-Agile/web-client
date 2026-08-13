@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Building2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, Stethoscope, Video } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
@@ -154,9 +155,11 @@ function AppointmentCard({ appointment }: { appointment: DailyCalendarAppointmen
   const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
 
   return (
-    <article
+    <Link
+      href={`/dashboard/appointments/${encodeURIComponent(appointment.id)}`}
+      aria-label={`Open appointment details for ${appointment.patientName}`}
       className={cn(
-        "absolute left-6 right-6 rounded-xl px-5 py-5 text-sm shadow-sm",
+        "absolute left-6 right-6 cursor-pointer rounded-xl px-5 py-5 text-sm shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
         styles.card,
       )}
       style={{ top, height }}
@@ -183,7 +186,7 @@ function AppointmentCard({ appointment }: { appointment: DailyCalendarAppointmen
           {appointment.status}
         </span>
       </div>
-    </article>
+    </Link>
   );
 }
 

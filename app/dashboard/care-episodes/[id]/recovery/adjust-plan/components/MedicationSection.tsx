@@ -5,6 +5,13 @@ import { Pill, Trash2 } from "lucide-react";
 import type { Medication } from "../types";
 import { AddRowButton, areaClass, DeleteDialog, fieldClass, SectionFrame } from "./SectionFrame";
 
+const MEDICATION_FIELDS = [
+  { key: "name", label: "Medication", placeholder: "Medication name" },
+  { key: "dosage", label: "Dosage", placeholder: "Dosage e.g. 500mg" },
+  { key: "frequency", label: "Frequency", placeholder: "Frequency e.g. twice daily" },
+  { key: "duration", label: "Duration", placeholder: "Duration e.g. 7 days" },
+] as const;
+
 export function MedicationSection({ items, onChange }: { items: Medication[]; onChange: (items: Medication[]) => void }) {
   const [deleting, setDeleting] = useState<Medication | null>(null);
   const update = (index: number, patch: Partial<Medication>) => onChange(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
@@ -13,13 +20,30 @@ export function MedicationSection({ items, onChange }: { items: Medication[]; on
       <div className="space-y-4">
         {items.map((item, index) => <div key={item.id} className="rounded-xl bg-muted/60 p-3">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-[1.1fr_.8fr_.9fr_.9fr_auto]">
-            <input aria-label="Medication" className={fieldClass} value={item.name} onChange={(event) => update(index, { name: event.target.value })} />
-            <input aria-label="Dosage" className={fieldClass} value={item.dosage} onChange={(event) => update(index, { dosage: event.target.value })} />
-            <input aria-label="Frequency" className={fieldClass} value={item.frequency} onChange={(event) => update(index, { frequency: event.target.value })} />
-            <input aria-label="Duration" className={fieldClass} value={item.duration} onChange={(event) => update(index, { duration: event.target.value })} />
-            <button type="button" aria-label={`Delete ${item.name}`} onClick={() => setDeleting(item)} className="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded-md text-red-400 hover:bg-red-50 md:col-span-1"><Trash2 className="h-4 w-4" /></button>
+            {MEDICATION_FIELDS.map((field) => (
+              <label key={field.key} className="space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{field.label}</span>
+                <input
+                  aria-label={field.label}
+                  placeholder={field.placeholder}
+                  className={fieldClass}
+                  value={item[field.key]}
+                  onChange={(event) => update(index, { [field.key]: event.target.value })}
+                />
+              </label>
+            ))}
+            <button type="button" aria-label={`Delete ${item.name || "medication"}`} onClick={() => setDeleting(item)} className="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded-md text-red-400 hover:bg-red-50 md:col-span-1 md:mt-5"><Trash2 className="h-4 w-4" /></button>
           </div>
-          <textarea aria-label={`${item.name} instructions`} className={`${areaClass} mt-2`} value={item.instructions} onChange={(event) => update(index, { instructions: event.target.value })} />
+          <label className="mt-2 block space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Additional instruction</span>
+            <textarea
+              aria-label={`${item.name || "Medication"} additional instruction`}
+              placeholder="Additional instruction for this medication"
+              className={areaClass}
+              value={item.instructions}
+              onChange={(event) => update(index, { instructions: event.target.value })}
+            />
+          </label>
         </div>)}
       </div>
       <AddRowButton onClick={() => onChange([...items, {

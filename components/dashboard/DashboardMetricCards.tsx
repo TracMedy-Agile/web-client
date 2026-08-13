@@ -1,55 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarCheck, Megaphone, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, HeartPulse, ShieldAlert, TrendingUp, Users } from "lucide-react";
 import MetricCard from "@/components/dashboard/MetricCard";
 import { getAlertsSnapshot } from "@/lib/api/alerts";
 import { getCareEpisodes, type CareEpisodeRecord } from "@/lib/api/care-episodes";
-import { getAppointments } from "@/lib/api/appointments";
+import { getFacilityForecastSummary } from "@/lib/api/dashboard";
+import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
 
-type ApiRecord = Record<string, unknown>;
 type Trend = { change: string; type: "positive" | "negative" };
 type DashboardMetrics = {
-  activeEpisodes: number;
-  appointments: number;
-  alerts: number;
+  activePatients: number;
+  highRiskToday: number;
+  criticalAlerts: number;
   recovery: number;
-  activeEpisodesTrend: Trend;
-  appointmentsTrend: Trend;
-  alertsTrend: Trend;
+  readmissionRate: number | null;
+  activePatientsTrend: Trend;
+  highRiskTrend: Trend;
+  criticalAlertsTrend: Trend;
   recoveryTrend: Trend;
+  readmissionTrend: Trend | null;
 };
 
 const POLL_INTERVAL_MS = 60_000;
 const emptyTrend: Trend = { change: "0%", type: "positive" };
 const emptyMetrics: DashboardMetrics = {
-  activeEpisodes: 0,
-  appointments: 0,
-  alerts: 0,
+  activePatients: 0,
+  highRiskToday: 0,
+  criticalAlerts: 0,
   recovery: 0,
-  activeEpisodesTrend: emptyTrend,
-  appointmentsTrend: emptyTrend,
-  alertsTrend: emptyTrend,
+  readmissionRate: null,
+  activePatientsTrend: emptyTrend,
+  highRiskTrend: emptyTrend,
+  criticalAlertsTrend: emptyTrend,
   recoveryTrend: emptyTrend,
+  readmissionTrend: null,
 };
-
-function asRecord(value: unknown): ApiRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as ApiRecord : null;
-}
-
-function getTotalCount(payload: unknown) {
-  const record = asRecord(payload);
-  const data = record ? asRecord(record.data) : null;
-  const candidates = [record, data, record ? asRecord(record.meta) : null, data ? asRecord(data.meta) : null];
-  for (const candidate of candidates) {
-    for (const key of ["total", "totalCount", "count"]) {
-      const value = candidate?.[key];
-      if (typeof value === "number" && Number.isFinite(value)) return value;
-      if (typeof value === "string" && Number.isFinite(Number(value))) return Number(value);
-    }
-  }
-  return 0;
-}
 
 function formatDateKey(date: Date) {
   const year = date.getFullYear();
@@ -87,6 +73,15 @@ function calculateTrend(current: number, previous: number): Trend {
   };
 }
 
+function calculateInverseTrend(changePercent: number | null): Trend | null {
+  if (changePercent === null) return null;
+  const rounded = Math.round(changePercent);
+  return {
+    change: `${rounded > 0 ? "+" : ""}${rounded}%`,
+    type: rounded > 0 ? "negative" : "positive",
+  };
+}
+
 function recoveryProgress(episode: CareEpisodeRecord) {
   if (!episode.dayStart || !episode.expectedDurationDays || episode.expectedDurationDays <= 0) return null;
   return Math.min(100, Math.max(0, Math.round((episode.dayStart / episode.expectedDurationDays) * 100)));
@@ -96,11 +91,16 @@ function average(values: number[]) {
   return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
 }
 
+function isHighRiskEpisode(episode: CareEpisodeRecord) {
+  const risk = episode.riskCategory?.toLowerCase() ?? "";
+  return risk === "high" || risk === "critical" || (episode.riskScore !== null && episode.riskScore >= 70);
+}
+
 function buildMetrics(
   episodes: Awaited<ReturnType<typeof getCareEpisodes>>,
-  todaysAppointments: number,
-  yesterdaysAppointments: number,
   alerts: Awaited<ReturnType<typeof getAlertsSnapshot>>,
+  report: Awaited<ReturnType<typeof getReportsSnapshot>> | null,
+  forecast: Awaited<ReturnType<typeof getFacilityForecastSummary>> | null,
 ): DashboardMetrics {
   const today = dateKeyForOffset(0);
   const currentStart = dateKeyForOffset(-29);
@@ -112,21 +112,26 @@ function buildMetrics(
   const activeEpisodes = episodes.data.filter((episode) => episode.status.toLowerCase() === "active");
   const currentEpisodes = activeEpisodes.filter((episode) => inRange(episode.createdAt, currentStart, today));
   const previousEpisodes = activeEpisodes.filter((episode) => inRange(episode.createdAt, previousStart, previousEnd));
+  const currentHighRisk = currentEpisodes.filter(isHighRiskEpisode).length;
+  const previousHighRisk = previousEpisodes.filter(isHighRiskEpisode).length;
   const currentRecovery = currentEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
   const previousRecovery = previousEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
   const allRecovery = activeEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
-  const currentAlerts = alerts.active.filter((alert) => inRange(alert.timestamp, alertCurrentStart, today)).length;
-  const previousAlerts = alerts.active.filter((alert) => inRange(alert.timestamp, alertPreviousStart, alertPreviousEnd)).length;
+  const criticalAlerts = alerts.active.filter((alert) => alert.severity === "critical");
+  const currentCriticalAlerts = criticalAlerts.filter((alert) => inRange(alert.timestamp, alertCurrentStart, today)).length;
+  const previousCriticalAlerts = criticalAlerts.filter((alert) => inRange(alert.timestamp, alertPreviousStart, alertPreviousEnd)).length;
 
   return {
-    activeEpisodes: episodes.activeCount || activeEpisodes.length,
-    appointments: todaysAppointments,
-    alerts: alerts.active.length,
-    recovery: average(allRecovery),
-    activeEpisodesTrend: calculateTrend(currentEpisodes.length, previousEpisodes.length),
-    appointmentsTrend: calculateTrend(todaysAppointments, yesterdaysAppointments),
-    alertsTrend: calculateTrend(currentAlerts, previousAlerts),
+    activePatients: forecast?.activeEpisodeCount ?? (episodes.activeCount || activeEpisodes.length),
+    highRiskToday: forecast?.atRiskCount ?? (episodes.highRiskCount || activeEpisodes.filter(isHighRiskEpisode).length),
+    criticalAlerts: criticalAlerts.length,
+    recovery: forecast?.avgRecoveryPercentage ?? average(allRecovery),
+    readmissionRate: report?.readmissionRatePercent ?? null,
+    activePatientsTrend: calculateTrend(currentEpisodes.length, previousEpisodes.length),
+    highRiskTrend: calculateTrend(currentHighRisk, previousHighRisk),
+    criticalAlertsTrend: calculateTrend(currentCriticalAlerts, previousCriticalAlerts),
     recoveryTrend: calculateTrend(average(currentRecovery), average(previousRecovery)),
+    readmissionTrend: calculateInverseTrend(report?.readmissionRateChangePercent ?? null),
   };
 }
 
@@ -141,16 +146,14 @@ export default function DashboardMetricCards() {
     const loadMetrics = async (showLoading: boolean) => {
       if (showLoading) setIsLoading(true);
       setHasError(false);
-      const today = dateKeyForOffset(0);
-      const yesterday = dateKeyForOffset(-1);
       try {
-        const [episodes, todayPayload, yesterdayPayload, alerts] = await Promise.all([
+        const [episodes, alerts, report, forecast] = await Promise.all([
           getCareEpisodes({ page: 1, limit: 500 }),
-          getAppointments({ dateFrom: today, dateTo: today, page: 1, limit: 1 }),
-          getAppointments({ dateFrom: yesterday, dateTo: yesterday, page: 1, limit: 1 }),
           getAlertsSnapshot(),
+          getReportsSnapshot(getReportsDateRange(30)).catch(() => null),
+          getFacilityForecastSummary().catch(() => null),
         ]);
-        if (!ignore) setMetrics(buildMetrics(episodes, getTotalCount(todayPayload), getTotalCount(yesterdayPayload), alerts));
+        if (!ignore) setMetrics(buildMetrics(episodes, alerts, report, forecast));
       } catch {
         if (!ignore) {
           setMetrics(emptyMetrics);
@@ -169,15 +172,20 @@ export default function DashboardMetricCards() {
     };
   }, []);
 
-  const change = (trend: Trend) => isLoading ? "..." : hasError ? "--" : trend.change;
-  const value = (metric: number, suffix = "") => isLoading ? "..." : hasError ? "--" : `${metric}${suffix}`;
+  const change = (trend: Trend | null) => isLoading ? "..." : hasError ? "--" : trend?.change;
+  const value = (metric: number | null, suffix = "") => {
+    if (isLoading) return "...";
+    if (hasError || metric === null) return "--";
+    return `${metric}${suffix}`;
+  };
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-      <MetricCard icon={Users} iconClassName="bg-secondary/30 text-primary" label="Active Care Episode" value={value(metrics.activeEpisodes)} change={change(metrics.activeEpisodesTrend)} changeType={metrics.activeEpisodesTrend.type} changeTitle="Active episodes created in the latest 30 days compared with the previous 30 days" />
-      <MetricCard icon={CalendarCheck} iconClassName="bg-secondary/30 text-primary" label="Appointments" value={value(metrics.appointments)} change={change(metrics.appointmentsTrend)} changeType={metrics.appointmentsTrend.type} changeTitle="Today compared with yesterday" />
-      <MetricCard icon={Megaphone} iconClassName="bg-red-50 text-red-500" label="Alerts" value={value(metrics.alerts)} change={change(metrics.alertsTrend)} changeType={metrics.alertsTrend.type} changeTitle="Latest 7 days compared with the previous 7 days" />
-      <MetricCard icon={TrendingUp} iconClassName="bg-emerald-50 text-emerald-500" label="Avg Recovery %" value={value(metrics.recovery, "%")} change={change(metrics.recoveryTrend)} changeType={metrics.recoveryTrend.type} changeTitle="Average recovery progress for the latest 30-day episode cohort compared with the previous cohort" />
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <MetricCard icon={Users} iconClassName="bg-secondary/30 text-primary" label="Active Patients" value={value(metrics.activePatients)} change={change(metrics.activePatientsTrend)} changeType={metrics.activePatientsTrend.type} changeTitle="Active patient episodes created in the latest 30 days compared with the previous 30 days" description="Currently monitored" />
+      <MetricCard icon={ShieldAlert} iconClassName="bg-amber-50 text-amber-600" label="High Risk Today" value={value(metrics.highRiskToday)} change={change(metrics.highRiskTrend)} changeType={metrics.highRiskTrend.type} changeTitle="High and critical risk episode movement across the latest 30-day cohort" description="Needs close follow-up" />
+      <MetricCard icon={AlertTriangle} iconClassName="bg-red-50 text-red-500" label="Critical Alerts" value={value(metrics.criticalAlerts)} change={change(metrics.criticalAlertsTrend)} changeType={metrics.criticalAlertsTrend.type} changeTitle="Critical alert movement in the latest 7 days compared with the previous 7 days" description="Open clinical alerts" />
+      <MetricCard icon={TrendingUp} iconClassName="bg-emerald-50 text-emerald-600" label="Avg Recovery %" value={value(metrics.recovery, "%")} change={change(metrics.recoveryTrend)} changeType={metrics.recoveryTrend.type} changeTitle="Average recovery progress for the latest 30-day episode cohort compared with the previous cohort" description="Across active episodes" />
+      <MetricCard icon={HeartPulse} iconClassName="bg-sky-50 text-primary" label="Readmission Rate" value={value(metrics.readmissionRate, "%")} change={change(metrics.readmissionTrend)} changeType={metrics.readmissionTrend?.type ?? "positive"} changeTitle="Lower readmission movement is positive" description="Last 30 days" />
     </div>
   );
 }
