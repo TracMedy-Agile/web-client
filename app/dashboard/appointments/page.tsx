@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, List, Loader2, Plus, Video } from "lucide-react";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getAppointments } from "@/lib/api/appointments";
@@ -17,7 +16,6 @@ import ScheduleAppointmentModal from "./components/ScheduleAppointmentModal";
 
 type AppointmentView = "table" | "calendar";
 type CalendarMode = "day" | "week";
-const STAFF_ROLES = ["clinician", "hospital_admin"] as const;
 
 const appointmentStatuses = new Set([
   "pending",
@@ -178,7 +176,7 @@ function AppointmentsPageContent() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <RoleGate allowedRoles={STAFF_ROLES}>
+
             <Link
               href="/dashboard/appointments/availability"
               className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
@@ -186,7 +184,7 @@ function AppointmentsPageContent() {
               <CalendarCheck className="h-5 w-5 text-[#71809B]" />
               Availability Management
             </Link>
-          </RoleGate>
+
           <Link
             href="/dashboard/appointments/virtual-consultations"
             className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
@@ -194,7 +192,7 @@ function AppointmentsPageContent() {
             <Video className="h-5 w-5 text-[#71809B]" />
             Virtual Consultation
           </Link>
-          <RoleGate allowedRoles={STAFF_ROLES}>
+
             <button
               type="button"
               onClick={() => setIsScheduleModalOpen(true)}
@@ -203,7 +201,7 @@ function AppointmentsPageContent() {
               <Plus className="h-5 w-5" />
               Add Appointment
             </button>
-          </RoleGate>
+
         </div>
       </div>
 

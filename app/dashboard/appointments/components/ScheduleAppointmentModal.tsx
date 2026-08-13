@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   CalendarDays,
@@ -13,16 +13,21 @@ import {
   X,
 } from "lucide-react";
 import { createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { cn } from "@/lib/utils";
 
 type AppointmentType = "physical" | "teleconsultation";
 type AppointmentPriority = "Routine" | "Urgent" | "Critical";
+type InitialPatient = { id: string; name: string };
 
 type ScheduleAppointmentModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAppointmentCreated?: () => void;
   initialAppointmentType?: AppointmentType;
+  initialPatient?: InitialPatient;
+  initialCareEpisodeLabel?: string;
+  initialReason?: string;
 };
 
 type ScheduleAppointmentFormData = {
@@ -265,12 +270,31 @@ function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facili
   };
 }
 
-export default function ScheduleAppointmentModal({ open, onOpenChange, onAppointmentCreated, initialAppointmentType = "physical" }: ScheduleAppointmentModalProps) {
+export default function ScheduleAppointmentModal({
+  open,
+  onOpenChange,
+  onAppointmentCreated,
+  initialAppointmentType = "physical",
+  initialPatient,
+  initialCareEpisodeLabel,
+  initialReason = "",
+}: ScheduleAppointmentModalProps) {
   const router = useRouter();
-  const freshFormData = (): ScheduleAppointmentFormData => ({ ...initialFormData, appointmentType: initialAppointmentType });
+  const { user } = useDashboardUser();
+  const isCurrentUserClinician = user?.role?.toLowerCase() === "clinician";
+  const currentClinicianId = isCurrentUserClinician ? user?.id ?? "" : "";
+  const currentClinicianLabel = user?.name ? "Dr. " + user.name + " - " + (user.specialty || "No department") : "Me";
+  const freshFormData = useCallback((): ScheduleAppointmentFormData => ({
+    ...initialFormData,
+    appointmentType: initialAppointmentType,
+    patient: initialPatient?.name ?? "",
+    reason: initialReason,
+    clinicianId: currentClinicianId,
+    careEpisode: initialCareEpisodeLabel ?? initialFormData.careEpisode,
+  }), [currentClinicianId, initialAppointmentType, initialCareEpisodeLabel, initialPatient?.name, initialReason]);
   const [formData, setFormData] = useState<ScheduleAppointmentFormData>(freshFormData);
   const [facilityId, setFacilityId] = useState("");
-  const [selectedPatientId, setSelectedPatientId] = useState("");
+  const [selectedPatientId, setSelectedPatientId] = useState(initialPatient?.id ?? "");
   const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
   const [isSearchingPatients, setIsSearchingPatients] = useState(false);
   const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
@@ -278,6 +302,26 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
   const [apiError, setApiError] = useState("");
   const [capacity, setCapacity] = useState<AppointmentCapacity | null>(null);
   const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    void Promise.resolve().then(() => {
+      setFormData(freshFormData());
+      setSelectedPatientId(initialPatient?.id ?? "");
+      setPatientResults([]);
+      setApiError("");
+      setCapacity(null);
+    });
+  }, [freshFormData, initialPatient?.id, open]);
+
+  useEffect(() => {
+    if (!open || !currentClinicianId) return;
+
+    void Promise.resolve().then(() => {
+      setFormData((current) => current.clinicianId ? current : { ...current, clinicianId: currentClinicianId });
+    });
+  }, [currentClinicianId, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -369,7 +413,12 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
     };
   }, [facilityId, formData.date, formData.time, open]);
 
-  const selectedClinician = clinicians.find((clinician) => clinician.id === formData.clinicianId);
+  const clinicianOptions = useMemo(() => {
+    if (!currentClinicianId || clinicians.some((clinician) => clinician.id === currentClinicianId)) return clinicians;
+    return [{ id: currentClinicianId, label: currentClinicianLabel, schedule: "Current clinician" }, ...clinicians];
+  }, [clinicians, currentClinicianId, currentClinicianLabel]);
+
+  const selectedClinician = clinicianOptions.find((clinician) => clinician.id === formData.clinicianId);
 
   const updateFormData = <Key extends keyof ScheduleAppointmentFormData>(
     key: Key,
@@ -380,7 +429,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
 
   const resetAndClose = () => {
     setFormData(freshFormData());
-    setSelectedPatientId("");
+    setSelectedPatientId(initialPatient?.id ?? "");
     setPatientResults([]);
     setApiError("");
     setCapacity(null);
@@ -616,7 +665,7 @@ export default function ScheduleAppointmentModal({ open, onOpenChange, onAppoint
                     onChange={(event) => updateFormData("clinicianId", event.target.value)}
                   >
                     <option value="">Select a clinician</option>
-                    {clinicians.map((clinician) => (
+                    {clinicianOptions.map((clinician) => (
                       <option key={clinician.id} value={clinician.id}>
                         {clinician.label}
                       </option>

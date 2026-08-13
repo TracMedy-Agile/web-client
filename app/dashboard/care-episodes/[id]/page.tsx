@@ -31,7 +31,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -47,6 +46,7 @@ import {
   closeCareEpisode,
   getCareEpisodeById,
   getCareEpisodeDailyVitals,
+  getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeTimelinePage,
   getNumber,
@@ -55,6 +55,7 @@ import {
   type ApiRecord,
   type CareEpisodeDetail,
   type DailyVitalsRecord,
+  type EpisodeForecast,
   type MedicationAdherenceRecord,
 } from "@/lib/api/care-episodes";
 import {
@@ -67,8 +68,6 @@ import {
   type BiometricRange,
 } from "./_shared/utils";
 import { CloseCareEpisodeModal, type CloseCareEpisodePayload, type EpisodeOutcomeSummary } from "./components/CloseCareEpisodeModal";
-
-const CLINICIAN_ROLE = ["clinician"] as const;
 
 type TimelineEntry = {
   id: string;
@@ -321,6 +320,8 @@ export default function CareEpisodeDetailPage() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [closureTimeline, setClosureTimeline] = useState<TimelineEntry[]>([]);
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
+  const [episodeForecast, setEpisodeForecast] = useState<EpisodeForecast | null>(null);
+  const [forecastError, setForecastError] = useState("");
   const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
   const [vitalsLoading, setVitalsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -356,12 +357,12 @@ export default function CareEpisodeDetailPage() {
           const events = (timelinePage.data.length > 0 ? timelinePage.data : detail.recentTimeline) as unknown as ApiRecord[];
           const normalizedEvents = events.map(normalizeTimelineEntry);
           setClosureTimeline(normalizedEvents);
-          setTimeline(normalizedEvents.slice(0, 10));
+          setTimeline(normalizedEvents.slice(0, 5));
         } catch {
           if (!ignore) {
             const normalizedEvents = detail.recentTimeline.map(normalizeTimelineEntry);
             setClosureTimeline(normalizedEvents);
-            setTimeline(normalizedEvents.slice(0, 10));
+            setTimeline(normalizedEvents.slice(0, 5));
           }
         }
       } catch (requestError) {
@@ -415,6 +416,26 @@ export default function CareEpisodeDetailPage() {
     };
   }, [episodeId, refreshKey]);
 
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    getCareEpisodeForecast(episodeId)
+      .then((forecast) => {
+        if (!ignore) {
+          setEpisodeForecast(forecast);
+          setForecastError("");
+        }
+      })
+      .catch((requestError) => {
+        if (!ignore) {
+          setEpisodeForecast(null);
+          setForecastError(requestError instanceof Error ? requestError.message : "Forecast unavailable");
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
   const biometricData = useMemo(
     () => buildBiometricData(biometricMetric, dailyVitals),
     [biometricMetric, dailyVitals],
@@ -462,12 +483,14 @@ export default function CareEpisodeDetailPage() {
 
   const outcomes = useMemo(() => {
     const riskScore = episode?.riskScore ?? null;
-    const deteriorationRisk = riskScore === null ? null : clamp(Math.round(riskScore));
-    const recoveryProbability = deteriorationRisk === null ? null : clamp(100 - deteriorationRisk);
-    const relapseRisk = null;
+    const fallbackDeteriorationRisk = riskScore === null ? null : clamp(Math.round(riskScore));
+    const fallbackRecoveryProbability = fallbackDeteriorationRisk === null ? null : clamp(100 - fallbackDeteriorationRisk);
+    const recoveryProbability = episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? fallbackRecoveryProbability;
+    const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? fallbackDeteriorationRisk;
+    const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
 
     return { recoveryProbability, deteriorationRisk, relapseRisk };
-  }, [episode]);
+  }, [episode, episodeForecast]);
 
   const closureSummary = useMemo<EpisodeOutcomeSummary>(() => {
     if (!episode) return { checkInCompletion: null, goalAchievementPercent: null, missedTasksCount: null };
@@ -591,7 +614,7 @@ export default function CareEpisodeDetailPage() {
                 </div>
 
                 <p className="text-sm font-medium text-slate-500">
-                  Hospital ID: {patient?.hospitalId || "--"} • Age: {patient?.age ?? "--"} • {patient?.gender || "--"}
+                  Hospital ID: {patient?.hospitalId || "--"} - Age: {patient?.age ?? "--"} - {patient?.gender || "--"}
                 </p>
                 <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                   <CalendarDays className="h-3.5 w-3.5" />
@@ -626,7 +649,7 @@ export default function CareEpisodeDetailPage() {
             </div>
 
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col">
-              <RoleGate allowedRoles={CLINICIAN_ROLE}>
+
                 <Button
                   asChild
                   onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
@@ -637,7 +660,7 @@ export default function CareEpisodeDetailPage() {
                     Patients Insights
                   </Link>
                 </Button>
-              </RoleGate>
+
               <Button
                 asChild
                 variant="outline"
@@ -648,7 +671,7 @@ export default function CareEpisodeDetailPage() {
                   Recovery
                 </Link>
               </Button>
-              <RoleGate allowedRoles={CLINICIAN_ROLE}>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -689,7 +712,7 @@ export default function CareEpisodeDetailPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              </RoleGate>
+
             </div>
           </div>
 
@@ -790,7 +813,7 @@ export default function CareEpisodeDetailPage() {
                 <div className="flex items-end justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Current risk score</p>
-                    <p className="mt-2 text-4xl font-bold text-foreground">{displayedRiskScore === null ? "—" : displayedRiskScore}</p>
+                    <p className="mt-2 text-4xl font-bold text-foreground">{displayedRiskScore === null ? "Ã¢â‚¬â€" : displayedRiskScore}</p>
                   </div>
                   <span className={cn("rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>{riskBadge.label}</span>
                 </div>
@@ -834,7 +857,7 @@ export default function CareEpisodeDetailPage() {
                   <p className="mt-4 rounded-lg bg-muted/40 px-4 py-5 text-sm text-muted-foreground">No contributing factors were supplied with this assessment.</p>
                 )}
                 <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                  Review the patient’s current episode and clinical context before acting on any risk signal.
+                  Review the patientÃ¢â‚¬â„¢s current episode and clinical context before acting on any risk signal.
                 </p>
               </div>
             </div>
@@ -971,21 +994,21 @@ export default function CareEpisodeDetailPage() {
             <CardContent className="flex flex-col items-center p-6 text-center">
               <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Recovery Probability</p>
               <CircularProgress percent={outcomes.recoveryProbability} trackColor="var(--color-blue-50)" progressColor="var(--color-primary)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">Derived from current risk score</p>
+              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.recoveryForecast.confidence}% confidence` : forecastError || "Derived from current risk score"}</p>
             </CardContent>
           </Card>
           <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="flex flex-col items-center p-6 text-center">
               <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Risk of Deterioration</p>
               <CircularProgress percent={outcomes.deteriorationRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">Current episode risk score</p>
+              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.deterioration.horizonDays}-day forecast` : forecastError || "Current episode risk score"}</p>
             </CardContent>
           </Card>
           <Card className="rounded-xl border-border bg-white shadow-sm">
             <CardContent className="flex flex-col items-center p-6 text-center">
               <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Relapse Risk Forecast</p>
               <CircularProgress percent={outcomes.relapseRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">Not available in current API</p>
+              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.relapse.horizonDays}-day forecast` : forecastError || "Forecast unavailable"}</p>
             </CardContent>
           </Card>
         </div>
@@ -1056,3 +1079,4 @@ export default function CareEpisodeDetailPage() {
     </div>
   );
 }
+

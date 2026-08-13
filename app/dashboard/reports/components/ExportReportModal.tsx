@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
+  downloadServerAnalyticsExport,
   getExportDateRange,
   getReportsSnapshot,
   type ReportsSnapshot,
@@ -276,25 +277,38 @@ export default function ExportReportModal({
     setValidationError("");
 
     try {
-      const liveSnapshot = await getReportsSnapshot(getExportDateRange(timeRange));
-      downloadReport(liveSnapshot, {
-        reportType: selectedType,
-        format,
-        timeRange,
-        included: selectedOptions,
-        clinicianId,
-        episodeId,
-      });
+      const exportRange = getExportDateRange(timeRange);
+      const useServerExport = selectedType !== "closed-episode" && format !== "CSV";
+      const liveSnapshot = useServerExport ? snapshot : await getReportsSnapshot(exportRange);
+
+      if (useServerExport) {
+        await downloadServerAnalyticsExport(exportRange, {
+          format,
+          type: selectedType === "alert-response" ? "clinical" : "operational",
+        });
+      } else {
+        downloadReport(liveSnapshot ?? await getReportsSnapshot(exportRange), {
+          reportType: selectedType,
+          format,
+          timeRange,
+          included: selectedOptions,
+          clinicianId,
+          episodeId,
+        });
+      }
+
       capturePostHogEvent("reports_exported", {
         report_type: selectedType,
         format: format.toLowerCase(),
         time_range: timeRange,
-        facility_id: liveSnapshot.facility.id,
+        facility_id: liveSnapshot?.facility.id,
+        source: useServerExport ? "backend" : "frontend",
       });
       if (selectedType === "clinician-workload") {
         capturePostHogEvent("clinician_workload_exported", {
           format: format.toLowerCase(),
-          facility_id: liveSnapshot.facility.id,
+          facility_id: liveSnapshot?.facility.id,
+          source: useServerExport ? "backend" : "frontend",
         });
       }
       setGenerated(true);
@@ -481,3 +495,7 @@ export default function ExportReportModal({
     </DialogPrimitive.Root>
   );
 }
+
+
+
+

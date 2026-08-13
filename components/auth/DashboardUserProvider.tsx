@@ -10,12 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import { apiClient } from "@/lib/services/auth/api-client";
-import type { UserRole } from "@/lib/types/auth";
 
 type DashboardUser = {
   id: string;
   name: string;
-  role: UserRole;
+  role: string;
   specialty: string;
   facilityId: string;
   hospitalId: string;
@@ -23,7 +22,7 @@ type DashboardUser = {
 
 type DashboardUserContextValue = {
   user: DashboardUser | null;
-  role: UserRole | null;
+  role: string | null;
   status: "loading" | "ready" | "error";
   refetch: () => void;
 };
@@ -37,25 +36,47 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function asString(value: unknown) {
-  return typeof value === "string" ? value : "";
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function firstString(record: Record<string, unknown> | null, keys: readonly string[]) {
+  if (!record) return "";
+  for (const key of keys) {
+    const value = asString(record[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function unwrapAuthPayload(payload: unknown) {
+  const root = asRecord(payload);
+  const outer = asRecord(root?.data) ?? root;
+  return asRecord(outer?.user) ?? asRecord(outer?.staff) ?? asRecord(outer?.clinician) ?? asRecord(outer?.profile) ?? outer;
 }
 
 function parseUser(payload: unknown): DashboardUser | null {
   const root = asRecord(payload);
   const outer = asRecord(root?.data) ?? root;
-  const data = asRecord(outer?.user) ?? outer;
+  const data = unwrapAuthPayload(payload);
   if (!data) return null;
-  const role = asString(data.role);
-  if (!["patient", "clinician", "hospital_admin", "tracmedy_admin"].includes(role)) {
-    return null;
-  }
+
+  const role = firstString(data, ["role", "userRole", "accountRole"]) || firstString(outer, ["role", "userRole", "accountRole"]);
+
+  const facility = asRecord(data.facility) ?? asRecord(outer?.facility) ?? asRecord(data.hospital) ?? asRecord(outer?.hospital);
+  const facilityName = firstString(facility, ["name", "facilityName", "hospitalName"]);
+  const specificName = firstString(data, ["fullName", "displayName", "staffName", "clinicianName", "userName"]);
+  const genericName = firstString(data, ["name"]);
+  const email = firstString(data, ["email"]);
+  const emailFallback = email ? email.split("@")[0] : "";
+  const resolvedName = specificName || (genericName && genericName !== facilityName ? genericName : "") || emailFallback || "Staff member";
+
   return {
-    id: asString(data.id),
-    name: asString(data.name),
-    role: role as UserRole,
-    specialty: asString(data.specialty),
-    facilityId: asString(data.facilityId),
-    hospitalId: asString(data.hospitalId),
+    id: firstString(data, ["id", "userId", "staffId", "clinicianId"]),
+    name: resolvedName,
+    role: role || "staff",
+    specialty: firstString(data, ["specialty", "department", "ward", "title"]),
+    facilityId: firstString(data, ["facilityId"]) || firstString(facility, ["id", "facilityId"]),
+    hospitalId: firstString(data, ["hospitalId"]) || firstString(facility, ["hospitalId", "tracId"]),
   };
 }
 

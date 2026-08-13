@@ -12,7 +12,6 @@ import { LabTestsSection } from "./components/LabTestsSection";
 import { HomeCareSection } from "./components/HomeCareSection";
 import { LifestyleSection } from "./components/LifestyleSection";
 import { WarningSignsSection } from "./components/WarningSignsSection";
-import { ChangeJustification } from "./components/ChangeJustification";
 import { fieldClass, FieldLabel, SectionFrame } from "./components/SectionFrame";
 import { MonitoringScheduleSection } from "./components/MonitoringScheduleSection";
 import { SaveConfirmationModal } from "./components/SaveConfirmationModal";
@@ -38,6 +37,7 @@ export default function AdjustCarePlanPage() {
   const { form, setForm, versions, clinicians, services, patient, error, isLoading, saveMode, isDirty, save, reset } = useCarePlanForm(episodeId);
   const [modalMode, setModalMode] = useState<"patch" | "post" | null>(null);
   const endDate = useMemo(() => projectedDate(form.startDate, form.episodeDuration), [form.startDate, form.episodeDuration]);
+  const isFirstCarePlanSetup = !form.id || versions.length === 0 || (!form.createdAt && form.version <= 1);
 
   useEffect(() => {
     if (episodeId) capturePostHogEvent("care_plan_adjust_viewed", { episode_id: episodeId });
@@ -53,16 +53,6 @@ export default function AdjustCarePlanPage() {
       toast.error("Complete all required medication fields before saving."); return;
     }
     if (!form.startDate || form.episodeDuration < 1) { toast.error("Episode start date and duration are required."); return; }
-    if (form.homeCare.some((order) => order.isNew && !order.serviceId)) {
-      toast.error("Select an available home-care service before saving.");
-      return;
-    }
-    if (!form.additionalReason.trim()) {
-      toast.error("Add the required change justification before saving.");
-      document.getElementById("change-justification")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      document.getElementById("care-plan-change-justification")?.focus();
-      return;
-    }
     capturePostHogEvent("care_plan_save_opened", { episode_id: episodeId, mode });
     setModalMode(mode);
   }
@@ -118,7 +108,6 @@ export default function AdjustCarePlanPage() {
           <SectionFrame icon={<CalendarDays className="h-4 w-4" />} title="Episode Duration" subtitle="Extend or shorten the active episode">
             <div className="grid gap-4 sm:grid-cols-3"><label><FieldLabel>Total duration (days)</FieldLabel><input type="number" min={1} className={fieldClass} value={form.episodeDuration} onChange={(event) => updateForm("episodeDuration", Number(event.target.value))} /></label><label><FieldLabel>Start date</FieldLabel><input type="date" className={fieldClass} value={form.startDate} onChange={(event) => updateForm("startDate", event.target.value)} /></label><label><FieldLabel>Projected end date</FieldLabel><input type="date" className={`${fieldClass} bg-muted/40`} readOnly value={endDate} /></label></div>
           </SectionFrame>
-          <ChangeJustification details={form.additionalReason} onDetailsChange={(value) => updateForm("additionalReason", value)} />
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-4">
@@ -128,7 +117,7 @@ export default function AdjustCarePlanPage() {
         </aside>
       </div>
 
-      <SaveConfirmationModal isOpen={Boolean(modalMode)} onClose={() => setModalMode(null)} onConfirm={(reason) => save(modalMode ?? "patch", reason)} currentVersion={form.version} nextVersion={modalMode === "post" ? form.version + 1 : form.version} patientName={patient.name} createsVersion={modalMode === "post"} />
+      <SaveConfirmationModal isOpen={Boolean(modalMode)} onClose={() => setModalMode(null)} onConfirm={(reason) => save(modalMode ?? "patch", reason)} currentVersion={form.version} nextVersion={modalMode === "post" ? form.version + 1 : form.version} patientName={patient.name} createsVersion={modalMode === "post"} requiresReason={!isFirstCarePlanSetup} />
     </div>
   );
 }

@@ -11,26 +11,102 @@ const MONITORING_OPTIONS: Record<MonitoringItem["type"], string[]> = {
   Activity: ["Walking", "Exercise", "Breathing Exercise", "Physiotherapy"],
 };
 
-function newTrendRule(): MonitoringTrendRule {
+type MonitoringProfile = {
+  unit: string;
+  criticalLowPlaceholder: string;
+  criticalHighPlaceholder: string;
+  trendThresholdPlaceholder: string;
+  trendWindow: string;
+  trendConditions: string[];
+};
+
+const DEFAULT_PROFILE: MonitoringProfile = {
+  unit: "",
+  criticalLowPlaceholder: "Low value",
+  criticalHighPlaceholder: "High value",
+  trendThresholdPlaceholder: "Threshold",
+  trendWindow: "24 hours",
+  trendConditions: ["Rapid Increase", "Rapid Decrease", "Consecutive Readings", "Percentage Change"],
+};
+
+const MONITORING_PROFILES: Record<string, MonitoringProfile> = {
+  "Blood Pressure": {
+    unit: "mmHg",
+    criticalLowPlaceholder: "90/60",
+    criticalHighPlaceholder: "160/100",
+    trendThresholdPlaceholder: "10 mmHg",
+    trendWindow: "24 hours",
+    trendConditions: ["Systolic Increase", "Systolic Decrease", "Diastolic Increase", "Consecutive High Readings"],
+  },
+  "Heart Rate": {
+    unit: "bpm",
+    criticalLowPlaceholder: "50",
+    criticalHighPlaceholder: "120",
+    trendThresholdPlaceholder: "20 bpm",
+    trendWindow: "12 hours",
+    trendConditions: ["Rapid Increase", "Rapid Decrease", "Sustained Tachycardia", "Sustained Bradycardia"],
+  },
+  Temperature: {
+    unit: "Celsius",
+    criticalLowPlaceholder: "35.0",
+    criticalHighPlaceholder: "38.5",
+    trendThresholdPlaceholder: "1 Celsius",
+    trendWindow: "12 hours",
+    trendConditions: ["Fever Spike", "Temperature Drop", "Persistent Fever", "Consecutive High Readings"],
+  },
+  "Blood Sugar": {
+    unit: "mg/dL",
+    criticalLowPlaceholder: "70",
+    criticalHighPlaceholder: "180",
+    trendThresholdPlaceholder: "30 mg/dL",
+    trendWindow: "24 hours",
+    trendConditions: ["Rapid Increase", "Rapid Decrease", "Consecutive High Readings", "Consecutive Low Readings"],
+  },
+  Weight: {
+    unit: "kg",
+    criticalLowPlaceholder: "Baseline - 3",
+    criticalHighPlaceholder: "Baseline + 3",
+    trendThresholdPlaceholder: "2 kg",
+    trendWindow: "7 days",
+    trendConditions: ["Rapid Gain", "Rapid Loss", "Percentage Change", "Consecutive Change"],
+  },
+  "Oxygen Saturation": {
+    unit: "%",
+    criticalLowPlaceholder: "92",
+    criticalHighPlaceholder: "100",
+    trendThresholdPlaceholder: "3%",
+    trendWindow: "12 hours",
+    trendConditions: ["Rapid Decrease", "Consecutive Low Readings", "Persistent Desaturation", "Percentage Change"],
+  },
+};
+
+function profileFor(itemName: string) {
+  return MONITORING_PROFILES[itemName] ?? DEFAULT_PROFILE;
+}
+
+function newTrendRule(profile = DEFAULT_PROFILE): MonitoringTrendRule {
   return {
     id: crypto.randomUUID(),
-    condition: "Rapid Increase",
+    condition: profile.trendConditions[0] ?? "Rapid Increase",
     threshold: "",
-    unit: "mmHg",
-    window: "24 hours",
+    unit: profile.unit,
+    window: profile.trendWindow,
   };
 }
 
 function newMonitoringItem(): MonitoringItem {
+  const name = "Blood Pressure";
+  const profile = profileFor(name);
   return {
     id: crypto.randomUUID(),
     type: "Vital Sign",
-    name: "Blood Pressure",
+    name,
     frequency: "Twice Daily",
     priority: "High Priority",
     cadence: "",
     criticalLow: "",
     criticalHigh: "",
+    criticalUnit: profile.unit,
     severityThreshold: "Moderate",
     persistenceReports: "",
     minimumCompletion: "",
@@ -38,8 +114,18 @@ function newMonitoringItem(): MonitoringItem {
     worseningTrend: true,
     decliningPerformance: false,
     missingDataRule: "Alert after 24 hours",
-    trendRules: [],
+    trendRules: [newTrendRule(profile)],
   };
+}
+
+function retargetTrendRules(rules: MonitoringTrendRule[], profile: MonitoringProfile) {
+  if (rules.length === 0) return [newTrendRule(profile)];
+  return rules.map((rule) => ({
+    ...rule,
+    condition: profile.trendConditions.includes(rule.condition) ? rule.condition : profile.trendConditions[0] ?? rule.condition,
+    unit: profile.unit,
+    window: rule.window || profile.trendWindow,
+  }));
 }
 
 export function MonitoringScheduleSection({
@@ -65,6 +151,8 @@ export function MonitoringScheduleSection({
       <div className="space-y-4">
         {items.map((item, itemIndex) => {
           const expanded = expandedIds.includes(item.id);
+          const profile = profileFor(item.name);
+          const criticalUnit = item.criticalUnit || profile.unit;
           return (
             <div key={item.id} className="rounded-xl border border-border bg-muted/25 p-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[152px_1fr_auto]">
@@ -76,7 +164,16 @@ export function MonitoringScheduleSection({
                     value={item.type}
                     onChange={(event) => {
                       const type = event.target.value as MonitoringItem["type"];
-                      update(itemIndex, { type, name: MONITORING_OPTIONS[type][0] });
+                      const name = MONITORING_OPTIONS[type][0];
+                      const nextProfile = profileFor(name);
+                      update(itemIndex, {
+                        type,
+                        name,
+                        criticalLow: "",
+                        criticalHigh: "",
+                        criticalUnit: nextProfile.unit,
+                        trendRules: type === "Vital Sign" ? retargetTrendRules(item.trendRules, nextProfile) : [],
+                      });
                     }}
                   >
                     {Object.keys(MONITORING_OPTIONS).map((option) => <option key={option}>{option}</option>)}
@@ -84,7 +181,22 @@ export function MonitoringScheduleSection({
                 </label>
                 <label>
                   <FieldLabel>Monitoring Item</FieldLabel>
-                  <select aria-label="Monitoring item" className={fieldClass} value={item.name} onChange={(event) => update(itemIndex, { name: event.target.value })}>
+                  <select
+                    aria-label="Monitoring item"
+                    className={fieldClass}
+                    value={item.name}
+                    onChange={(event) => {
+                      const name = event.target.value;
+                      const nextProfile = profileFor(name);
+                      update(itemIndex, {
+                        name,
+                        criticalLow: "",
+                        criticalHigh: "",
+                        criticalUnit: nextProfile.unit,
+                        trendRules: item.type === "Vital Sign" ? retargetTrendRules(item.trendRules, nextProfile) : item.trendRules,
+                      });
+                    }}
+                  >
                     {!MONITORING_OPTIONS[item.type].includes(item.name) && item.name ? <option>{item.name}</option> : null}
                     {MONITORING_OPTIONS[item.type].map((option) => <option key={option}>{option}</option>)}
                   </select>
@@ -131,19 +243,22 @@ export function MonitoringScheduleSection({
                   {item.type === "Vital Sign" ? (
                     <>
                       <p className="text-[10px] font-bold text-foreground">Critical thresholds</p>
-                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label><FieldLabel>Critical Low</FieldLabel><input className={fieldClass} value={item.criticalLow} placeholder="90/60" onChange={(event) => update(itemIndex, { criticalLow: event.target.value })} /></label>
-                        <label><FieldLabel>Critical High</FieldLabel><input className={fieldClass} value={item.criticalHigh} placeholder="160/100" onChange={(event) => update(itemIndex, { criticalHigh: event.target.value })} /></label>
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_120px]">
+                        <label><FieldLabel>Critical Low</FieldLabel><input className={fieldClass} value={item.criticalLow} placeholder={profile.criticalLowPlaceholder} onChange={(event) => update(itemIndex, { criticalLow: event.target.value })} /></label>
+                        <label><FieldLabel>Critical High</FieldLabel><input className={fieldClass} value={item.criticalHigh} placeholder={profile.criticalHighPlaceholder} onChange={(event) => update(itemIndex, { criticalHigh: event.target.value })} /></label>
+                        <label><FieldLabel>Unit</FieldLabel><input aria-label="Critical threshold unit" className={fieldClass} value={criticalUnit} placeholder="Unit" onChange={(event) => update(itemIndex, { criticalUnit: event.target.value, trendRules: item.trendRules.map((rule) => ({ ...rule, unit: event.target.value })) })} /></label>
                       </div>
-                      <p className="mt-2 text-[9px] text-muted-foreground">Submitted values beyond either threshold generate a critical alert.</p>
-                      <div className="mt-5 flex items-center justify-between"><p className="text-[10px] font-bold text-foreground">Trend monitoring rules</p><button type="button" onClick={() => update(itemIndex, { trendRules: [...item.trendRules, newTrendRule()] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary"><Plus className="h-3.5 w-3.5" />Add rule</button></div>
+                      <p className="mt-2 text-[9px] text-muted-foreground">Submitted {item.name.toLowerCase()} values beyond either threshold generate a critical alert.</p>
+                      <div className="mt-5 flex items-center justify-between"><p className="text-[10px] font-bold text-foreground">Trend monitoring rules</p><button type="button" onClick={() => update(itemIndex, { trendRules: [...item.trendRules, newTrendRule({ ...profile, unit: criticalUnit })] })} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary"><Plus className="h-3.5 w-3.5" />Add rule</button></div>
                       <div className="mt-2 space-y-2">
                         {item.trendRules.map((rule, ruleIndex) => (
                           <div key={rule.id} className="grid grid-cols-2 gap-2 rounded-lg bg-muted/60 p-2 sm:grid-cols-[1.25fr_.7fr_.7fr_.7fr_auto]">
-                            <select aria-label="Trend condition" className={fieldClass} value={rule.condition} onChange={(event) => updateRule(itemIndex, ruleIndex, { condition: event.target.value })}><option>Rapid Increase</option><option>Rapid Decrease</option><option>Consecutive Readings</option><option>Percentage Change</option></select>
-                            <input aria-label="Trend threshold" className={fieldClass} value={rule.threshold} placeholder="Threshold" onChange={(event) => updateRule(itemIndex, ruleIndex, { threshold: event.target.value })} />
-                            <input aria-label="Trend unit" className={fieldClass} value={rule.unit} onChange={(event) => updateRule(itemIndex, ruleIndex, { unit: event.target.value })} />
-                            <input aria-label="Trend window" className={fieldClass} value={rule.window} onChange={(event) => updateRule(itemIndex, ruleIndex, { window: event.target.value })} />
+                            <select aria-label="Trend condition" className={fieldClass} value={rule.condition} onChange={(event) => updateRule(itemIndex, ruleIndex, { condition: event.target.value })}>
+                              {profile.trendConditions.map((condition) => <option key={condition}>{condition}</option>)}
+                            </select>
+                            <input aria-label="Trend threshold" className={fieldClass} value={rule.threshold} placeholder={profile.trendThresholdPlaceholder} onChange={(event) => updateRule(itemIndex, ruleIndex, { threshold: event.target.value })} />
+                            <input aria-label="Trend unit" className={fieldClass} value={rule.unit || criticalUnit} placeholder={criticalUnit || "Unit"} onChange={(event) => updateRule(itemIndex, ruleIndex, { unit: event.target.value })} />
+                            <input aria-label="Trend window" className={fieldClass} value={rule.window} placeholder={profile.trendWindow} onChange={(event) => updateRule(itemIndex, ruleIndex, { window: event.target.value })} />
                             <button type="button" aria-label="Delete trend rule" onClick={() => update(itemIndex, { trendRules: item.trendRules.filter((current) => current.id !== rule.id) })} className="flex h-9 w-9 items-center justify-center justify-self-end text-destructive"><Trash2 className="h-4 w-4" /></button>
                           </div>
                         ))}
@@ -152,18 +267,18 @@ export function MonitoringScheduleSection({
                   ) : item.type === "Symptom" ? (
                     <>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label><FieldLabel>Severity Threshold</FieldLabel><select className={fieldClass} value={item.severityThreshold} onChange={(event) => update(itemIndex, { severityThreshold: event.target.value })}><option>Mild</option><option>Moderate</option><option>Severe</option></select></label>
-                        <label><FieldLabel>Persistence — Consecutive Reports</FieldLabel><input className={fieldClass} value={item.persistenceReports} placeholder="e.g. 3" onChange={(event) => update(itemIndex, { persistenceReports: event.target.value })} /></label>
+                        <label><FieldLabel>{item.name} Severity Threshold</FieldLabel><select className={fieldClass} value={item.severityThreshold} onChange={(event) => update(itemIndex, { severityThreshold: event.target.value })}><option>Mild</option><option>Moderate</option><option>Severe</option></select></label>
+                        <label><FieldLabel>Persistence - Consecutive Reports</FieldLabel><input className={fieldClass} value={item.persistenceReports} placeholder="e.g. 3" onChange={(event) => update(itemIndex, { persistenceReports: event.target.value })} /></label>
                       </div>
-                      <label className="mt-3 flex items-start gap-2 rounded-lg border border-border p-3 text-[10px] text-muted-foreground"><input type="checkbox" className="mt-0.5 accent-primary" checked={item.worseningTrend} onChange={(event) => update(itemIndex, { worseningTrend: event.target.checked })} /><span><strong className="text-foreground">Worsening trend detection</strong> — alert when severity increases across submissions.</span></label>
+                      <label className="mt-3 flex items-start gap-2 rounded-lg border border-border p-3 text-[10px] text-muted-foreground"><input type="checkbox" className="mt-0.5 accent-primary" checked={item.worseningTrend} onChange={(event) => update(itemIndex, { worseningTrend: event.target.checked })} /><span><strong className="text-foreground">{item.name} worsening trend detection</strong> - alert when severity increases across submissions.</span></label>
                     </>
                   ) : (
                     <>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label><FieldLabel>Minimum Completion</FieldLabel><input className={fieldClass} value={item.minimumCompletion} placeholder="e.g. 80% of target" onChange={(event) => update(itemIndex, { minimumCompletion: event.target.value })} /></label>
-                        <label><FieldLabel>Missed Activity Rule (# Sessions)</FieldLabel><input className={fieldClass} value={item.missedSessions} placeholder="e.g. 2" onChange={(event) => update(itemIndex, { missedSessions: event.target.value })} /></label>
+                        <label><FieldLabel>{item.name} Minimum Completion</FieldLabel><input className={fieldClass} value={item.minimumCompletion} placeholder="e.g. 80% of target" onChange={(event) => update(itemIndex, { minimumCompletion: event.target.value })} /></label>
+                        <label><FieldLabel>Missed {item.name} Rule (# Sessions)</FieldLabel><input className={fieldClass} value={item.missedSessions} placeholder="e.g. 2" onChange={(event) => update(itemIndex, { missedSessions: event.target.value })} /></label>
                       </div>
-                      <label className="mt-3 flex items-start gap-2 rounded-lg border border-border p-3 text-[10px] text-muted-foreground"><input type="checkbox" className="mt-0.5 accent-primary" checked={item.decliningPerformance} onChange={(event) => update(itemIndex, { decliningPerformance: event.target.checked })} /><span><strong className="text-foreground">Declining performance detection</strong> — alert when activity completion trend declines beyond threshold.</span></label>
+                      <label className="mt-3 flex items-start gap-2 rounded-lg border border-border p-3 text-[10px] text-muted-foreground"><input type="checkbox" className="mt-0.5 accent-primary" checked={item.decliningPerformance} onChange={(event) => update(itemIndex, { decliningPerformance: event.target.checked })} /><span><strong className="text-foreground">{item.name} declining performance detection</strong> - alert when activity completion trend declines beyond threshold.</span></label>
                     </>
                   )}
 

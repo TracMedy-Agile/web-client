@@ -32,14 +32,11 @@ import {
   markNoShow,
 } from "@/lib/api/appointments";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { cn } from "@/lib/utils";
 import CancelAppointmentModal from "../components/CancelAppointmentModal";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
 import { AppointmentMessageModal } from "../components/AppointmentMessageModal";
 
-const STAFF_ROLES = ["clinician", "hospital_admin"] as const;
-const CLINICIAN_ROLE = ["clinician"] as const;
 type ApiRecord = Record<string, unknown>;
 
 type ClinicianOption = {
@@ -176,7 +173,6 @@ function normalizeClinician(record: ApiRecord): ClinicianOption {
 function isClinicianUnavailableError(error: unknown) {
   return error instanceof Error && error.name === "CLINICIAN_UNAVAILABLE";
 }
-
 
 function getInitials(name: string) {
   return name
@@ -447,7 +443,6 @@ export default function AppointmentDetailsPage() {
     };
   }, [appointment?.clinicianId]);
 
-
   const historySteps = useMemo(() => appointment?.history ?? [], [appointment]);
 
   const runAction = async (label: string, action: () => Promise<unknown>) => {
@@ -463,7 +458,6 @@ export default function AppointmentDetailsPage() {
       setIsActionsOpen(false);
     }
   };
-
 
   const loadClinicians = async () => {
     setIsDoctorSelectorOpen(true);
@@ -726,15 +720,15 @@ export default function AppointmentDetailsPage() {
                           {appointment.clinicianId ? resolvedDoctorName ?? "Loading..." : appointment.service.assignedDoctor}
                         </span>
                         {!appointment.clinicianId ? (
-                          <RoleGate allowedRoles={STAFF_ROLES}>
+
                             <button type="button" onClick={loadClinicians} disabled={isLoadingClinicians || isAssigningDoctor} className="shrink-0 text-sm font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
                               {isLoadingClinicians ? "Loading..." : "Assign"}
                             </button>
-                          </RoleGate>
+
                         ) : null}
                       </div>
                       {isDoctorSelectorOpen && !appointment.clinicianId ? (
-                        <RoleGate allowedRoles={STAFF_ROLES}><div className="absolute left-0 right-0 top-[52px] z-20 rounded-xl border border-border bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.16)]">
+                        <div className="absolute left-0 right-0 top-[52px] z-20 rounded-xl border border-border bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.16)]">
                           <label className="sr-only" htmlFor="clinician-select">Select clinician</label>
                           <div className="relative">
                             <select
@@ -753,7 +747,7 @@ export default function AppointmentDetailsPage() {
                             </select>
                             <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
                           </div>
-                        </div></RoleGate>
+                        </div>
                       ) : null}
                     </div>
                     {assignmentError ? <p className="mt-4 flex items-center gap-2 text-sm font-medium text-red-500"><AlertCircle className="h-4 w-4" />{assignmentError}</p> : null}
@@ -803,9 +797,9 @@ export default function AppointmentDetailsPage() {
                   <p className="mt-5 text-xs font-bold uppercase text-[#344054]">{appointment.communication.timestamp}</p>
                 </div>
                 <div className="mt-6 space-y-5">
-                  <RoleGate allowedRoles={CLINICIAN_ROLE}>
+
                     <button type="button" onClick={() => setMessageMode("message")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
-                  </RoleGate>
+
                   <button type="button" onClick={() => setMessageMode("update")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
                 </div>
               </Card>
@@ -855,13 +849,3 @@ export default function AppointmentDetailsPage() {
     </>
   );
 }
-
-
-
-
-
-
-
-
-
-

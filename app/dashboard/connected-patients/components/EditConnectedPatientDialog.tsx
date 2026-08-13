@@ -11,6 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   PatientConnection,
   PatientProfileDetail,
@@ -27,13 +34,24 @@ type Props = {
 
 const fieldClass = "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15";
 
+const GENDER_OPTIONS = [
+  { label: "Male", value: "male" },
+  { label: "Female", value: "female" },
+  { label: "Other", value: "other" },
+  { label: "Prefer not to say", value: "prefer_not_to_say" },
+] as const;
+
+function normalizeGender(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  return GENDER_OPTIONS.some((option) => option.value === normalized) ? normalized : "";
+}
+
 export function EditConnectedPatientDialog({ open, patient, connection, onOpenChange, onSave }: Props) {
   const [values, setValues] = useState<UpdateConnectedPatientInput>(() => ({
     email: patient.email,
     phone: patient.phone,
     dateOfBirth: patient.dateOfBirth,
-    gender: patient.gender,
-    bloodGroup: patient.bloodGroup,
+    gender: normalizeGender(patient.gender),
     externalPatientId: connection.externalPatientId,
   }));
   const [isSaving, setIsSaving] = useState(false);
@@ -70,8 +88,19 @@ export function EditConnectedPatientDialog({ open, patient, connection, onOpenCh
             <label className="space-y-2 text-sm font-semibold">Date of birth<input type="date" className={fieldClass} value={(values.dateOfBirth ?? "").slice(0, 10)} onChange={(e) => setField("dateOfBirth", e.target.value)} /></label>
             <label className="space-y-2 text-sm font-semibold">Phone<input className={fieldClass} value={values.phone ?? ""} onChange={(e) => setField("phone", e.target.value)} /></label>
             <label className="space-y-2 text-sm font-semibold">Email<input type="email" className={fieldClass} value={values.email ?? ""} onChange={(e) => setField("email", e.target.value)} /></label>
-            <label className="space-y-2 text-sm font-semibold">Gender<input className={fieldClass} value={values.gender ?? ""} onChange={(e) => setField("gender", e.target.value)} /></label>
-            <label className="space-y-2 text-sm font-semibold">Blood group<input className={fieldClass} value={values.bloodGroup ?? ""} onChange={(e) => setField("bloodGroup", e.target.value)} /></label>
+            <label className="space-y-2 text-sm font-semibold">
+              Gender
+              <Select value={values.gender ?? ""} onValueChange={(value) => setField("gender", value)}>
+                <SelectTrigger className="h-11 rounded-lg border-border bg-background" aria-label="Gender">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  {GENDER_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
           </div>
           {error ? <p role="alert" className="text-sm font-semibold text-destructive">{error}</p> : null}
           <DialogFooter>

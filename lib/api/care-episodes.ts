@@ -8,6 +8,7 @@ type DismissPendingEpisodePayload = components["schemas"]["DismissPendingEpisode
 type CloseEpisodePayload = components["schemas"]["CloseEpisodeDto"];
 export type AddCareTeamMemberInput = components["schemas"]["AddCareTeamMemberDto"];
 export type EpisodeMediaItem = components["schemas"]["MediaItemDto"];
+export type EpisodeForecast = components["schemas"]["EpisodeForecastDto"];
 export type CheckInHistoryRecord = Omit<
   components["schemas"]["CheckInHistoryDto"],
   "symptoms" | "vitals" | "symptomTrend" | "vitalsTrend"
@@ -663,6 +664,13 @@ export async function getCareEpisodeTaskCompletion(
   };
 }
 
+export async function getCareEpisodeForecast(episodeId: string): Promise<EpisodeForecast> {
+  const payload = await request(`/forecasts/episodes/${encodeURIComponent(episodeId)}`);
+  const forecast = unwrapData(payload);
+  if (!asRecord(forecast)) throw new Error("The episode forecast response was invalid.");
+  return forecast as EpisodeForecast;
+}
+
 export async function completeCareEpisodeTask(episodeId: string, taskId: string) {
   return request(`/care-episodes/${encodeURIComponent(episodeId)}/tasks/${encodeURIComponent(taskId)}/complete`, {
     method: "POST",
@@ -886,3 +894,5 @@ export async function getCareEpisodeSync(id: string, since: string): Promise<Car
     riskScore: getNumber(body, ["riskScore"]),
   };
 }
+
+

@@ -6,6 +6,12 @@ import {
 
 type ApiAppointment = components["schemas"]["AppointmentResponseDto"];
 type ApiCareEpisode = components["schemas"]["CareEpisodeSummaryDto"];
+type AnalyticsOverview = components["schemas"]["AnalyticsOverviewDto"];
+type AnalyticsTrend = components["schemas"]["AnalyticsTrendDto"];
+type BackendClinicianWorkloadRow = components["schemas"]["ClinicianWorkloadRowDto"];
+export type RiskDistribution = components["schemas"]["RiskDistributionDto"];
+export type WardPerformanceRow = components["schemas"]["WardPerformanceRowDto"];
+export type ReadmissionTrendPoint = components["schemas"]["TrendPointDto"];
 type ApiRecord = Record<string, unknown>;
 
 export type WorkloadStatus = "Low" | "Moderate" | "High";
@@ -87,14 +93,23 @@ export type ReportsSnapshot = {
   appointmentCount: number;
   previousAppointmentCount: number;
   activeClinicianCount: number;
+  readmissionRatePercent: number | null;
+  readmissionRateChangePercent: number | null;
+  activeEpisodeCount: number;
+  openAlertCount: number;
+  averageRecoveryDays: number | null;
   alertPerformance: AlertPerformancePoint[];
   consultationTrend: ConsultationTrendPoint[];
   clinicians: ClinicianWorkload[];
+  readmissionTrend: ReadmissionTrendPoint[];
+  riskDistribution: RiskDistribution | null;
+  wardPerformance: WardPerformanceRow[];
   appointments: ReportAppointment[];
   alerts: ReportAlert[];
   careEpisodes: ReportCareEpisode[];
   hasClinicalData: boolean;
   warnings: string[];
+  analyticsBacked: boolean;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -177,9 +192,10 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-async function request(path: string, query: URLSearchParams): Promise<unknown> {
+async function request(path: string, query?: URLSearchParams): Promise<unknown> {
   const accessToken = await getAccessToken();
-  const response = await fetch(`${BASE}${path}?${query.toString()}`, {
+  const suffix = query?.toString();
+  const response = await fetch(`${BASE}${path}${suffix ? `?${suffix}` : ""}`, {
     cache: "no-store",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
@@ -259,6 +275,144 @@ function normalizeClinician(record: ApiRecord) {
   };
 }
 
+function analyticsRangeQuery(range: ReportsDateRange, granularity: "weekly" | "monthly" = "weekly") {
+  return new URLSearchParams({ from: range.dateFrom, to: range.dateTo, granularity });
+}
+
+function unwrapRecord(payload: unknown): ApiRecord | null {
+  const root = asRecord(payload);
+  const data = asRecord(root?.data);
+  return data ?? root;
+}
+
+function unwrapRecordArray(payload: unknown, keys: string[] = ["data"]): ApiRecord[] {
+  const root = asRecord(payload);
+  const dataRecord = asRecord(root?.data);
+  const candidates: unknown[] = [payload, root?.data, dataRecord?.data, dataRecord?.items, root?.items];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.map(asRecord).filter((item): item is ApiRecord => Boolean(item));
+  }
+  const source = dataRecord ?? root;
+  for (const key of keys) {
+    const value = source?.[key];
+    if (Array.isArray(value)) return value.map(asRecord).filter((item): item is ApiRecord => Boolean(item));
+  }
+  return [];
+}
+
+async function getAnalyticsOverview(range: ReportsDateRange): Promise<AnalyticsOverview | null> {
+  const payload = await request("/analytics/overview", analyticsRangeQuery(range));
+  const record = unwrapRecord(payload);
+  return asRecord(record?.kpis) && asRecord(record?.extras) ? record as AnalyticsOverview : null;
+}
+
+async function getReadmissionTrend(range: ReportsDateRange): Promise<ReadmissionTrendPoint[]> {
+  const payload = await request("/analytics/readmission-trend", analyticsRangeQuery(range));
+  const record = unwrapRecord(payload) as (ApiRecord & Partial<AnalyticsTrend>) | null;
+  const points = Array.isArray(record?.points) ? record.points : [];
+  return points.map(asRecord).filter((item): item is ApiRecord => Boolean(item)).map((item) => item as ReadmissionTrendPoint);
+}
+
+async function getRiskDistribution(): Promise<RiskDistribution | null> {
+  const payload = await request("/analytics/risk-distribution");
+  const record = unwrapRecord(payload);
+  return typeof record?.activeEpisodes === "number" ? record as RiskDistribution : null;
+}
+
+async function getWardPerformance(): Promise<WardPerformanceRow[]> {
+  const rows = unwrapRecordArray(await request("/analytics/ward-performance"));
+  return rows.map((row) => row as WardPerformanceRow);
+}
+
+function normalizeBackendWorkloadRow(row: BackendClinicianWorkloadRow): ClinicianWorkload {
+  const responseMinutes = typeof row.avgAlertResponseMinutes === "number" ? Math.round(row.avgAlertResponseMinutes) : null;
+  const episodes = row.activeEpisodeCount ?? 0;
+  const alerts = row.openAlertCount ?? 0;
+  const capacityUtilization = Math.min(100, Math.max(0, Math.round(episodes * 8 + alerts * 5)));
+  const status = getWorkloadStatus("available", capacityUtilization, episodes, alerts);
+  return {
+    id: row.clinicianId,
+    name: row.clinicianName,
+    initials: getInitials(row.clinicianName),
+    specialty: row.specialty || row.ward || "Unassigned",
+    episodes,
+    alerts,
+    status,
+    responseTime: formatResponseTime(responseMinutes),
+    responseMinutes,
+    capacityUtilization,
+  };
+}
+
+async function getBackendClinicianWorkload(): Promise<ClinicianWorkload[]> {
+  const payload = await request("/analytics/clinician-workload");
+  return unwrapRecordArray(payload)
+    .map((row) => row as BackendClinicianWorkloadRow)
+    .filter((row) => Boolean(row.clinicianId))
+    .map(normalizeBackendWorkloadRow);
+}
+
+function metricValue(metric: unknown): number | null {
+  const record = asRecord(metric);
+  const value = record?.value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function metricChange(metric: unknown): number | null {
+  const record = asRecord(metric);
+  const value = record?.changePercent;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+async function settleValue<T>(label: string, promise: Promise<T>, warnings: string[], fallback: T) {
+  try {
+    return await promise;
+  } catch (error) {
+    warnings.push(`${label}: ${error instanceof Error ? error.message : "Unavailable"}`);
+    return fallback;
+  }
+}
+
+export type ServerAnalyticsExportFormat = "PDF" | "Excel";
+export type ServerAnalyticsExportType = "clinical" | "operational";
+
+function filenameFromContentDisposition(header: string | null, fallback: string) {
+  const match = header?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+export async function downloadServerAnalyticsExport(
+  range: ReportsDateRange,
+  options: { format: ServerAnalyticsExportFormat; type: ServerAnalyticsExportType },
+): Promise<void> {
+  const accessToken = await getAccessToken();
+  const format = options.format === "Excel" ? "xlsx" : "pdf";
+  const query = new URLSearchParams({
+    from: range.dateFrom,
+    to: range.dateTo,
+    format,
+    type: options.type,
+  });
+  const response = await fetch(`${BASE}/analytics/export?${query.toString()}`, {
+    cache: "no-store",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw new Error(getString(asRecord(payload), ["message"], "Unable to download server-generated report."));
+  }
+  const blob = await response.blob();
+  const fallbackName = `tracmedy-${options.type}-analytics-${range.dateTo}.${format}`;
+  const filename = filenameFromContentDisposition(response.headers.get("content-disposition"), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 function normalizeAlert(record: ApiRecord): ReportAlert {
   const acknowledgedBy = asRecord(record.acknowledgedBy);
   return {
@@ -440,6 +594,11 @@ export async function getReportsSnapshot(range: ReportsDateRange): Promise<Repor
   const previousRange = getPreviousReportsDateRange(range);
   const warnings: string[] = [];
   const [
+    analyticsOverview,
+    readmissionTrend,
+    riskDistribution,
+    wardPerformance,
+    backendWorkload,
     clinicianRecords,
     appointmentRecords,
     previousAppointmentRecords,
@@ -448,6 +607,11 @@ export async function getReportsSnapshot(range: ReportsDateRange): Promise<Repor
     openAlertRecords,
     careEpisodeRecords,
   ] = await Promise.all([
+    settleValue("Analytics overview", getAnalyticsOverview(range), warnings, null),
+    settleValue("Readmission trend", getReadmissionTrend(range), warnings, []),
+    settleValue("Risk distribution", getRiskDistribution(), warnings, null),
+    settleValue("Ward performance", getWardPerformance(), warnings, []),
+    settleValue("Clinician workload analytics", getBackendClinicianWorkload(), warnings, []),
     settleRecords("Clinicians", fetchAll("/clinicians", {}), warnings),
     settleRecords("Appointments", fetchAll("/appointments", {
       facilityId: facility.id,
@@ -501,7 +665,7 @@ export async function getReportsSnapshot(range: ReportsDateRange): Promise<Repor
     .map(alertResponseMinutes)
     .filter((value): value is number => value !== null);
 
-  const workload = clinicians.map((clinician): ClinicianWorkload => {
+  const fallbackWorkload = clinicians.map((clinician): ClinicianWorkload => {
     const clinicianEpisodes = careEpisodes.filter(
       (episode) => episode.status === "active" && episode.clinicianId === clinician.id,
     );
@@ -536,27 +700,61 @@ export async function getReportsSnapshot(range: ReportsDateRange): Promise<Repor
     };
   });
 
+  const overviewKpis = analyticsOverview?.kpis;
+  const overviewExtras = analyticsOverview?.extras;
+  const averageAlertResponseMinutes = metricValue(overviewKpis?.avgAlertResponseTimeMinutes) ?? average(currentResponseMinutes);
+  const alertResponseChangePercent = metricChange(overviewKpis?.avgAlertResponseTimeMinutes);
+  const previousAverageAlertResponseMinutes = alertResponseChangePercent !== null && averageAlertResponseMinutes !== null
+    ? Math.round(averageAlertResponseMinutes / (1 + alertResponseChangePercent / 100))
+    : average(previousResponseMinutes);
+  const activeClinicianCount = metricValue(overviewKpis?.activeClinicians) ?? clinicians.filter(
+    (clinician) => !["off_duty", "unavailable"].includes(clinician.backendStatus),
+  ).length;
+  const readmissionRatePercent = metricValue(overviewKpis?.readmissionRatePercent);
+  const readmissionRateChangePercent = metricChange(overviewKpis?.readmissionRatePercent);
+  const activeEpisodeCount = typeof overviewExtras?.activeEpisodes === "number"
+    ? overviewExtras.activeEpisodes
+    : careEpisodes.filter((episode) => episode.status === "active").length;
+  const openAlertCount = typeof overviewExtras?.openAlerts === "number" ? overviewExtras.openAlerts : openAlerts.length;
+  const averageRecoveryDays = typeof overviewExtras?.avgRecoveryDays === "number" ? overviewExtras.avgRecoveryDays : null;
+  const workload = backendWorkload.length > 0 ? backendWorkload : fallbackWorkload;
+
   return {
     facility,
     range,
-    averageAlertResponseMinutes: average(currentResponseMinutes),
-    previousAverageAlertResponseMinutes: average(previousResponseMinutes),
+    averageAlertResponseMinutes,
+    previousAverageAlertResponseMinutes,
     appointmentCount: appointments.length,
     previousAppointmentCount: previousAppointments.length,
-    activeClinicianCount: clinicians.filter(
-      (clinician) => !["off_duty", "unavailable"].includes(clinician.backendStatus),
-    ).length,
+    activeClinicianCount,
+    readmissionRatePercent,
+    readmissionRateChangePercent,
+    activeEpisodeCount,
+    openAlertCount,
+    averageRecoveryDays,
     alertPerformance: buildAlertPerformance(alerts, range),
     consultationTrend: buildConsultationTrend(appointments, range),
     clinicians: workload,
+    readmissionTrend,
+    riskDistribution,
+    wardPerformance,
     appointments,
     alerts,
     careEpisodes,
     hasClinicalData:
       appointments.length > 0 ||
       alerts.length > 0 ||
-      openAlerts.length > 0 ||
-      careEpisodes.length > 0,
+      openAlertCount > 0 ||
+      activeEpisodeCount > 0 ||
+      careEpisodes.length > 0 ||
+      readmissionTrend.length > 0 ||
+      wardPerformance.length > 0 ||
+      Boolean(riskDistribution && riskDistribution.activeEpisodes > 0),
     warnings,
+    analyticsBacked: Boolean(analyticsOverview || backendWorkload.length || riskDistribution || readmissionTrend.length || wardPerformance.length),
   };
 }
+
+
+
+

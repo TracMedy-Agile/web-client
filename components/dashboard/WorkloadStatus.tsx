@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Activity, ArrowRight, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ClinicianWorkload {
@@ -20,73 +21,85 @@ const LOAD_LABEL: Record<ClinicianWorkload["load"], string> = {
   low: "Low load",
 };
 
-const LOAD_COLOR: Record<ClinicianWorkload["load"], string> = {
-  high: "bg-red-500 text-red-600",
-  moderate: "bg-amber-500 text-amber-600",
-  low: "bg-emerald-500 text-emerald-600",
+const LOAD_COLOR: Record<ClinicianWorkload["load"], { dot: string; text: string; bar: string; bg: string }> = {
+  high: { dot: "bg-red-500", text: "text-red-600", bar: "bg-red-500", bg: "bg-red-50" },
+  moderate: { dot: "bg-amber-500", text: "text-amber-700", bar: "bg-amber-500", bg: "bg-amber-50" },
+  low: { dot: "bg-emerald-500", text: "text-emerald-600", bar: "bg-emerald-500", bg: "bg-emerald-50" },
 };
+
+function workloadPercent(clinician: ClinicianWorkload) {
+  return Math.min(100, Math.max(8, clinician.episodes * 7 + clinician.alerts * 6));
+}
 
 export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps) {
   const hasData = clinicians.length > 0;
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5 lg:p-6">
-      <div className="flex items-center justify-between">
+    <section className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5 lg:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Clinician Workload Status</h2>
-          <p className="text-sm text-muted-foreground">Real-time resource utilization and capacity tracking</p>
+          <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+            <Activity className="h-5 w-5 text-primary" />
+            Clinician Workload Status
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">Resource utilization and alert load across care teams</p>
         </div>
-        {hasData && (
-          <Link href="/dashboard/team" className="text-sm font-medium text-primary hover:underline">
-            View all &rarr;
+        {hasData ? (
+          <Link href="/dashboard/team" className="inline-flex w-fit items-center gap-1 text-sm font-bold text-primary hover:underline">
+            View team <ArrowRight className="h-4 w-4" />
           </Link>
-        )}
+        ) : null}
       </div>
 
       {hasData ? (
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {clinicians.map((clinician) => {
-            const [dotColor, textColor] = LOAD_COLOR[clinician.load].split(" ");
+            const colors = LOAD_COLOR[clinician.load];
+            const percent = workloadPercent(clinician);
             return (
-              <div key={clinician.id} className="rounded-xl border border-border p-4">
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-foreground">{clinician.name}</p>
-                  <span className={cn("flex items-center gap-1.5 text-xs font-medium", textColor)}>
-                    <span className={cn("h-2 w-2 rounded-full", dotColor)} />
+              <article key={clinician.id} className="rounded-2xl border border-border/80 bg-background/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-foreground">{clinician.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Average response: {clinician.avgMinutes} min</p>
+                  </div>
+                  <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold", colors.bg, colors.text)}>
+                    <span className={cn("h-2 w-2 rounded-full", colors.dot)} />
                     {LOAD_LABEL[clinician.load]}
                   </span>
                 </div>
+                <div className="mt-5 h-2 rounded-full bg-muted">
+                  <div className={cn("h-full rounded-full", colors.bar)} style={{ width: `${percent}%` }} />
+                </div>
                 <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <p className="text-xs uppercase text-muted-foreground">Episodes</p>
-                    <p className="mt-1 font-semibold text-foreground">{clinician.episodes}</p>
+                  <div className="rounded-xl bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Episodes</p>
+                    <p className="mt-1 text-lg font-extrabold text-foreground">{clinician.episodes}</p>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase text-muted-foreground">Alerts</p>
-                    <p className="mt-1 font-semibold text-foreground">{clinician.alerts}</p>
+                  <div className="rounded-xl bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Alerts</p>
+                    <p className="mt-1 text-lg font-extrabold text-foreground">{clinician.alerts}</p>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase text-muted-foreground">Avg</p>
-                    <p className="mt-1 font-semibold text-foreground">{clinician.avgMinutes} min</p>
+                  <div className="rounded-xl bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Load</p>
+                    <p className="mt-1 text-lg font-extrabold text-foreground">{percent}%</p>
                   </div>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
       ) : (
-        <div className="mt-10 flex flex-col items-center gap-4 py-6">
-          <div className="flex items-center gap-10">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-20 w-20 rounded-full border border-dashed border-border" />
-            ))}
+        <div className="mt-8 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary/30 text-primary">
+            <UsersRound className="h-6 w-6" />
           </div>
-          <p className="text-sm text-muted-foreground">Awaiting clinical input...</p>
+          <p className="font-bold text-foreground">Awaiting clinical input</p>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+            Workload distribution appears as care episodes, alerts, and team activity are recorded.
+          </p>
         </div>
       )}
-    </div>
+    </section>
   );
 }
-
-
-

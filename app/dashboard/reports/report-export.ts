@@ -205,6 +205,47 @@ function appointmentRows(snapshot: ReportsSnapshot, included: string[]) {
   return rows;
 }
 
+function facilityAnalyticsRows(snapshot: ReportsSnapshot) {
+  const rows: string[][] = [];
+
+  if (snapshot.riskDistribution) {
+    rows.push(
+      [],
+      ["Risk Distribution", "Episodes"],
+      ["Low", String(snapshot.riskDistribution.low)],
+      ["Moderate", String(snapshot.riskDistribution.moderate)],
+      ["High", String(snapshot.riskDistribution.high)],
+      ["Critical", String(snapshot.riskDistribution.critical)],
+    );
+  }
+
+  if (snapshot.readmissionTrend.length > 0) {
+    rows.push([], ["Readmission / Recovery Trend", "Readmission Rate", "Avg Recovery Days"]);
+    snapshot.readmissionTrend.forEach((point) => {
+      rows.push([
+        point.label,
+        point.readmissionRate === null ? "" : `${point.readmissionRate}%`,
+        point.avgRecoveryDays === null ? "" : String(point.avgRecoveryDays),
+      ]);
+    });
+  }
+
+  if (snapshot.wardPerformance.length > 0) {
+    rows.push([], ["Ward", "Active Episodes", "Open Alerts", "Avg Alert Response", "Avg Recovery Days", "Recovered"]);
+    snapshot.wardPerformance.forEach((ward) => {
+      rows.push([
+        ward.ward,
+        String(ward.activeEpisodes),
+        String(ward.openAlerts),
+        ward.avgAlertResponseMinutes == null ? "" : String(ward.avgAlertResponseMinutes),
+        ward.avgRecoveryDays == null ? "" : String(ward.avgRecoveryDays),
+        String(ward.recoveredCount),
+      ]);
+    });
+  }
+
+  return rows;
+}
 function clinicianRows(clinicians: ClinicianWorkload[], included: string[]) {
   const header = ["Clinician", "Specialty"];
   if (included.includes("Active episodes")) header.push("Active episodes");
@@ -240,15 +281,15 @@ function buildRows(snapshot: ReportsSnapshot, options: ExportOptions) {
     ));
   }
   if (options.reportType === "alert-response") {
-    return rows.concat(alertRows(snapshot, options.included));
+    return rows.concat(alertRows(snapshot, options.included), facilityAnalyticsRows(snapshot));
   }
   if (options.reportType === "appointment-activity") {
-    return rows.concat(appointmentRows(snapshot, options.included));
+    return rows.concat(appointmentRows(snapshot, options.included), facilityAnalyticsRows(snapshot));
   }
   const clinicians = options.clinicianId === "all"
     ? snapshot.clinicians
     : snapshot.clinicians.filter((clinician) => clinician.id === options.clinicianId);
-  return rows.concat(clinicianRows(clinicians, options.included));
+  return rows.concat(clinicianRows(clinicians, options.included), facilityAnalyticsRows(snapshot));
 }
 
 function slugify(value: string) {
@@ -289,3 +330,4 @@ export function downloadReport(snapshot: ReportsSnapshot, options: ExportOptions
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+

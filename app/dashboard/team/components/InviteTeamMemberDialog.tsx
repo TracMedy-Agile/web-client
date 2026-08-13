@@ -34,14 +34,26 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { inviteTeamMember, type InviteTeamMemberInput, type InviteTeamMemberResult } from "@/lib/api/clinicians";
 import { cn } from "@/lib/utils";
 
 type AccessLevel = "standard" | "custom" | "full";
+type TeamRole = InviteTeamMemberInput["role"];
+type TeamPermission = NonNullable<InviteTeamMemberInput["permissions"]>[number];
 
 type InviteTeamMemberDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onInvited?: (result: InviteTeamMemberResult) => void | Promise<void>;
 };
+
+const DEFAULT_PERMISSIONS = [
+  "View connected patients",
+  "Manage care episodes",
+  "Acknowledge alerts",
+  "Send messages",
+  "View appointments",
+];
 
 const ACCESS_LEVELS: Array<{
   value: AccessLevel;
@@ -88,9 +100,37 @@ const PERMISSION_GROUPS = [
   },
 ] as const;
 
+const PERMISSION_MAP: Record<string, TeamPermission> = {
+  "View connected patients": "care_episode",
+  "Manage care episodes": "care_episode",
+  "Acknowledge alerts": "care_episode",
+  "Send messages": "care_episode",
+  "View appointments": "appointments",
+  "Manage appointments": "appointments",
+  "View reports and analytics": "view_all_reports",
+  "Export reports": "view_all_reports",
+  "View team": "manage_team_members",
+  "Manage team members": "manage_team_members",
+  "View audit logs": "audit_log",
+  "Manage hospital settings": "configure_settings",
+};
+
+function mapRole(value: string): TeamRole {
+  if (value === "hospital_admin") return "admin";
+  if (value === "nurse") return "nurse";
+  return "doctor";
+}
+
+function mapPermissions(accessLevel: AccessLevel, selected: string[]): TeamPermission[] {
+  if (accessLevel === "full") return ["full_system_access"];
+  const source = accessLevel === "standard" ? DEFAULT_PERMISSIONS : selected;
+  return Array.from(new Set(source.map((permission) => PERMISSION_MAP[permission]).filter(Boolean)));
+}
+
 export default function InviteTeamMemberDialog({
   open,
   onOpenChange,
+  onInvited,
 }: InviteTeamMemberDialogProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -98,15 +138,10 @@ export default function InviteTeamMemberDialog({
   const [specialty, setSpecialty] = useState("");
   const [ward, setWard] = useState("");
   const [accessLevel, setAccessLevel] = useState<AccessLevel>("standard");
-  const [permissions, setPermissions] = useState<string[]>([
-    "View connected patients",
-    "Manage care episodes",
-    "Acknowledge alerts",
-    "Send messages",
-    "View appointments",
-  ]);
+  const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS);
   const [sendEmail, setSendEmail] = useState(true);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isDirty = useMemo(
     () => Boolean(fullName || email || role || specialty || ward || accessLevel !== "standard"),
@@ -120,14 +155,13 @@ export default function InviteTeamMemberDialog({
     setSpecialty("");
     setWard("");
     setAccessLevel("standard");
-    setPermissions([
-      "View connected patients",
-      "Manage care episodes",
-      "Acknowledge alerts",
-      "Send messages",
-      "View appointments",
-    ]);
+    setPermissions(DEFAULT_PERMISSIONS);
     setSendEmail(true);
+  }
+
+  function closeAndReset() {
+    resetForm();
+    onOpenChange(false);
   }
 
   function requestClose() {
@@ -152,17 +186,40 @@ export default function InviteTeamMemberDialog({
     );
   }
 
-  function submitInvitation(event: React.FormEvent<HTMLFormElement>) {
+  async function submitInvitation(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    capturePostHogEvent("team_api_unavailable", {
-      action: "invite",
-      access_level: accessLevel,
-      role,
-      send_email: sendEmail,
-    });
-    toast.error("Invitation could not be sent", {
-      description: "The team invitation API is not available in the current web-client contract.",
-    });
+    setIsSubmitting(true);
+    try {
+      const result = await inviteTeamMember({
+        name: fullName.trim(),
+        email: email.trim(),
+        role: mapRole(role),
+        ...(ward.trim() ? { ward: ward.trim() } : {}),
+        ...(specialty.trim() ? { specialty: specialty.trim() } : {}),
+        accessProfile: accessLevel === "full" ? "full_access" : "limited",
+        permissions: mapPermissions(accessLevel, permissions),
+      });
+      capturePostHogEvent("team_member_invited", {
+        member_id: result.memberId,
+        access_level: accessLevel,
+        role,
+        send_email: sendEmail,
+        status: result.status,
+      });
+      toast.success("Team member invited", {
+        description: sendEmail
+          ? "The invitation was created and can be accepted by the team member."
+          : "The invitation was created. Copy the invite token from the backend response if email delivery is disabled later.",
+      });
+      await onInvited?.(result);
+      closeAndReset();
+    } catch (requestError) {
+      toast.error("Invitation could not be sent", {
+        description: requestError instanceof Error ? requestError.message : "Unable to invite this team member.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -342,12 +399,12 @@ export default function InviteTeamMemberDialog({
             </div>
 
             <DialogFooter className="border-t border-border px-6 py-4">
-              <Button type="button" variant="ghost" onClick={requestClose}>
+              <Button type="button" variant="ghost" onClick={requestClose} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={isSubmitting}>
                 <UserRoundPlus className="h-4 w-4" />
-                Add Team Member
+                {isSubmitting ? "Adding..." : "Add Team Member"}
               </Button>
             </DialogFooter>
           </form>
@@ -383,3 +440,4 @@ export default function InviteTeamMemberDialog({
     </>
   );
 }
+

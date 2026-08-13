@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, Loader2, PencilLine, UserRoundCheck, UserRoundMinus } from "lucide-react";
 import { toast } from "sonner";
-import { RoleGate } from "@/components/auth/RoleGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DisconnectPatientDialog } from "@/app/dashboard/connected-patients/components/DisconnectPatientDialog";
@@ -23,7 +22,6 @@ import {
   type UpdateConnectedPatientInput,
 } from "@/lib/api/connected-patients";
 
-const CONNECTED_PATIENT_ROLES = ["clinician", "hospital_admin"] as const;
 type EpisodeStatus = "active" | "completed" | "pending";
 type AppointmentStatus = "completed" | "cancelled" | "scheduled";
 type HistoryTone = "positive" | "negative" | "neutral";
@@ -298,7 +296,7 @@ export default function ConnectedPatientProfilePage() {
         </div>
 
         {isConnected ? (
-          <RoleGate allowedRoles={CONNECTED_PATIENT_ROLES}>
+
             <Button
               type="button"
               size="lg"
@@ -309,9 +307,9 @@ export default function ConnectedPatientProfilePage() {
               <UserRoundMinus className="h-5 w-5" />
               Disconnect Patient
             </Button>
-          </RoleGate>
+
         ) : (
-          <RoleGate allowedRoles={CONNECTED_PATIENT_ROLES}>
+
             <Button
               type="button"
               size="lg"
@@ -334,7 +332,7 @@ export default function ConnectedPatientProfilePage() {
               {isConnectionActionRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundCheck className="h-5 w-5" />}
               Reconnect Patient
             </Button>
-          </RoleGate>
+
         )}
       </header>
 
@@ -343,7 +341,7 @@ export default function ConnectedPatientProfilePage() {
           <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
             <div className="flex items-center justify-between border-b border-border px-5 py-5 sm:px-6">
               <h2 className="text-lg font-bold text-foreground">Patient Information</h2>
-              <RoleGate allowedRoles={CONNECTED_PATIENT_ROLES}>
+
                 <button
                   type="button"
                   className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -352,7 +350,7 @@ export default function ConnectedPatientProfilePage() {
                   <PencilLine className="h-4 w-4" />
                   Edit
                 </button>
-              </RoleGate>
+
             </div>
             <CardContent className="p-5 sm:p-6">
               <div className="grid grid-cols-1 gap-x-12 gap-y-9 sm:grid-cols-2">
