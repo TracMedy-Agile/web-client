@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CreditCard, Download, FileText, Loader2, ReceiptText, TrendingUp, UsersRound } from "lucide-react";
+import { CreditCard, Download, FileText, ReceiptText, TrendingUp, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { SaveNotice, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
@@ -79,9 +79,53 @@ export default function BillingSettingsPage() {
     <div>
       <SettingsHeader title="Billing & Subscription" description="Review the current billing cycle, estimated charges, payment method, and usage summary." />
       <BillingTabs />
-      <SettingsPanel title="Current Cycle" description="The current billing period and exportable draft breakdown for this workspace.">
+      <SettingsPanel title="Current Cycle" hideHeader>
         {isLoading ? (
-          <div className="flex min-h-72 items-center justify-center text-sm font-semibold text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />Loading billing details...</div>
+          <div className="animate-pulse space-y-6">
+            <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+              <div className="rounded-lg border border-border bg-background p-5">
+                <div className="h-4 w-40 rounded bg-muted" />
+                <div className="mt-3 h-7 w-48 rounded bg-muted" />
+                <div className="mt-3 h-3 w-32 rounded bg-muted/70" />
+                <div className="mt-6 h-20 rounded-lg bg-card" />
+              </div>
+              <div className="rounded-lg border border-border bg-background p-5">
+                <div className="flex items-center gap-3"><div className="h-11 w-11 rounded-lg bg-muted" /><div className="space-y-2"><div className="h-4 w-32 rounded bg-muted" /><div className="h-3 w-40 rounded bg-muted/70" /></div></div>
+                <div className="mt-5 flex gap-3"><div className="h-10 w-48 rounded-lg bg-muted" /><div className="h-10 w-36 rounded-lg bg-muted" /></div>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="rounded-lg border border-border bg-background p-5">
+                  <div className="h-9 w-9 rounded-lg bg-muted" />
+                  <div className="mt-3 h-6 w-16 rounded bg-muted" />
+                  <div className="mt-2 h-3 w-28 rounded bg-muted/70" />
+                </div>
+              ))}
+            </div>
+            <div className="rounded-lg border border-border bg-background p-5">
+              <div className="h-4 w-32 rounded bg-muted" />
+              <div className="mt-5 grid gap-3 md:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="rounded-lg border border-border bg-card p-4">
+                    <div className="h-8 w-8 rounded-full bg-muted" />
+                    <div className="mt-3 h-3 w-24 rounded bg-muted" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border bg-background">
+              <div className="border-b border-border px-5 py-4"><div className="h-4 w-48 rounded bg-muted" /></div>
+              <div className="divide-y divide-border">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between px-5 py-4">
+                    <div className="h-3 w-40 rounded bg-muted" />
+                    <div className="h-3 w-16 rounded bg-muted" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         ) : (
           <>
             <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">

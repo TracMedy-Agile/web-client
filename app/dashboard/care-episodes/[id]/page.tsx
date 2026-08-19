@@ -20,6 +20,7 @@ import {
   Pill,
   Stethoscope,
   TrendingUp,
+  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -611,6 +612,15 @@ export default function CareEpisodeDetailPage() {
                       ) : null}
                     </div>
                   ) : null}
+                  <Link
+                    href={`/dashboard/care-episodes/${episode.id}/care-team`}
+                    aria-label="View care team"
+                    title="View care team"
+                    onClick={() => capturePostHogEvent("care_team_opened", { episode_id: episode.id, source: "episode_header" })}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-primary hover:bg-blue-100"
+                  >
+                    <UsersRound className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
 
                 <p className="text-sm font-medium text-slate-500">
@@ -652,8 +662,9 @@ export default function CareEpisodeDetailPage() {
 
                 <Button
                   asChild
+                  variant="outline"
                   onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
-                  className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
+                  className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
                 >
                   <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
                     <TrendingUp className="h-4 w-4" />

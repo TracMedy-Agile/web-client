@@ -56,5 +56,5 @@ export function DependencyRules() {
 }
 
 export function UnsavedFooter({ dirty, children }: { dirty: boolean; children?: ReactNode }) {
-  return <div className={cn("sticky bottom-0 z-10 mt-5 flex flex-col gap-3 rounded-lg border border-border bg-card px-5 py-4 shadow-lg sm:flex-row sm:items-center sm:justify-between", !dirty && "opacity-90")}><p className="text-sm font-semibold text-muted-foreground">{dirty ? "You have unsaved permission policy changes." : "Permission policy changes will appear here before saving."}</p><div className="flex gap-3">{children}</div></div>;
+  return <div className={cn("sticky bottom-0 z-10 -mx-5 mt-10 flex flex-col gap-3 border-t border-border bg-card px-5 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between lg:-mx-12 lg:px-12", !dirty && "opacity-90")}><p className="text-base text-foreground">{dirty ? "You have unsaved changes in policy configurations." : "Permission policy changes will appear here before saving."}</p><div className="flex gap-3">{children}</div></div>;
 }

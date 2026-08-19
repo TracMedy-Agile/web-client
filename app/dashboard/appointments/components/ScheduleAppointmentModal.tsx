@@ -12,7 +12,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
+import { confirmAppointment, createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
 import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,8 @@ type ScheduleAppointmentModalProps = {
   initialPatient?: InitialPatient;
   initialCareEpisodeLabel?: string;
   initialReason?: string;
+  /** Immediately confirms the appointment after creation, instead of leaving it pending review. */
+  autoConfirm?: boolean;
 };
 
 type ScheduleAppointmentFormData = {
@@ -278,6 +280,7 @@ export default function ScheduleAppointmentModal({
   initialPatient,
   initialCareEpisodeLabel,
   initialReason = "",
+  autoConfirm = false,
 }: ScheduleAppointmentModalProps) {
   const router = useRouter();
   const { user } = useDashboardUser();
@@ -464,7 +467,17 @@ export default function ScheduleAppointmentModal({
     setIsSubmitting(true);
 
     try {
-      await createAppointment(buildAppointmentPayload(formData, facilityId, selectedPatientId));
+      const created = await createAppointment(buildAppointmentPayload(formData, facilityId, selectedPatientId));
+      if (autoConfirm) {
+        const record = created && typeof created === "object" ? created as Record<string, unknown> : null;
+        const data = record && typeof record.data === "object" && record.data !== null ? record.data as Record<string, unknown> : record;
+        const newAppointmentId = typeof data?.id === "string" ? data.id : "";
+        if (newAppointmentId) {
+          // Best-effort — if this fails the appointment still exists as pending, which is
+          // still correct (just not auto-confirmed); don't block the success flow on it.
+          await confirmAppointment(newAppointmentId).catch(() => undefined);
+        }
+      }
       setFormData(freshFormData());
       setSelectedPatientId("");
       setPatientResults([]);

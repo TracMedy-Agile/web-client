@@ -6,6 +6,11 @@ export type AddPatientToQueuePayload = components["schemas"]["CreateCareEpisodeD
 type OpenPendingEpisodePayload = components["schemas"]["OpenPendingEpisodeDto"];
 type DismissPendingEpisodePayload = components["schemas"]["DismissPendingEpisodeDto"];
 type CloseEpisodePayload = components["schemas"]["CloseEpisodeDto"];
+export type UpdateEpisodePayload = components["schemas"]["UpdateEpisodeDto"];
+export type EpisodeLabResult = Omit<components["schemas"]["EpisodeLabResultDto"], "values"> & {
+  values: Record<string, unknown>;
+};
+export type UpdateLabResultStatusPayload = components["schemas"]["UpdateLabResultStatusDto"];
 export type AddCareTeamMemberInput = components["schemas"]["AddCareTeamMemberDto"];
 export type EpisodeMediaItem = components["schemas"]["MediaItemDto"];
 export type EpisodeForecast = components["schemas"]["EpisodeForecastDto"];
@@ -13,7 +18,7 @@ export type CheckInHistoryRecord = Omit<
   components["schemas"]["CheckInHistoryDto"],
   "symptoms" | "vitals" | "symptomTrend" | "vitalsTrend"
 > & {
-  symptoms: Record<string, unknown>;
+  symptoms: Record<string, unknown> | Record<string, unknown>[];
   vitals: Record<string, unknown>;
   symptomTrend?: Record<string, unknown>;
   vitalsTrend?: Record<string, unknown>;
@@ -296,6 +301,29 @@ export async function addPatientToQueue(payload: AddPatientToQueuePayload): Prom
   });
   const record = asRecord(unwrapData(response)) ?? asRecord(response);
   return { id: getString(record, ["id"]) };
+}
+
+// POST /care-episodes — creates the episode directly in "active" status, bypassing the pending
+// review queue. addPatientToQueue (above) posts to /care-episodes/pending instead.
+export async function createActiveCareEpisode(payload: AddPatientToQueuePayload): Promise<CareEpisodeRecord> {
+  const response = await request("/care-episodes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The create care episode response was invalid.");
+  return normalizeCareEpisodeSummary(record);
+}
+
+// PATCH /care-episodes/{id} — updates consultationDate, dischargeStatus, and/or followUp.
+export async function updateCareEpisode(id: string, payload: UpdateEpisodePayload): Promise<CareEpisodeRecord> {
+  const response = await request(`/care-episodes/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The update care episode response was invalid.");
+  return normalizeCareEpisodeSummary(record);
 }
 
 export async function getCurrentUserId(): Promise<string> {
@@ -606,6 +634,93 @@ export async function getCareEpisodeMedia(
     }));
 }
 
+// POST /care-episodes/{id}/upload-image — uploads to Cloudinary, returns the secure URL.
+export async function uploadCareEpisodeImage(episodeId: string, file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await request(`/care-episodes/${encodeURIComponent(episodeId)}/upload-image`, {
+    method: "POST",
+    body: formData,
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  const url = getString(record, ["url"]);
+  if (!url) throw new Error("The image upload response did not include a URL.");
+  return url;
+}
+
+function normalizeLabResult(record: ApiRecord): EpisodeLabResult {
+  return {
+    id: getString(record, ["id"]),
+    episodeId: getString(record, ["episodeId"]),
+    patientId: getString(record, ["patientId"]),
+    facilityId: getString(record, ["facilityId"]) || null,
+    uploadedById: getString(record, ["uploadedById"]) || null,
+    labRequestId: getString(record, ["labRequestId"]) || null,
+    labName: getString(record, ["labName"]) || null,
+    testName: getString(record, ["testName"]) || null,
+    fileUrl: getString(record, ["fileUrl"]) || null,
+    values: asRecord(record.values) ?? {},
+    status: getString(record, ["status"], "pending") as EpisodeLabResult["status"],
+    reviewedById: getString(record, ["reviewedById"]) || null,
+    reviewedAt: getString(record, ["reviewedAt"]) || null,
+    notes: getString(record, ["notes"]) || null,
+    observedAt: getString(record, ["observedAt"]),
+    createdAt: getString(record, ["createdAt"]),
+    updatedAt: getString(record, ["updatedAt"]),
+  };
+}
+
+export type UploadLabResultInput = {
+  file?: File;
+  labName?: string;
+  testName?: string;
+  labRequestId?: string;
+  observedAt?: string;
+  notes?: string;
+};
+
+// POST /care-episodes/{id}/lab-results — either a file, structured values, or both.
+export async function uploadCareEpisodeLabResult(episodeId: string, input: UploadLabResultInput): Promise<EpisodeLabResult> {
+  const formData = new FormData();
+  if (input.file) formData.append("file", input.file);
+  if (input.labName) formData.append("labName", input.labName);
+  if (input.testName) formData.append("testName", input.testName);
+  if (input.labRequestId) formData.append("labRequestId", input.labRequestId);
+  if (input.observedAt) formData.append("observedAt", input.observedAt);
+  if (input.notes) formData.append("notes", input.notes);
+
+  const response = await request(`/care-episodes/${encodeURIComponent(episodeId)}/lab-results`, {
+    method: "POST",
+    body: formData,
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The lab result upload response was invalid.");
+  return normalizeLabResult(record);
+}
+
+// GET /care-episodes/{id}/lab-results — ordered by observed time, optionally filtered by status.
+export async function getCareEpisodeLabResults(
+  episodeId: string,
+  status?: EpisodeLabResult["status"],
+): Promise<EpisodeLabResult[]> {
+  const query = status ? new URLSearchParams({ status }) : undefined;
+  const payload = await request(`/care-episodes/${encodeURIComponent(episodeId)}/lab-results`, undefined, query);
+  const unwrapped = unwrapData(payload);
+  const list = Array.isArray(unwrapped) ? unwrapped : [];
+  return list.map(asRecord).filter((item): item is ApiRecord => Boolean(item)).map(normalizeLabResult);
+}
+
+// PATCH /care-episodes/lab-results/{resultId} — clinician review; patients cannot change status.
+export async function updateLabResultStatus(resultId: string, payload: UpdateLabResultStatusPayload): Promise<EpisodeLabResult> {
+  const response = await request(`/care-episodes/lab-results/${encodeURIComponent(resultId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  const record = asRecord(unwrapData(response)) ?? asRecord(response);
+  if (!record) throw new Error("The lab result status update response was invalid.");
+  return normalizeLabResult(record);
+}
+
 export async function getCareEpisodeCheckins(
   episodeId: string,
   params?: { page?: number; limit?: number },
@@ -635,7 +750,7 @@ export async function getCareEpisodeCheckins(
     .filter((item): item is ApiRecord => Boolean(item))
     .map((item) => ({
       id: getString(item, ["id"]),
-      symptoms: asRecord(item.symptoms) ?? {},
+      symptoms: Array.isArray(item.symptoms) ? item.symptoms : asRecord(item.symptoms) ?? {},
       vitals: asRecord(item.vitals) ?? {},
       ...(getString(item, ["notes"]) ? { notes: getString(item, ["notes"]) } : {}),
       submittedAt: getString(item, ["submittedAt"]),
@@ -668,6 +783,16 @@ export async function getCareEpisodeForecast(episodeId: string): Promise<Episode
   const payload = await request(`/forecasts/episodes/${encodeURIComponent(episodeId)}`);
   const forecast = unwrapData(payload);
   if (!asRecord(forecast)) throw new Error("The episode forecast response was invalid.");
+  return forecast as EpisodeForecast;
+}
+
+// POST /forecasts/episodes/{id}/refresh — recomputes the forecast from the latest signals.
+export async function refreshCareEpisodeForecast(episodeId: string): Promise<EpisodeForecast> {
+  const payload = await request(`/forecasts/episodes/${encodeURIComponent(episodeId)}/refresh`, {
+    method: "POST",
+  });
+  const forecast = unwrapData(payload);
+  if (!asRecord(forecast)) throw new Error("The episode forecast refresh response was invalid.");
   return forecast as EpisodeForecast;
 }
 

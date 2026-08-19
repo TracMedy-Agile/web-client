@@ -13,12 +13,14 @@ export interface RecoveryTrendPoint {
 
 interface RecoveryTrendProps {
   data?: RecoveryTrendPoint[];
+  range?: (typeof RANGES)[number];
+  isLoading?: boolean;
+  onRangeChange?: (range: (typeof RANGES)[number]) => void;
 }
 
 const RANGES = ["7d", "30d"] as const;
 
-export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>("7d");
+export default function RecoveryTrend({ data = [], range = "7d", isLoading = false, onRangeChange }: RecoveryTrendProps) {
   const [mounted, setMounted] = useState(false);
   const hasData = data.length > 0;
 
@@ -52,7 +54,7 @@ export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
                 <button
                   key={r}
                   type="button"
-                  onClick={() => setRange(r)}
+                  onClick={() => onRangeChange?.(r)}
                   className={cn(
                     "rounded-lg px-3 py-1.5 transition-colors",
                     range === r ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -66,7 +68,9 @@ export default function RecoveryTrend({ data = [] }: RecoveryTrendProps) {
         ) : null}
       </div>
 
-      {hasData ? (
+      {isLoading ? (
+        <div className="mt-6 h-72 w-full animate-pulse rounded-2xl bg-muted/40" />
+      ) : hasData ? (
         <div className="mt-6 h-72 w-full rounded-2xl bg-background/50 p-3">
           {mounted ? (
             <ResponsiveContainer width="100%" height="100%">

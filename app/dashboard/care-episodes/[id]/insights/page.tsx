@@ -27,14 +27,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
-  decideAiSuggestion,
   generateBiometricsInsight,
   generateEpisodeInsight,
-  getEpisodeSuggestions,
   getLatestRecoverySummary,
   type BiometricsInsightPayload,
   type EpisodeInsightPayload,
-  type SuggestionListItem,
 } from "@/lib/api/ai";
 import { cn } from "@/lib/utils";
 import {
@@ -431,10 +428,9 @@ function buildTimelinePatientNote(event: TimelineEventRecord): PatientNote | nul
   const eventType = event.eventType.toLowerCase();
   const source = event.source.toLowerCase();
   const isPatientSource = source.includes("patient");
-  const isNoteLike = eventType.includes("note") || eventType.includes("check");
-  if (!isPatientSource && !isNoteLike) return null;
+  if (!isPatientSource) return null;
 
-  const note = getString(event.payload, ["notes", "patientNotes", "patientNote", "note", "description", "details", "summary", "message", "title"]);
+  const note = getString(event.payload, ["notes", "patientNotes", "patientNote", "note"]);
   if (!note) return null;
 
   return {
@@ -483,7 +479,8 @@ function biometricAliases(metric: BiometricMetric) {
   if (metric === "Heart Rate") return ["heart_rate", "heartRate", "hr", "pulse"];
   if (metric === "SpO2") return ["spo2", "sp_o2", "oxygen", "oxygenSaturation"];
   if (metric === "Temperature") return ["temperature", "temp", "fever"];
-  return [];
+  if (metric === "Weight") return ["weight", "weight_kg", "weightKg"];
+  return ["blood_sugar", "bloodSugar", "bloodGlucose", "glucose"];
 }
 
 
@@ -536,10 +533,6 @@ export default function CareEpisodeInsightsPage() {
   const [biometricsInsight, setBiometricsInsight] = useState<BiometricsInsightPayload | null>(null);
   const [biometricsAiStatus, setBiometricsAiStatus] = useState<"idle" | "loading" | "error">("idle");
   const [biometricsAiError, setBiometricsAiError] = useState("");
-  const [suggestions, setSuggestions] = useState<SuggestionListItem[]>([]);
-  const [suggestionsError, setSuggestionsError] = useState("");
-  const [suggestionNotes, setSuggestionNotes] = useState<Record<string, string>>({});
-  const [decidingSuggestionId, setDecidingSuggestionId] = useState<string | null>(null);
 
   function toggleMedication(medicationId: string) {
     const nextExpanded = expandedMedicationId === medicationId ? null : medicationId;
@@ -552,17 +545,6 @@ export default function CareEpisodeInsightsPage() {
     }
   }
 
-
-  async function refreshAiSuggestions() {
-    try {
-      const response = await getEpisodeSuggestions(episodeId);
-      setSuggestions(response.data);
-      setSuggestionsError("");
-    } catch (requestError) {
-      setSuggestions([]);
-      setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to load AI suggestions.");
-    }
-  }
 
   async function generateSummary() {
     if (!episodeId) return;
@@ -577,7 +559,6 @@ export default function CareEpisodeInsightsPage() {
         setAiGeneratedAt(new Date().toISOString());
         setAiDataNotice(aiDataNoticeForInsight(response.insight));
         capturePostHogEvent("ai_insight_viewed", { source: "episode", episode_id: episodeId });
-        await refreshAiSuggestions();
       } else {
         setAiDataNotice(aiDataNoticeForInsight(response.insight));
         setAiError("AI could not generate a usable insight from the available episode data.");
@@ -586,29 +567,6 @@ export default function CareEpisodeInsightsPage() {
       setAiError(requestError instanceof Error ? requestError.message : "Unable to generate AI insight.");
     } finally {
       setAiStatus("idle");
-    }
-  }
-
-  async function recordSuggestionDecision(suggestion: SuggestionListItem, decision: "accepted" | "ignored" | "annotated") {
-    setDecidingSuggestionId(suggestion.id);
-    try {
-      const annotation = suggestionNotes[suggestion.id]?.trim();
-      const result = await decideAiSuggestion(suggestion.id, {
-        decision,
-        ...(annotation ? { annotation } : {}),
-      });
-      setSuggestions((current) => current.map((item) => item.id === suggestion.id ? {
-        ...item,
-        status: "decided",
-        decision: result.decision,
-        annotation: annotation || item.annotation,
-        decidedAt: result.decidedAt,
-      } : item));
-      capturePostHogEvent("ai_insight_viewed", { source: "suggestion_decision", episode_id: episodeId, suggestion_id: suggestion.id, decision: result.decision });
-    } catch (requestError) {
-      setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to record AI suggestion decision.");
-    } finally {
-      setDecidingSuggestionId(null);
     }
   }
   useEffect(() => {
@@ -643,18 +601,6 @@ export default function CareEpisodeInsightsPage() {
         if (!ignore) setAiError(requestError instanceof Error ? requestError.message : "Unable to load latest AI summary.");
       } finally {
         if (!ignore) setAiStatus("idle");
-      }
-      try {
-        const suggestionsResponse = await getEpisodeSuggestions(episodeId);
-        if (!ignore) {
-          setSuggestions(suggestionsResponse.data);
-          setSuggestionsError("");
-        }
-      } catch (requestError) {
-        if (!ignore) {
-          setSuggestions([]);
-          setSuggestionsError(requestError instanceof Error ? requestError.message : "Unable to load AI suggestions.");
-        }
       }
     })();
 
@@ -935,48 +881,6 @@ export default function CareEpisodeInsightsPage() {
                 ) : null}
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-xl border-border bg-white shadow-sm">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">AI Suggestions</h2>
-              <p className="mt-1 text-sm font-medium text-slate-500">Clinician review decisions are recorded for audit. AI does not change the care plan.</p>
-            </div>
-            <Button type="button" variant="outline" onClick={refreshAiSuggestions} className="h-9 rounded-lg text-xs font-bold">Refresh</Button>
-          </div>
-          {suggestionsError ? <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-500">{suggestionsError}</p> : null}
-          <div className="mt-4 space-y-3">
-            {suggestions.length === 0 ? <p className="py-5 text-center text-sm font-medium text-slate-500">{aiDataNotice || "No AI suggestions are available yet. Generate an AI summary to create a reviewable suggestion."}</p> : null}
-            {suggestions.map((suggestion) => (
-              <div key={suggestion.id} className="rounded-lg border border-border bg-slate-50 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{suggestion.summary}</p>
-                    <p className="mt-1 text-xs font-medium text-slate-500">{suggestion.service} - {formatAiTimestamp(suggestion.createdAt)}</p>
-                  </div>
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold uppercase", suggestion.status === "decided" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")}>{suggestion.decision ?? suggestion.status}</span>
-                </div>
-                {suggestion.annotation ? <p className="mt-2 text-xs font-medium italic text-slate-500">Note: {suggestion.annotation}</p> : null}
-                {suggestion.status === "pending" ? (
-                  <div className="mt-3 space-y-3">
-                    <textarea
-                      value={suggestionNotes[suggestion.id] ?? ""}
-                      onChange={(event) => setSuggestionNotes((current) => ({ ...current, [suggestion.id]: event.target.value }))}
-                      placeholder="Optional clinician note"
-                      className="min-h-20 w-full resize-y rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" disabled={decidingSuggestionId === suggestion.id} onClick={() => recordSuggestionDecision(suggestion, "accepted")} className="h-9 rounded-lg text-xs font-bold">Accept</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={decidingSuggestionId === suggestion.id} onClick={() => recordSuggestionDecision(suggestion, "ignored")} className="h-9 rounded-lg text-xs font-bold">Ignore</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={decidingSuggestionId === suggestion.id || !(suggestionNotes[suggestion.id] ?? "").trim()} onClick={() => recordSuggestionDecision(suggestion, "annotated")} className="h-9 rounded-lg text-xs font-bold">Save Note</Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ))}
           </div>
         </CardContent>
       </Card>

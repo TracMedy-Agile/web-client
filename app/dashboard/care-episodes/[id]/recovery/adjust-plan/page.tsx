@@ -37,7 +37,9 @@ export default function AdjustCarePlanPage() {
   const { form, setForm, versions, clinicians, services, patient, error, isLoading, saveMode, isDirty, save, reset } = useCarePlanForm(episodeId);
   const [modalMode, setModalMode] = useState<"patch" | "post" | null>(null);
   const endDate = useMemo(() => projectedDate(form.startDate, form.episodeDuration), [form.startDate, form.episodeDuration]);
-  const isFirstCarePlanSetup = !form.id || versions.length === 0 || (!form.createdAt && form.version <= 1);
+  // The backend always auto-creates a stub v1 care plan when the episode opens, so `versions`
+  // is never empty — the real "first save" signal is that only that untouched stub exists.
+  const isFirstCarePlanSetup = !form.id || (versions.length <= 1 && form.version <= 1);
 
   useEffect(() => {
     if (episodeId) capturePostHogEvent("care_plan_adjust_viewed", { episode_id: episodeId });

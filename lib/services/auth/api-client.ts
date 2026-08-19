@@ -37,10 +37,12 @@ async function refreshAccessToken() {
 }
 
 async function request(path: string, options?: RequestInit, allowRefresh = true) {
-  const headers = new Headers({
-    'Content-Type': 'application/json',
-    ...options?.headers,
-  })
+  const headers = new Headers(options?.headers)
+  const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData
+
+  if (!headers.has('Content-Type') && !isFormData) {
+    headers.set('Content-Type', 'application/json')
+  }
 
   const token = await getAccessToken()
   if (token) {

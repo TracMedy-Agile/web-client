@@ -5,19 +5,28 @@ import DashboardMetricCards from "@/components/dashboard/DashboardMetricCards";
 import RecoveryTrend, { type RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import LiveAlerts, { type LiveAlert } from "@/components/dashboard/LiveAlerts";
 import WorkloadStatus, { type ClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
-import { getDashboardClinicianWorkload, getDashboardLiveAlerts } from "@/lib/api/dashboard";
+import {
+  getDashboardClinicianWorkload,
+  getDashboardLiveAlerts,
+  getDashboardRecoveryTrend,
+  type DashboardRecoveryTrendRange,
+} from "@/lib/api/dashboard";
 
-const EMPTY_RECOVERY_TREND: RecoveryTrendPoint[] = [];
 const POLL_INTERVAL_MS = 60_000;
 
 export default function DashboardPage() {
   const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
   const [clinicianWorkload, setClinicianWorkload] = useState<ClinicianWorkload[]>([]);
+  const [recoveryTrend, setRecoveryTrend] = useState<RecoveryTrendPoint[]>([]);
+  const [recoveryRange, setRecoveryRange] = useState<DashboardRecoveryTrendRange>("7d");
+  const [isRecoveryTrendLoading, setIsRecoveryTrendLoading] = useState(true);
+  const [isPanelsLoading, setIsPanelsLoading] = useState(true);
 
   useEffect(() => {
     let ignore = false;
 
-    const loadDashboardPanels = async () => {
+    const loadDashboardPanels = async (showLoading: boolean) => {
+      if (showLoading) setIsPanelsLoading(true);
       const [alertsResult, workloadResult] = await Promise.allSettled([
         getDashboardLiveAlerts(),
         getDashboardClinicianWorkload(),
@@ -26,16 +35,38 @@ export default function DashboardPage() {
       if (ignore) return;
       setLiveAlerts(alertsResult.status === "fulfilled" ? alertsResult.value : []);
       setClinicianWorkload(workloadResult.status === "fulfilled" ? workloadResult.value : []);
+      if (showLoading) setIsPanelsLoading(false);
     };
 
-    void loadDashboardPanels();
-    const interval = window.setInterval(() => void loadDashboardPanels(), POLL_INTERVAL_MS);
+    void loadDashboardPanels(true);
+    const interval = window.setInterval(() => void loadDashboardPanels(false), POLL_INTERVAL_MS);
     return () => {
       ignore = true;
       window.clearInterval(interval);
     };
   }, []);
 
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRecoveryTrend() {
+      setIsRecoveryTrendLoading(true);
+      try {
+        const points = await getDashboardRecoveryTrend(recoveryRange);
+        if (!ignore) setRecoveryTrend(points);
+      } catch {
+        if (!ignore) setRecoveryTrend([]);
+      } finally {
+        if (!ignore) setIsRecoveryTrendLoading(false);
+      }
+    }
+
+    void loadRecoveryTrend();
+    return () => {
+      ignore = true;
+    };
+  }, [recoveryRange]);
   return (
     <div className="space-y-4 md:space-y-6">
       <div>
@@ -47,12 +78,12 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <RecoveryTrend data={EMPTY_RECOVERY_TREND} />
+          <RecoveryTrend data={recoveryTrend} range={recoveryRange} isLoading={isRecoveryTrendLoading} onRangeChange={setRecoveryRange} />
         </div>
-        <LiveAlerts alerts={liveAlerts} />
+        <LiveAlerts alerts={liveAlerts} isLoading={isPanelsLoading} />
       </div>
 
-      <WorkloadStatus clinicians={clinicianWorkload} />
+      <WorkloadStatus clinicians={clinicianWorkload} isLoading={isPanelsLoading} />
     </div>
   );
 }

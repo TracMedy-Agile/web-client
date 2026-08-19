@@ -6,6 +6,8 @@ export type ClinicalConcern = "None" | "Mild" | "Moderate" | "High";
 
 export type FollowUpDuration = "1 Week" | "2 Weeks" | "1 Month" | "2 Months" | "3 Months" | "6 Months";
 
+export type DischargeStatus = "Not Applicable" | "Planned" | "In Progress" | "Completed";
+
 export type CareEpisodeReason =
   | "Medication monitoring"
   | "Post-surgical recovery"
@@ -23,6 +25,7 @@ export type AddPatientFormData = {
   conditionSeverity: ConditionSeverity;
   clinicalConcern: ClinicalConcern;
   followUpDuration: FollowUpDuration;
+  dischargeStatus: DischargeStatus;
   reasons: CareEpisodeReason[];
 };
 

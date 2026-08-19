@@ -26,11 +26,13 @@ import type {
   CareEpisodeReason,
   ClinicalConcern,
   ConditionSeverity,
+  DischargeStatus,
   FollowUpDuration,
 } from "./types";
 
 const ENCOUNTER_TYPES = ["Outpatient", "Inpatient", "Emergency", "Telehealth"] as const;
 const FOLLOW_UP_DURATIONS = ["1 Week", "2 Weeks", "1 Month", "2 Months", "3 Months", "6 Months"] as const;
+const DISCHARGE_STATUSES = ["Not Applicable", "Planned", "In Progress", "Completed"] as const;
 const SEVERITIES: ConditionSeverity[] = ["Mild", "Moderate", "Severe"];
 const CONCERN_LEVELS: ClinicalConcern[] = ["None", "Mild", "Moderate", "High"];
 const CARE_EPISODE_REASONS: CareEpisodeReason[] = [
@@ -59,6 +61,14 @@ const FOLLOW_UP_DURATION_DAYS: Record<FollowUpDuration, number> = {
   "6 Months": 180,
 };
 
+// CreateCareEpisodeDto.dischargeStatus is a fixed enum; the form collects a display label.
+const DISCHARGE_STATUS_VALUES: Record<DischargeStatus, "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "NOT_APPLICABLE"> = {
+  "Not Applicable": "NOT_APPLICABLE",
+  Planned: "PLANNED",
+  "In Progress": "IN_PROGRESS",
+  Completed: "COMPLETED",
+};
+
 const SEARCH_MIN_CHARS = 3;
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -79,6 +89,7 @@ const INITIAL_FORM_DATA: AddPatientFormData = {
   conditionSeverity: "Moderate",
   clinicalConcern: "Moderate",
   followUpDuration: "1 Week",
+  dischargeStatus: "Not Applicable",
   reasons: ["Medication monitoring", "Symptom monitoring"],
 };
 
@@ -450,6 +461,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
         consultationDate: new Date(`${consultationDate}T12:00:00`).toISOString(),
         expectedDurationDays: FOLLOW_UP_DURATION_DAYS[formData.followUpDuration],
         clinicianNotes: formData.clinicianNotes.trim(),
+        dischargeStatus: DISCHARGE_STATUS_VALUES[formData.dischargeStatus],
       });
       capturePostHogEvent("care_episode_created", {
         episode_id: created.id,
@@ -584,15 +596,12 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   options={ENCOUNTER_TYPES}
                   onChange={(value) => updateFormData("encounterType", value as AddPatientFormData["encounterType"])}
                 />
-                <label className="block">
-                  <FieldLabel>Discharge Status</FieldLabel>
-                  <Input
-                    value="Not yet discharged"
-                    aria-label="Discharge status"
-                    className={cn(fieldClassName, "text-slate-500")}
-                    readOnly
-                  />
-                </label>
+                <FormSelect
+                  label="Discharge Status"
+                  value={formData.dischargeStatus}
+                  options={DISCHARGE_STATUSES}
+                  onChange={(value) => updateFormData("dischargeStatus", value as AddPatientFormData["dischargeStatus"])}
+                />
                 <FormSelect
                   label="Follow-up Duration"
                   value={formData.followUpDuration}

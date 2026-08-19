@@ -1,29 +1,94 @@
-# Backend Work Required for Built Hospital Screens
+# Backend Gaps Blocking Web-Client Screens
 
-The published staging OpenAPI contract was re-audited on 2026-08-12. This file lists only missing backend contracts, backend contract gaps, or runtime backend issues affecting built hospital web-client screens.
+Re-audited 2026-08-19. This tracks backend contract gaps and bugs that affect *built* hospital web-client screens — written for whoever is working on web-client, not the backend team. Each entry leads with what you'll actually see on the screen, then the backend reason, then what (if anything) to do about it. Re-check an entry against current backend code before assuming it's still open — several already got fixed mid-session (see "Resolved" at the bottom).
 
-## Dashboard
+---
 
-- **Recovery Trend time-series endpoint needed:** The dashboard design needs a true Recovery Trend chart contract with daily/period labels, active patient recovery scores, and facility mean recovery scores. Current available endpoints do not provide this exact time-series data: `GET /api/v1/forecasts/facility/summary` returns aggregate forecast KPIs only, and `GET /api/v1/analytics/readmission-trend` returns readmission trend rather than recovery-score trend. Please expose a dashboard recovery trend endpoint, for example `GET /api/v1/forecasts/facility/recovery-trend?range=7d|30d`, returning points like `{ label, active, mean }` or the backend-preferred equivalent.
+## Care Episode → Insights: Medication & Adherence panel
 
-## Settings
-- Facility/hospital settings update endpoint for Phase 08 Hospital Profile: logo URL/upload association, hospital name, address, contact email, contact phone, and timezone. The web client can currently read facility details from `GET /api/v1/auth/hospital`, but no facility settings update contract exists.
-- Facility care-configuration settings endpoint for default episode duration, auto-close inactive episodes, clinician approval requirement, and critical-alert escalation roles. The current appointment capacity endpoint still documents safe defaults until settings exist.
-- Notification preferences are connected through profile endpoints, but hospital/facility-level notification policy persistence is not available if these preferences should apply to the whole workspace rather than the current user.
-- Security settings endpoints for two-factor authentication, session timeout, max login attempts, active-session listing, and log out all devices. Only password change is currently available and connected through `POST /api/v1/auth/change-password`.
-- Integrations endpoints for EHR connection status/connect/disconnect and API key reveal, regenerate, revoke, and audit trail.
-- Appointment settings endpoint for default appointment duration, check-in window, late check-in grace period, daily facility capacity, virtual consultation enablement, clinician assignment requirement, and auto-confirm follow-ups.
-- Production subscription/billing summary endpoint with current billing period, estimated invoice total, payment method, usage cards, lifecycle status, and renewal date. `GET /api/v1/subscriptions/me` exists and is connected, but it is documented as a stub returning the free plan by default.
-- Billing invoice endpoints for listing invoices with filters/pagination, viewing invoice detail, downloading server-generated invoice files, paying outstanding/overdue invoices, retrying failed payments, updating payment method, and cancelling subscription.
-- Settings-level roles and permissions endpoints for default role access, permission policy toggles, workspace administration grant/edit table, permission dependency rules, and saving role-policy defaults. Team member permission fields exist in the Team Management contract, but there is no dedicated Settings role-policy/defaults contract.
+**What you'll see:** patient self-logged and manually-added medications mixed in with clinician-prescribed ones from the current care plan — the panel doesn't distinguish who added what.
 
+**Why:** `GET /care-episodes/{id}/medications/adherence` pulls every medication belonging to the patient (`care-episodes.service.ts:1795`, `getMedicationAdherence` → `this.prisma.medication.findMany({ where: { userId: episode.patientId } })`) — no episode scope, no filter on `Medication.source` (`care_plan | patient | manual`). The response DTO doesn't even carry `source`, so there's no field to filter on client-side even as a workaround.
 
-## Team Management
+**Frontend status:** nothing to fix here — this is a pure data-completeness issue in the API response, not a rendering bug.
 
+**Blocked on:** backend scoping the query to the episode and filtering `source: 'care_plan'`, plus adding `source` to `MedicationAdherenceDto` as a fallback filtering field.
 
-- **Team Management clinician permission enforcement needed:** The OpenAPI contract currently marks Team Management routes as `hospital_admin only`, including `GET /api/v1/team/members`, `POST /api/v1/team/members`, `PATCH /api/v1/team/members/{id}`, suspend/reactivate/delete, activity, resend-invite, and escalation-preference routes. The web-client permission model allows hospitals to grant clinicians access to Team Management through team permissions. Backend should authorize clinicians based on those granted permissions/facility policy instead of blocking all non-admin staff when permission is enabled.
-- **Team member ID mismatch:** `GET /api/v1/team/members` can return rows with an `id` value like `legacy-cmqv2qopz00004c3sl0sm31fd`, but mutation endpoints expect the real Staff member ID. Example failing request: `PATCH /api/v1/team/members/legacy-cmqv2qopz00004c3sl0sm31fd` returns `404 Team member not found`. Ensure the list endpoint returns the same Staff member `id` accepted by `PATCH /team/members/{id}`, `POST /team/members/{id}/suspend`, `POST /team/members/{id}/reactivate`, `DELETE /team/members/{id}`, `POST /team/members/{id}/resend-invite`, and escalation preference routes. The web client already passes the row `id` from `GET /team/members`; it cannot safely edit legacy/fallback IDs that the backend does not accept.
+---
 
-## Audit Log
+## Care Episode → Insights: Patient Notes panel
 
-- **Clinician access policy confirmation needed:** `GET /api/v1/facilities/audit-logs?page=1&limit=6` works for `hospital_admin`, but returns `403 Forbidden resource` for clinicians. If clinicians should be allowed to view audit logs when the hospital grants them audit access, backend needs to support clinician access based on team permissions/facility policy. If audit logs are intentionally hospital-admin only, this is expected and the web client will show an access-denied state for clinicians.
+**What you'll see:** the panel correctly shows nothing for check-ins where the patient didn't type a note — don't mistake this for broken, it's accurate. But if a patient reports typing a note and it's still not showing:
+
+**Why:** confirmed live — a check-in submitted with free text in the note field came back from `GET /care-episodes/{id}/checkins` with `notes: null`. The data isn't reaching the database (or isn't being sent by the mobile app), so there's nothing for the panel to show. Verified this is not a frontend read/parse issue.
+
+**Frontend status:** nothing to fix — the panel correctly reads `checkin.notes`; the field is genuinely empty in the API response.
+
+**Blocked on:** backend/mobile investigation into whether the check-in submission is sending `notes` at all, and whether `CreateCheckinDto.notes` → `patientCheckIn.create(...)` is persisting it.
+
+---
+
+## Care Episode → Recovery: Daily Care Tasks checklist
+
+**What you'll see:** paging back/forward through days, the checklist only shows real checked/unchecked state for **today** — every other day shows all tasks unchecked, even ones that really were done that day.
+
+**Why:** there's no per-day completion history anywhere in the data model — `CarePlan.tasks` (confirmed in `schema.prisma`) is a single JSON blob where each task has one live `status`/`completedAt`, not a log. `GET /care-episodes/{id}/tasks/completion?date=` only derives same-day aggregate counts from that live state; it can't say which specific tasks were done on a past date.
+
+**Frontend status:** already handled — the web client deliberately shows unchecked (not stale/wrong-day state) for any day except today, since that's the most honest thing it can do with the current API. No further frontend work needed until the backend adds history.
+
+**Blocked on:** a `TaskCompletionLog`-style table (mirroring how `MedicationLog` already works — see `GET /care-episodes/{id}/medications/{medicationId}/logs`) plus an endpoint like `GET /care-episodes/{id}/tasks/completion-log?date=YYYY-MM-DD`.
+
+---
+
+## Appointment Details: Patient Information card
+
+**What you'll see:** the "Age / Gender" field always renders `--`, even though Name/Email/Phone show correctly for the same patient.
+
+**Why:** `GET /appointments/{id}` (`appointment.service.ts:368`, `findOne`) selects only `{ id, name, email, phone }` on the patient relation — `dateOfBirth`/`gender` are never fetched, so the API response genuinely has no value to render. Confirmed this against the live Prisma query, not just the (stale) published OpenAPI spec, which doesn't even document a `patient` object on this endpoint at all.
+
+**Frontend status:** nothing to fix — this is a missing field in the API response.
+
+**Blocked on:** adding `dateOfBirth`/`gender` to that `select` (both fields already exist on the user model and are used elsewhere, e.g. `PatientIdentityDto`).
+
+---
+
+## Team → Permissions (Invite/Edit member, member profile tab)
+
+**What you'll see:** unchecking "Manage Patients," "View Care Episodes," "Acknowledge alerts," etc. for a staff member has no effect — they can still access Connected Patients, Care Episodes, Appointments, Alerts, Messages, and Reports/Analytics regardless of what's unchecked. Only removing Team Management or Audit Log access actually produces Access Denied.
+
+**Why:** the enforcement mechanism (`TeamPermissionGuard`) works correctly, but `@TeamPermissionRequired(...)` is only wired onto two controllers — `team.controller.ts` and `audit.controller.ts`. The other three grantable permissions (`care_episode`, `appointments`, `view_all_reports`) are stored on the staff record but never checked by any route.
+
+**Frontend status:** nothing to fix on our end — the checkboxes correctly send the right values, the backend just doesn't act on most of them yet. Separately (not backend's problem, just worth knowing): the "Clinical Care" group shows 9 checkboxes that all collapse onto the single `care_episode` value — there's no way to make "Acknowledge alerts" independent of "View alerts" until the permission model itself gets more granular, which isn't currently planned.
+
+**Blocked on:** backend adding `@TeamPermissionRequired(TeamPermission.CARE_EPISODE)` / `.APPOINTMENTS` / `.VIEW_ALL_REPORTS` to the relevant controllers.
+
+---
+
+## Anywhere a clinician's photo/initials show (Team, Care Team, Reports, appointment scheduling)
+
+**What you'll see:** only the *logged-in* user's own avatar (top-right Navbar) can ever show a real photo. Every other clinician — Team list, Care Team member cards, Clinician Workload/Reports, appointment scheduling pickers — always shows initials, even for clinicians who've uploaded a profile photo.
+
+**Why:** `User.avatarUrl` exists and is populated (confirmed in `schema.prisma`, returned by `/auth/me` and `/profile/me`), but every endpoint that lists *other* clinicians drops it in mapping — `ClinicianListItemDto`/`ClinicianProfileResponseDto` (`clinicians.service.ts`, `mapClinicianListItem`) and `CareTeamMemberDto` have no `avatarUrl` field at all, even though the underlying query already fetches the full user row.
+
+**Frontend status:** the Navbar fix (own avatar) is done and live. No further frontend work possible until the other DTOs carry the field.
+
+**Blocked on:** backend adding `avatarUrl` to those three DTOs — this is a mapping-layer omission, not a new query, so should be a quick fix.
+
+---
+
+## Settings pages that only show mock/static data
+
+These pages exist in the UI (some per design files, some as placeholders) but have nothing to connect to — confirmed by searching the full OpenAPI spec, none of these paths exist at all:
+
+| Settings page | What's missing |
+|---|---|
+| Security | 2FA, session timeout, max login attempts, active-session listing, log out all devices (only password change is real, via `POST /auth/change-password`) |
+| Integrations | EHR connect/disconnect status, API key reveal/regenerate/revoke/audit trail |
+| Appointment settings | default duration, check-in window, grace period, daily capacity, virtual-consultation toggle, auto-confirm follow-ups |
+| Billing → Invoices | list/filter invoices, invoice detail, downloads, pay/retry, update payment method, cancel subscription |
+| Billing → current plan | `GET /subscriptions/me` is real but documented as a stub always returning the free plan |
+| Roles & Permissions (Settings) | default role access, permission policy toggles, dependency rules — the per-member permissions in Team Management are real, but there's no facility-wide policy/defaults contract |
+| Facility care-configuration | default episode duration, auto-close inactive episodes, clinician approval requirement, critical-alert escalation roles |
+| Notification preferences | connected at the user level; no facility-wide policy endpoint if that's ever needed |
+
+**Frontend status:** nothing to build against yet on any of these — they're intentionally static/mock until backend ships something.
