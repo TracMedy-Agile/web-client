@@ -82,3 +82,45 @@ export async function createHomeCareRequest(input: CreateHomeCareRequestInput): 
   const record = asRecord(payload);
   return { id: record ? stringValue(record, "id") : "" };
 }
+
+export type HomeCareProvider = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+};
+
+// GET /home-care/providers — admin only.
+export async function getHomeCareProviders(): Promise<HomeCareProvider[]> {
+  const response = await apiClient("/home-care/providers", { cache: "no-store" });
+  const payload = await readResponse(response, "Unable to load home-care providers.");
+  const record = asRecord(payload);
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(record?.items)
+      ? record.items
+      : Array.isArray(record?.providers)
+        ? record.providers
+        : [];
+
+  return list
+    .map(asRecord)
+    .filter((item): item is JsonRecord => item !== null)
+    .map((item) => ({
+      id: stringValue(item, "id"),
+      name: stringValue(item, "name", "Home-care provider"),
+      phone: stringValue(item, "phone"),
+      email: stringValue(item, "email"),
+    }))
+    .filter((provider) => provider.id);
+}
+
+// POST /home-care/requests/{id}/assign-provider — admin only.
+export async function assignHomeCareProvider(requestId: string, providerId: string): Promise<void> {
+  const response = await apiClient.post(
+    `/home-care/requests/${encodeURIComponent(requestId)}/assign-provider`,
+    { providerId },
+    { cache: "no-store" },
+  );
+  await readResponse(response, "Unable to assign a provider to this home-care request.");
+}

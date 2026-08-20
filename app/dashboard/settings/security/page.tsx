@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, Laptop, Loader2, LockKeyhole, Save, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Field, inputClassName, SaveNotice, selectClassName, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
@@ -12,18 +12,13 @@ import { Switch } from "@/components/ui/switch";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { changeCurrentPassword } from "@/lib/api/settings";
 
-const activeSessions = [
-  { id: "current", device: "Chrome on Windows", location: "Lagos, Nigeria", lastActive: "Current session" },
-  { id: "mobile", device: "Safari on iPhone", location: "Lagos, Nigeria", lastActive: "2 hours ago" },
-];
-
 export default function SecuritySettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
   const [sessionTimeout, setSessionTimeout] = useState("30");
-  const [maxLoginAttempts, setMaxLoginAttempts] = useState("5");
+  const [maxLoginAttempts, setMaxLoginAttempts] = useState("3");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">("info");
@@ -77,22 +72,20 @@ export default function SecuritySettingsPage() {
 
   return (
     <div>
-      <SettingsHeader title="Security" description="Manage password access, session controls, and account protection settings for this hospital workspace." />
+      <SettingsHeader title="Security" description="Manage authentication and session settings." />
 
-      <div className="space-y-5">
-        <SettingsPanel title="Change Password" description="Update the password for your current hospital account.">
-          <form onSubmit={(event) => void handlePasswordSubmit(event)} className="space-y-5">
-            <div className="grid gap-5 md:grid-cols-3">
-              <Field label="Current Password">
-                <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className={inputClassName} required />
-              </Field>
-              <Field label="New Password">
-                <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className={inputClassName} required />
-              </Field>
-              <Field label="Confirm Password">
-                <Input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className={inputClassName} required />
-              </Field>
-            </div>
+      <div className="space-y-6">
+        <SettingsPanel title="Change Password">
+          <form onSubmit={(event) => void handlePasswordSubmit(event)} className="space-y-7">
+            <Field label="Current Password">
+              <Input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Enter current password" className={inputClassName} required />
+            </Field>
+            <Field label="New Password">
+              <Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Enter new password" className={inputClassName} required />
+            </Field>
+            <Field label="Confirm New Password">
+              <Input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat new password" className={inputClassName} required />
+            </Field>
             <Button type="submit" disabled={isChangingPassword} className="h-11 rounded-lg px-5 font-semibold">
               {isChangingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               Update Password
@@ -100,32 +93,29 @@ export default function SecuritySettingsPage() {
           </form>
         </SettingsPanel>
 
-        <SettingsPanel title="Account Protection" description="Configure login security and session behavior." footer={<Button type="button" onClick={saveSecurityPreferences} className="h-11 rounded-lg px-5 font-semibold"><Save className="h-4 w-4" />Save Security Settings</Button>}>
-          <div className="flex flex-col gap-4 rounded-lg border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden /></span><div><p className="text-sm font-bold text-foreground">Two Factor Authentication</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Require an additional verification step for hospital staff sign-in.</p></div></div>
+        <SettingsPanel title="Account Protection" hideHeader>
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-base font-medium text-foreground">Two Factor Authentication</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Add an extra layer of security to your account</p>
+            </div>
             <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} aria-label="Toggle two factor authentication" />
           </div>
 
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-5 rounded-xl border border-border bg-card p-5 md:grid-cols-2">
             <Field label="Session Timeout">
               <Select value={sessionTimeout} onValueChange={setSessionTimeout}><SelectTrigger className={selectClassName}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="15">15 minutes</SelectItem><SelectItem value="30">30 minutes</SelectItem><SelectItem value="60">1 hour</SelectItem><SelectItem value="120">2 hours</SelectItem></SelectContent></Select>
+              <span className="block text-sm leading-5 text-muted-foreground">Auto-logout after 30 minutes of inactivity</span>
             </Field>
-            <Field label="Max Login Attempt" hint="For safety, this cannot exceed 5 attempts.">
-              <Select value={maxLoginAttempts} onValueChange={setMaxLoginAttempts}><SelectTrigger className={selectClassName}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3">3 attempts</SelectItem><SelectItem value="4">4 attempts</SelectItem><SelectItem value="5">5 attempts</SelectItem></SelectContent></Select>
+            <Field label="Max Login Attempt">
+              <Select value={maxLoginAttempts} onValueChange={setMaxLoginAttempts}><SelectTrigger className={selectClassName}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3">3</SelectItem><SelectItem value="4">4</SelectItem><SelectItem value="5">5</SelectItem></SelectContent></Select>
+              <span className="block text-sm leading-5 text-muted-foreground">max login attempt cannot exceed 5</span>
             </Field>
           </div>
 
-          <div>
-            <h3 className="text-base font-bold text-foreground">Active Sessions</h3>
-            <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-background">
-              {activeSessions.map((session) => (
-                <div key={session.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-card text-primary shadow-sm"><Laptop className="h-5 w-5" aria-hidden /></span><div><p className="text-sm font-bold text-foreground">{session.device}</p><p className="mt-1 text-sm text-muted-foreground">{session.location} - {session.lastActive}</p></div></div>
-                  {session.id === "current" ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Current</span> : null}
-                </div>
-              ))}
-            </div>
-            <Button type="button" variant="outline" onClick={saveSecurityPreferences} className="mt-4 h-10 rounded-lg font-semibold text-destructive hover:text-destructive"><LockKeyhole className="h-4 w-4" />Log out all devices</Button>
+          <div className="space-y-3 pl-5">
+            <h3 className="text-xl font-bold text-foreground">Active sessions</h3>
+            <Button type="button" variant="outline" onClick={saveSecurityPreferences} className="h-11 rounded-lg border-destructive px-5 font-semibold text-destructive hover:text-destructive">Log out all devices</Button>
           </div>
 
           {notice ? <SaveNotice tone={noticeTone}>{notice}</SaveNotice> : null}

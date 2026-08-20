@@ -15,16 +15,22 @@ type DashboardUser = {
   id: string;
   name: string;
   role: string;
+  systemRole: string;
   specialty: string;
   facilityId: string;
   hospitalId: string;
+  avatarUrl: string;
+  permissions: string[];
+  permissionsLoaded: boolean;
 };
 
 type DashboardUserContextValue = {
   user: DashboardUser | null;
   role: string | null;
-  status: "loading" | "ready" | "error";
+  status: "loading" | "ready" | "error" | "network-error" | "access-denied";
+  hasPermission: (permission: string) => boolean;
   refetch: () => void;
+  updateUser: (patch: Partial<Pick<DashboardUser, "name" | "avatarUrl">>) => void;
 };
 
 const DashboardUserContext = createContext<DashboardUserContextValue | null>(null);
@@ -48,10 +54,85 @@ function firstString(record: Record<string, unknown> | null, keys: readonly stri
   return "";
 }
 
+function ownValue(record: Record<string, unknown> | null, key: string) {
+  if (!record || !Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+  return record[key];
+}
+
+function permissionValues(record: Record<string, unknown> | null) {
+  const rawPermissions = ownValue(record, "permissions");
+  if (typeof rawPermissions === "undefined") return null;
+  if (!Array.isArray(rawPermissions)) {
+    const permission = asString(rawPermissions);
+    return permission ? [permission] : [];
+  }
+  return rawPermissions
+    .map((permission) => asString(permission))
+    .filter(Boolean);
+}
+
+function uniquePermissions(permissions: readonly string[]) {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const permission of permissions) {
+    const key = permission.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(key);
+  }
+  return normalized;
+}
+
 function unwrapAuthPayload(payload: unknown) {
   const root = asRecord(payload);
   const outer = asRecord(root?.data) ?? root;
   return asRecord(outer?.user) ?? asRecord(outer?.staff) ?? asRecord(outer?.clinician) ?? asRecord(outer?.profile) ?? outer;
+}
+
+function permissionRecords(payload: unknown) {
+  const root = asRecord(payload);
+  const outer = asRecord(root?.data) ?? root;
+  const data = unwrapAuthPayload(payload);
+  const records: Array<Record<string, unknown> | null> = [data, outer, root];
+  const nestedKeys = ["user", "staff", "clinician", "profile", "teamMember", "member", "access", "authorization"] as const;
+
+  for (const record of [data, outer, root]) {
+    for (const key of nestedKeys) {
+      records.push(asRecord(record?.[key]));
+    }
+  }
+
+  return records;
+}
+
+function resolvePermissions(payload: unknown) {
+  const permissions: string[] = [];
+  let permissionsLoaded = false;
+
+  for (const record of permissionRecords(payload)) {
+    const values = permissionValues(record);
+    if (values === null) continue;
+    permissionsLoaded = true;
+    permissions.push(...values);
+  }
+
+  return {
+    permissions: uniquePermissions(permissions),
+    permissionsLoaded,
+  };
+}
+
+export function isDashboardAdmin(user: DashboardUser | null) {
+  if (!user) return false;
+  const roles = [user.role, user.systemRole].map((role) => role.toLowerCase());
+  return roles.some((role) => role === "admin" || role === "hospital_admin" || role.endsWith("_admin"));
+}
+
+export function canAccessDashboardPermission(user: DashboardUser | null, permission: string) {
+  if (!user) return false;
+  if (isDashboardAdmin(user)) return true;
+  if (!user.permissionsLoaded) return true;
+  return user.permissions.includes("full_system_access") || user.permissions.includes(permission);
 }
 
 function parseUser(payload: unknown): DashboardUser | null {
@@ -61,6 +142,8 @@ function parseUser(payload: unknown): DashboardUser | null {
   if (!data) return null;
 
   const role = firstString(data, ["role", "userRole", "accountRole"]) || firstString(outer, ["role", "userRole", "accountRole"]);
+  const systemRole = firstString(data, ["systemRole", "roleType"]) || firstString(outer, ["systemRole", "roleType"]);
+  const resolvedPermissions = resolvePermissions(payload);
 
   const facility = asRecord(data.facility) ?? asRecord(outer?.facility) ?? asRecord(data.hospital) ?? asRecord(outer?.hospital);
   const facilityName = firstString(facility, ["name", "facilityName", "hospitalName"]);
@@ -74,9 +157,13 @@ function parseUser(payload: unknown): DashboardUser | null {
     id: firstString(data, ["id", "userId", "staffId", "clinicianId"]),
     name: resolvedName,
     role: role || "staff",
+    systemRole,
     specialty: firstString(data, ["specialty", "department", "ward", "title"]),
     facilityId: firstString(data, ["facilityId"]) || firstString(facility, ["id", "facilityId"]),
     hospitalId: firstString(data, ["hospitalId"]) || firstString(facility, ["hospitalId", "tracId"]),
+    avatarUrl: firstString(data, ["avatarUrl", "photoUrl"]),
+    permissions: resolvedPermissions.permissions,
+    permissionsLoaded: resolvedPermissions.permissionsLoaded,
   };
 }
 
@@ -92,7 +179,7 @@ export default function DashboardUserProvider({ children }: { children: ReactNod
       .then(async (response) => {
         if (!isActive) return;
         if (!response.ok) {
-          setStatus("error");
+          setStatus(response.status === 403 ? "access-denied" : "error");
           return;
         }
         const nextUser = parseUser(await response.json());
@@ -100,7 +187,7 @@ export default function DashboardUserProvider({ children }: { children: ReactNod
         setStatus(nextUser ? "ready" : "error");
       })
       .catch(() => {
-        if (isActive) setStatus("error");
+        if (isActive) setStatus("network-error");
       });
 
     return () => {
@@ -113,9 +200,23 @@ export default function DashboardUserProvider({ children }: { children: ReactNod
     setRequestKey((value) => value + 1);
   }, []);
 
+  // Patches the cached user in place (e.g. after saving a profile photo/name) without
+  // refetching — refetch() flips status to "loading", which RoleGuard treats as a full
+  // page remount, so it's too heavy for a same-session local update.
+  const updateUser = useCallback((patch: Partial<Pick<DashboardUser, "name" | "avatarUrl">>) => {
+    setUser((current) => (current ? { ...current, ...patch } : current));
+  }, []);
+
   const value = useMemo<DashboardUserContextValue>(
-    () => ({ user, role: user?.role ?? null, status, refetch }),
-    [refetch, status, user],
+    () => ({
+      user,
+      role: user?.role ?? null,
+      status,
+      hasPermission: (permission: string) => canAccessDashboardPermission(user, permission),
+      refetch,
+      updateUser,
+    }),
+    [refetch, status, updateUser, user],
   );
 
   return <DashboardUserContext.Provider value={value}>{children}</DashboardUserContext.Provider>;

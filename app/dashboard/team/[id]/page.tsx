@@ -2,40 +2,39 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   ArrowLeft,
-  CalendarCheck,
-  CalendarDays,
+  ArrowRight,
+  BarChart3,
+  Bell,
+  Calendar,
   CheckCircle2,
-  Clock3,
+  Clock,
+  Info,
+  LogIn,
   Mail,
-  MapPin,
   MessageSquare,
+  Phone,
+  Shield,
   ShieldCheck,
+  Smartphone,
   Stethoscope,
-  UserRoundCheck,
-  UsersRound,
+  UserCheck,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AccessDeniedState from "@/components/system/AccessDeniedState";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   getFacilityClinician,
   getTeamMember,
+  getTeamMemberRequestId,
   getTeamMemberActivity,
   getTeamMemberEscalationPreference,
   updateTeamMemberEscalationPreference,
@@ -45,16 +44,22 @@ import {
   type TeamMemberActivityEntry,
   type UpdateEscalationPreferenceInput,
 } from "@/lib/api/clinicians";
+import { errorMessage, isAccessDeniedError, isNetworkError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils";
 import TeamMemberActions from "../components/TeamMemberActions";
 
 type EscalationChannel = UpdateEscalationPreferenceInput["channels"][number];
-type SeverityThreshold = NonNullable<UpdateEscalationPreferenceInput["whatsappSeverityThreshold"]>;
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
   pending: "Pending invite",
   suspended: "Suspended",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-500/10 text-emerald-700",
+  pending: "bg-amber-500/10 text-amber-700",
+  suspended: "bg-red-500/10 text-red-700",
 };
 
 function initials(name: string | null) {
@@ -64,10 +69,6 @@ function initials(name: string | null) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-}
-
-function formatAppointmentType(value: string) {
-  return humanize(value);
 }
 
 function humanize(value: string) {
@@ -83,17 +84,33 @@ function statusLabel(value?: string | null) {
   return STATUS_LABELS[value] ?? humanize(value);
 }
 
-function formatDateTime(value?: string | null) {
+function formatDate(value?: string | null) {
   if (!value) return "Not recorded";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatActivityDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) return `Today, ${formatTime(value)}`;
+  return new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function isToday(value?: string | null) {
+  if (!value) return false;
+  return new Date(value).toDateString() === new Date().toDateString();
 }
 
 function MemberSkeleton() {
@@ -110,31 +127,40 @@ const PERMISSION_GROUPS = [
   {
     title: "Clinical Care",
     icon: Stethoscope,
-    permissions: [{ label: "Care episodes and connected patients", key: "care_episode" }],
-  },
-  {
-    title: "Appointments",
-    icon: CalendarCheck,
-    permissions: [{ label: "Appointments", key: "appointments" }],
+    bgColor: "bg-blue-50",
+    permissions: [
+      { label: "View patients", key: "care_episode" },
+      { label: "View care episodes", key: "care_episode" },
+      { label: "Manage care episodes", key: "care_episode" },
+      { label: "View appointments", key: "appointments" },
+      { label: "Manage appointments", key: "appointments" },
+      { label: "View alerts", key: "care_episode" },
+      { label: "Acknowledge alerts", key: "care_episode" },
+      { label: "View messages", key: "care_episode" },
+      { label: "Send messages", key: "care_episode" },
+    ],
   },
   {
     title: "Insights",
-    icon: Activity,
-    permissions: [{ label: "Reports and analytics", key: "view_all_reports" }],
+    icon: BarChart3,
+    bgColor: "bg-blue-50",
+    permissions: [
+      { label: "View reports & analytics", key: "view_all_reports" },
+      { label: "Export reports", key: "view_all_reports" },
+    ],
   },
   {
     title: "Administration",
-    icon: ShieldCheck,
+    icon: Shield,
+    bgColor: "bg-blue-50",
     permissions: [
+      { label: "View team", key: "manage_team_members" },
       { label: "Manage team members", key: "manage_team_members" },
       { label: "View audit logs", key: "audit_log" },
       { label: "Manage hospital settings", key: "configure_settings" },
-      { label: "Full system access", key: "full_system_access" },
     ],
   },
 ] as const;
-
-const SEVERITIES: SeverityThreshold[] = ["info", "low", "moderate", "high", "critical"];
 
 function hasPermission(member: TeamMember, permission: string) {
   return member.permissions.includes("full_system_access") || member.permissions.includes(permission);
@@ -147,23 +173,72 @@ function channelsFromPreference(preference: EscalationPreference | null, member:
   );
 }
 
+function getActivityIcon(action: string) {
+  const normalized = action.toLowerCase();
+  if (normalized.includes("login") || normalized.includes("logged")) return LogIn;
+  if (normalized.includes("permission") || normalized.includes("custom")) return Shield;
+  if (normalized.includes("whatsapp") || normalized.includes("phone") || normalized.includes("verify")) return Smartphone;
+  if (normalized.includes("activat") || normalized.includes("account")) return UserCheck;
+  if (normalized.includes("invite") || normalized.includes("sent")) return Mail;
+  return Activity;
+}
+
+function getActivityIconColor(action: string) {
+  const normalized = action.toLowerCase();
+  if (normalized.includes("login")) return "bg-blue-50 text-blue-600 border-blue-200";
+  if (normalized.includes("permission")) return "bg-purple-50 text-purple-600 border-purple-200";
+  if (normalized.includes("whatsapp") || normalized.includes("verify")) return "bg-green-50 text-green-600 border-green-200";
+  if (normalized.includes("activat")) return "bg-teal-50 text-teal-600 border-teal-200";
+  if (normalized.includes("invite")) return "bg-indigo-50 text-indigo-600 border-indigo-200";
+  return "bg-blue-50 text-blue-600 border-blue-200";
+}
+
 export default function TeamMemberPage() {
   const params = useParams<{ id: string }>();
   const memberId = params.id;
   const [member, setMember] = useState<TeamMember | null>(null);
   const [profile, setProfile] = useState<ClinicianProfile | null>(null);
   const [escalation, setEscalation] = useState<EscalationPreference | null>(null);
-  const [whatsappPhone, setWhatsappPhone] = useState("");
-  const [severity, setSeverity] = useState<SeverityThreshold>("critical");
   const [activityEntries, setActivityEntries] = useState<TeamMemberActivityEntry[]>([]);
   const [activityTotal, setActivityTotal] = useState(0);
+  const [activityPage, setActivityPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isActivityLoading, setIsActivityLoading] = useState(true);
   const [isEscalationLoading, setIsEscalationLoading] = useState(true);
   const [isSavingEscalation, setIsSavingEscalation] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [escalationError, setEscalationError] = useState<string | null>(null);
+
+  const loadActivity = useCallback(async (targetMember: TeamMember, pageNum = 1, append = false) => {
+    const requestMemberId = getTeamMemberRequestId(targetMember);
+    setIsActivityLoading(true);
+    setActivityError(null);
+    try {
+      const response = await getTeamMemberActivity(requestMemberId, { page: pageNum, limit: 10 });
+      setActivityEntries((prev) => append ? [...prev, ...response.data] : response.data);
+      setActivityTotal(response.meta.total);
+      setActivityPage(pageNum);
+    } catch (requestError) {
+      setActivityError(requestError instanceof Error ? requestError.message : "Unable to load team member activity.");
+    } finally {
+      setIsActivityLoading(false);
+    }
+  }, []);
+
+  const loadEscalation = useCallback(async (targetMember: TeamMember) => {
+    const requestMemberId = getTeamMemberRequestId(targetMember);
+    setIsEscalationLoading(true);
+    setEscalationError(null);
+    try {
+      const preference = await getTeamMemberEscalationPreference(requestMemberId);
+      setEscalation(preference);
+    } catch (requestError) {
+      setEscalationError(requestError instanceof Error ? requestError.message : "Unable to load escalation preferences.");
+    } finally {
+      setIsEscalationLoading(false);
+    }
+  }, []);
 
   const loadProfile = useCallback(async () => {
     setIsLoading(true);
@@ -171,76 +246,41 @@ export default function TeamMemberPage() {
     try {
       const teamMember = await getTeamMember(memberId);
       setMember(teamMember);
+      void loadActivity(teamMember);
+      void loadEscalation(teamMember);
       try {
         setProfile(await getFacilityClinician(teamMember.userId || teamMember.id));
       } catch {
         setProfile(null);
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to load this team member.");
+      setError(requestError);
     } finally {
       setIsLoading(false);
     }
-  }, [memberId]);
-
-  const loadActivity = useCallback(async () => {
-    setIsActivityLoading(true);
-    setActivityError(null);
-    try {
-      const response = await getTeamMemberActivity(memberId, { page: 1, limit: 10 });
-      setActivityEntries(response.data);
-      setActivityTotal(response.meta.total);
-    } catch (requestError) {
-      setActivityError(requestError instanceof Error ? requestError.message : "Unable to load team member activity.");
-    } finally {
-      setIsActivityLoading(false);
-    }
-  }, [memberId]);
-
-  const loadEscalation = useCallback(async () => {
-    setIsEscalationLoading(true);
-    setEscalationError(null);
-    try {
-      const preference = await getTeamMemberEscalationPreference(memberId);
-      setEscalation(preference);
-      setWhatsappPhone(preference.whatsappPhone || "");
-      setSeverity((preference.whatsappSeverityThreshold || "critical") as SeverityThreshold);
-    } catch (requestError) {
-      setEscalationError(requestError instanceof Error ? requestError.message : "Unable to load escalation preferences.");
-    } finally {
-      setIsEscalationLoading(false);
-    }
-  }, [memberId]);
+  }, [loadActivity, loadEscalation, memberId]);
 
   useEffect(() => {
     capturePostHogEvent("team_member_viewed", { member_id: memberId });
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadProfile();
-    void loadActivity();
-    void loadEscalation();
-  }, [loadActivity, loadEscalation, loadProfile, memberId]);
+  }, [loadProfile, memberId]);
 
-  const workingDays = useMemo(() => {
-    if (!profile) return [];
-    return Object.entries(profile.weeklyAvailability)
-      .filter(([, value]) => value.isWorking)
-      .map(([day, value]) => `${day} ${value.start || ""}-${value.end || ""}`);
-  }, [profile]);
-
-  async function saveEscalationPreference(nextChannels?: EscalationChannel[]) {
+  async function toggleWhatsapp(checked: boolean) {
     if (!member) return;
-    const channels = nextChannels ?? channelsFromPreference(escalation, member);
+    const currentChannels = channelsFromPreference(escalation, member);
+    const nextChannels = checked
+      ? Array.from(new Set([...currentChannels, "whatsapp" as EscalationChannel]))
+      : currentChannels.filter((channel) => channel !== "whatsapp");
     setIsSavingEscalation(true);
     try {
-      const preference = await updateTeamMemberEscalationPreference(member.id, {
-        channels,
-        ...(whatsappPhone.trim() ? { whatsappPhone: whatsappPhone.trim() } : {}),
-        whatsappSeverityThreshold: severity,
+      const requestMemberId = getTeamMemberRequestId(member);
+      const preference = await updateTeamMemberEscalationPreference(requestMemberId, {
+        channels: nextChannels,
+        whatsappSeverityThreshold: escalation?.whatsappSeverityThreshold ?? "critical",
       });
       setEscalation(preference);
-      setWhatsappPhone(preference.whatsappPhone || "");
-      setSeverity((preference.whatsappSeverityThreshold || severity) as SeverityThreshold);
-      capturePostHogEvent("team_escalation_preference_updated", { member_id: member.id, channels });
+      capturePostHogEvent("team_escalation_preference_updated", { member_id: requestMemberId, channels: nextChannels });
       toast.success("Escalation preferences updated");
     } catch (requestError) {
       toast.error("Escalation preference could not be saved", {
@@ -252,52 +292,64 @@ export default function TeamMemberPage() {
   }
 
   if (isLoading) return <MemberSkeleton />;
-  if (error || !member) return <NetworkErrorState onRetry={loadProfile} />;
+  if (isAccessDeniedError(error)) {
+    return <AccessDeniedState description="This team member profile is available to users granted team-management access by the hospital." />;
+  }
+  if (error || !member) {
+    if (isNetworkError(error)) return <NetworkErrorState onRetry={loadProfile} />;
+    return (
+      <section role="alert" className="mx-auto flex min-h-[520px] w-full max-w-[900px] flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-14 text-center shadow-sm">
+        <ShieldCheck className="h-12 w-12 text-destructive" />
+        <h2 className="mt-5 text-2xl font-bold text-foreground">Unable to load team member</h2>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{errorMessage(error, "Unable to load this team member.")}</p>
+        <Button type="button" onClick={() => void loadProfile()} className="mt-6 h-11 rounded-lg px-5 font-semibold">Try Again</Button>
+      </section>
+    );
+  }
 
   const name = member.name || profile?.name || "Unnamed clinician";
   const department = member.ward || member.specialty || profile?.department || "Not specified";
-  const analytics = profile?.analytics;
-  const dailyCapacity = profile?.dailyCapacity ?? 0;
-  const assignedToday = profile?.assignedToday ?? member.assignedPatientCount;
-  const remainingToday = profile?.remainingToday ?? 0;
-  const utilization = profile?.utilizationPercentage ?? 0;
-  const hasWorkloadWarning = profile?.workloadThresholdWarning ?? false;
-  const todayAppointments = profile?.todayAppointments ?? [];
   const activeChannels = channelsFromPreference(escalation, member);
   const whatsappEnabled = activeChannels.includes("whatsapp");
+  const enabledPermissionCount = PERMISSION_GROUPS.reduce((sum, g) => {
+    return sum + g.permissions.filter((p) => hasPermission(member, p.key)).length;
+  }, 0);
 
   return (
     <section className="mx-auto w-full max-w-[1500px] space-y-5" aria-labelledby="member-title">
+      {/* Breadcrumb */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/dashboard/team" className="inline-flex items-center gap-1.5 hover:text-primary">
-          <ArrowLeft className="h-4 w-4" />
-          Team
-        </Link>
-        <span>/</span>
-        <span className="truncate text-foreground">{name}</span>
+        <Link href="/dashboard/team" className="hover:text-primary">Team</Link>
+        <span className="text-muted-foreground/50">&gt;</span>
+        <span className="text-muted-foreground">Team Member</span>
+        <span className="text-muted-foreground/50">&gt;</span>
+        <span className="font-semibold text-foreground">View Profile</span>
       </nav>
 
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      {/* Profile Header */}
+      <div className="rounded-xl border border-border bg-card px-6 py-5 shadow-sm">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-4">
-            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#023E8A] text-xl font-bold text-white">
               {initials(name)}
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 id="member-title" className="truncate text-2xl font-bold text-foreground">{name}</h1>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+                <span className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+                  STATUS_BADGE[member.status] ?? "bg-muted text-muted-foreground",
+                )}>
                   {statusLabel(member.status)}
                 </span>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                {statusLabel(member.role)} · {department}
+                {statusLabel(member.role)} &bull; {department}
               </p>
             </div>
           </div>
           <TeamMemberActions
-            memberId={member.id}
+            memberId={getTeamMemberRequestId(member)}
             name={name}
             email={member.email}
             specialty={member.specialty || ""}
@@ -311,249 +363,343 @@ export default function TeamMemberPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
-        <div className="overflow-x-auto rounded-xl border border-border bg-card px-2">
-          <TabsList className="h-14 min-w-max justify-start bg-transparent p-0">
-            {[
-              ["overview", "Overview"],
-              ["access", "Role & Access"],
-              ["escalation", "Alert Escalation"],
-              ["activity", "Activity"],
-            ].map(([value, label]) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className="h-14 rounded-none border-b-2 border-transparent px-5 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
-              >
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+      {/* Tabs */}
+      <Tabs defaultValue="overview" className="space-y-5">
+        <TabsList className="h-auto w-full justify-start gap-0 rounded-none border-b border-border bg-transparent p-0">
+          {[
+            ["overview", "Overview"],
+            ["access", "Role & Access"],
+            ["escalation", "Alert Escalation"],
+            ["activity", "Activity"],
+          ].map(([value, label]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="h-12 rounded-none border-b-2 border-transparent px-5 text-sm font-medium text-muted-foreground data-[state=active]:border-[#023E8A] data-[state=active]:bg-transparent data-[state=active]:text-[#023E8A] data-[state=active]:shadow-none"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
+        {/* ===== OVERVIEW TAB - TM-07 ===== */}
+        <TabsContent value="overview" className="space-y-5">
+          {/* Info Cards */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: "Daily Capacity", value: dailyCapacity, detail: profile ? "Appointments per day" : "Clinician profile unavailable", icon: CalendarDays },
-              { label: "Assigned Today", value: assignedToday, detail: profile ? "Confirmed workload" : "Assigned patients", icon: UserRoundCheck },
-              { label: "Remaining Today", value: remainingToday, detail: "Open capacity", icon: UsersRound },
-              { label: "Utilization", value: `${utilization}%`, detail: hasWorkloadWarning ? "Workload warning" : "Within threshold", icon: Activity },
-            ].map(({ label, value, detail, icon: Icon }) => (
-              <article key={label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                    <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-                  </div>
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                </div>
-              </article>
-            ))}
+            <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                  <Clock className="h-4 w-4" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Login</span>
+              </div>
+              <p className="mt-3 text-xl font-bold text-foreground">{isToday(member.lastLoginAt) ? "Today" : formatDate(member.lastLoginAt)}</p>
+              {isToday(member.lastLoginAt) ? <p className="text-sm text-muted-foreground">at {formatTime(member.lastLoginAt)}</p> : null}
+            </article>
+            <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                  <Calendar className="h-4 w-4" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
+              </div>
+              <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+            </article>
+            <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                  <Calendar className="h-4 w-4" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
+              </div>
+              <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+            </article>
+            <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                  <Shield className="h-4 w-4" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access Level</span>
+              </div>
+              <p className="mt-3 text-xl font-bold text-foreground">{humanize(member.accessProfile)}</p>
+              <p className="text-sm text-muted-foreground">{enabledPermissionCount} active permissions granted</p>
+            </article>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+          {/* Assignment Summary + Contact Details */}
+          <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+            {/* Assignment Summary */}
             <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <h2 className="font-semibold text-foreground">Appointment Summary</h2>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Assignment Summary</h2>
+                <BarChart3 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-0 divide-x divide-border sm:grid-cols-4">
                 {[
-                  ["Confirmed", analytics?.totalConfirmed ?? 0],
-                  ["In person", analytics?.inPerson ?? 0],
-                  ["Teleconsultation", analytics?.teleconsultation ?? 0],
-                  ["Nurse check-in", analytics?.nurseCheckin ?? 0],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl bg-muted/60 p-4">
-                    <p className="text-2xl font-bold text-foreground">{value}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+                  { value: member.assignedPatientCount, label: "PATIENTS", color: "text-[#023E8A]" },
+                  { value: profile?.analytics?.totalConfirmed ?? 0, label: "CARE\nEPISODES", color: "text-[#023E8A]" },
+                  { value: profile?.todayAppointments?.length ?? 0, label: "APPOINTMENTS", color: "text-[#023E8A]" },
+                  { value: 0, label: "ALERTS", color: "text-red-500", dot: true },
+                ].map(({ value, label, color, dot }) => (
+                  <div key={label} className="relative px-4 py-2 text-center first:pl-0 last:pr-0">
+                    {dot ? <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" /> : null}
+                    <p className={cn("text-3xl font-bold", color)}>{value}</p>
+                    <p className="mt-1 whitespace-pre-line text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
                   </div>
                 ))}
               </div>
-              <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-medium text-foreground">Today&apos;s utilization</span>
-                  <span className="text-muted-foreground">{utilization}%</span>
+            </div>
+
+            {/* Contact Details */}
+            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Contact Details</h2>
+                <button type="button" className="text-sm font-medium text-[#023E8A] hover:underline" aria-label="Edit contact details">Edit</button>
+              </div>
+              <div className="mt-5 space-y-5">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Work Email</p>
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground">{member.email}</span>
+                  </div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn("h-full rounded-full", hasWorkloadWarning ? "bg-destructive" : "bg-primary")}
-                    style={{ width: `${Math.min(100, Math.max(0, utilization))}%` }}
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Phone</p>
+                  <div className="mt-2 flex items-center gap-2.5">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground">{escalation?.whatsappPhone || "Not configured"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Account Information */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-foreground">Account Information</h2>
+            <div className="mt-5 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Current Status</p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", member.status === "active" ? "bg-emerald-500" : member.status === "suspended" ? "bg-red-500" : "bg-amber-500")} />
+                  <span className="text-sm font-medium text-foreground">{statusLabel(member.status)} User</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Member Since</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{formatDate(member.invitedAt)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Last Updated</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{formatDate(member.lastLoginAt)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Verification</p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-[#023E8A]" />
+                  <span className="text-sm font-medium text-[#023E8A]">Verified Identity</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ===== ROLE & ACCESS TAB - TM-08 ===== */}
+        <TabsContent value="access" className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[300px_1fr]">
+            {/* Role Summary Sidebar */}
+            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-foreground">Role Summary</h2>
+                <Info className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="mt-6 space-y-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                    <Stethoscope className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned Role</p>
+                    <p className="text-sm font-bold text-foreground">{statusLabel(member.role)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                    <Activity className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Specialty</p>
+                    <p className="text-sm font-bold text-foreground">{member.specialty || "Not specified"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                    <Shield className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Access Level</p>
+                    <p className="text-sm font-bold text-foreground">{humanize(member.accessProfile)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                    <UserPlus className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Permission Source</p>
+                    <p className="text-sm font-bold text-foreground">Manual/Custom</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 border-t border-border pt-4">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  Last Update: {formatDate(member.lastLoginAt)}
+                </div>
+                {member.invitedBy ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    By: <span className="font-medium text-[#023E8A]">{member.invitedBy}</span>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Permission Groups */}
+            <div className="space-y-4">
+              {PERMISSION_GROUPS.map(({ title, icon: Icon, bgColor, permissions }) => {
+                const enabledCount = permissions.filter((p) => hasPermission(member, p.key)).length;
+                return (
+                  <article key={title} className={cn("rounded-xl border border-border p-5 shadow-sm", bgColor)}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Icon className="h-4 w-4 text-[#023E8A]" />
+                        <h3 className="font-semibold text-foreground">{title}</h3>
+                      </div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[#023E8A]">{enabledCount} Permissions Enabled</span>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {permissions.map((permission) => {
+                        const enabled = hasPermission(member, permission.key);
+                        return (
+                          <div key={permission.label} className="flex items-center justify-between gap-3">
+                            <span className="text-sm text-foreground">{permission.label}</span>
+                            <div className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded",
+                              enabled ? "bg-[#023E8A] text-white" : "border border-border bg-white",
+                            )}>
+                              {enabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ===== ALERT ESCALATION TAB - TM-09 ===== */}
+        <TabsContent value="escalation" className="space-y-5">
+          {escalationError ? (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4">
+              <p className="text-sm font-semibold text-foreground">Unable to load escalation preferences</p>
+              <p className="mt-1 text-sm text-muted-foreground">{escalationError}</p>
+              <button type="button" onClick={() => void loadEscalation(member)} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Retry</button>
+            </div>
+          ) : (
+            <>
+              {/* Status Cards */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                      <Shield className="h-4 w-4" />
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Status</span>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">Escalation Eligibility</p>
+                  <p className="text-lg font-bold text-[#023E8A]">Eligible by Role</p>
+                </article>
+                <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-50 text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Compliance</span>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">Consent Status</p>
+                  <p className="text-lg font-bold text-green-600">Granted</p>
+                </article>
+                <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                      <Smartphone className="h-4 w-4" />
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Security</span>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">WhatsApp Verification</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{escalation?.whatsappPhone ? "Verified" : "Not Verified"}</p>
+                </article>
+                <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                      <Calendar className="h-4 w-4" />
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Timeline</span>
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">Verified On</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{formatDate(member.invitedAt)}</p>
+                </article>
+              </div>
+
+              {/* WhatsApp Toggle */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
+                      <MessageSquare className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h2 className="font-semibold text-foreground">WhatsApp Critical Alert Escalations Status</h2>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                        This clinician will receive high-priority alert escalations through WhatsApp for assigned patients during configured care hours.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={whatsappEnabled}
+                    disabled={isEscalationLoading || isSavingEscalation}
+                    aria-label="WhatsApp critical alert escalation"
+                    onCheckedChange={toggleWhatsapp}
                   />
                 </div>
+                <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Info className="h-4 w-4" />
+                  <span>Role default: on. Clinician can opt-out via personal settings.</span>
+                </div>
               </div>
-            </div>
-
-            <aside className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <h2 className="font-semibold text-foreground">Contact Details</h2>
-              <dl className="mt-5 space-y-4">
-                <div className="flex gap-3">
-                  <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">Email</dt>
-                    <dd className="mt-1 break-all text-sm font-medium text-foreground">{member.email}</dd>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">Ward / Specialty</dt>
-                    <dd className="mt-1 text-sm font-medium text-foreground">{department}</dd>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">Working schedule</dt>
-                    <dd className="mt-1 text-sm font-medium leading-6 text-foreground">
-                      {workingDays.length ? workingDays.join(", ") : "Not configured"}
-                    </dd>
-                  </div>
-                </div>
-              </dl>
-            </aside>
-          </div>
+            </>
+          )}
         </TabsContent>
 
-        <TabsContent value="access" className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
-            <aside className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <h2 className="font-semibold text-foreground">Role Summary</h2>
-              <div className="mt-5 flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Stethoscope className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="font-semibold text-foreground">{statusLabel(member.role)}</p>
-                  <p className="text-xs text-muted-foreground">{statusLabel(member.systemRole)}</p>
-                </div>
-              </div>
-              <dl className="mt-5 space-y-3 rounded-lg bg-muted p-3 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Access profile</dt>
-                  <dd className="font-semibold text-foreground">{statusLabel(member.accessProfile)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Invite state</dt>
-                  <dd className="font-semibold text-foreground">{statusLabel(member.inviteState)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Invited</dt>
-                  <dd className="text-right font-semibold text-foreground">{formatDateTime(member.invitedAt)}</dd>
-                </div>
-              </dl>
-            </aside>
-            <div className="space-y-4">
-              {PERMISSION_GROUPS.map(({ title, icon: Icon, permissions }) => (
-                <article key={title} className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <h2 className="font-semibold text-foreground">{title}</h2>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {permissions.map((permission) => {
-                      const enabled = hasPermission(member, permission.key);
-                      return (
-                        <div key={permission.key} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                          <span className="text-sm text-foreground">{permission.label}</span>
-                          <span className={cn("text-xs font-medium", enabled ? "text-emerald-700" : "text-muted-foreground")}>
-                            {enabled ? "Enabled" : "Disabled"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="escalation" className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              ["Preferred channels", activeChannels.length ? activeChannels.map(statusLabel).join(", ") : "None"],
-              ["WhatsApp phone", whatsappPhone || "Not configured"],
-              ["WhatsApp threshold", statusLabel(severity)],
-              ["Last login", formatDateTime(member.lastLoginAt)],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                <p className="mt-3 font-semibold text-foreground">{value}</p>
-              </div>
-            ))}
-          </div>
+        {/* ===== ACTIVITY TAB - TM-10 ===== */}
+        <TabsContent value="activity" className="space-y-5">
           <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <MessageSquare className="h-5 w-5" />
-                </span>
-                <div>
-                  <h2 className="font-semibold text-foreground">WhatsApp Critical Alert Escalations</h2>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Receive eligible critical alerts through the approved WhatsApp escalation channel.
-                  </p>
-                  {escalationError ? <p className="mt-2 text-sm text-destructive">{escalationError}</p> : null}
-                </div>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Member Activity Log</h2>
+              <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-1.5">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Last 30 Days</span>
               </div>
-              <Switch
-                checked={whatsappEnabled}
-                disabled={isEscalationLoading || isSavingEscalation}
-                aria-label="WhatsApp critical alert escalation"
-                onCheckedChange={(checked) => {
-                  const nextChannels = checked
-                    ? Array.from(new Set([...activeChannels, "whatsapp" as EscalationChannel]))
-                    : activeChannels.filter((channel) => channel !== "whatsapp");
-                  void saveEscalationPreference(nextChannels);
-                }}
-              />
             </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_220px_auto] sm:items-end">
-              <div className="space-y-2">
-                <Label htmlFor="escalation-whatsapp-phone">WhatsApp phone</Label>
-                <Input
-                  id="escalation-whatsapp-phone"
-                  value={whatsappPhone}
-                  onChange={(event) => setWhatsappPhone(event.target.value)}
-                  placeholder="+2348012345678"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="escalation-severity">Severity threshold</Label>
-                <Select value={severity} onValueChange={(value) => setSeverity(value as SeverityThreshold)}>
-                  <SelectTrigger id="escalation-severity">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SEVERITIES.map((item) => (
-                      <SelectItem key={item} value={item}>{statusLabel(item)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={() => void saveEscalationPreference()} disabled={isEscalationLoading || isSavingEscalation}>
-                {isSavingEscalation ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
 
-        <TabsContent value="activity" className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold text-foreground">Member Audit Activity</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Invitations, sign-ins, permission changes, status updates, and deletion events from the facility audit feed.
-                </p>
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">{activityTotal} records</span>
-            </div>
-            {isActivityLoading ? (
-              <div className="mt-5 space-y-3" aria-label="Loading member audit activity">
+            {isActivityLoading && activityEntries.length === 0 ? (
+              <div className="mt-5 space-y-3" aria-label="Loading member activity">
                 {[0, 1, 2].map((item) => (
                   <div key={item} className="h-16 animate-pulse rounded-xl bg-muted" />
                 ))}
@@ -562,15 +708,60 @@ export default function TeamMemberPage() {
               <div className="mt-5 rounded-xl border border-destructive/20 bg-destructive/10 p-4">
                 <p className="text-sm font-semibold text-foreground">Unable to load member activity</p>
                 <p className="mt-1 text-sm text-muted-foreground">{activityError}</p>
-                <button type="button" onClick={loadActivity} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                  Retry
-                </button>
+                <button type="button" onClick={() => void loadActivity(member)} className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Retry</button>
               </div>
-            ) : activityEntries.length ? (
-              <div className="mt-5 divide-y divide-border">
-                {activityEntries.map((entry) => (
-                  <ActivityRow key={entry.id} entry={entry} />
-                ))}
+            ) : activityEntries.length > 0 ? (
+              <div className="relative mt-5">
+                {/* Timeline line */}
+                <div className="absolute left-[18px] top-0 h-full w-[2px] bg-border" />
+
+                <div className="space-y-0">
+                  {activityEntries.map((entry) => {
+                    const EntryIcon = getActivityIcon(entry.action);
+                    const iconColor = getActivityIconColor(entry.action);
+                    return (
+                      <div key={entry.id} className="relative flex gap-4 pb-8 last:pb-0">
+                        <div className={cn(
+                          "relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 bg-white",
+                          iconColor,
+                        )}>
+                          <EntryIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1 pt-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-foreground">{humanize(entry.action)}</p>
+                              <p className="mt-0.5 text-sm text-muted-foreground">{entry.targetSummary}</p>
+                              {entry.actorName ? (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  by <span className="font-medium text-[#023E8A]">{entry.actorName}</span>
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 whitespace-nowrap rounded-lg border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
+                              {formatActivityDate(entry.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Load More */}
+                {activityEntries.length < activityTotal ? (
+                  <div className="mt-4 border-t border-border pt-4 text-center">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 text-sm font-bold text-[#023E8A] hover:text-[#023E8A]/80"
+                      onClick={() => void loadActivity(member, activityPage + 1, true)}
+                      disabled={isActivityLoading}
+                    >
+                      Load More
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="mt-5 rounded-xl bg-muted/60 px-4 py-10 text-center">
@@ -579,70 +770,8 @@ export default function TeamMemberPage() {
               </div>
             )}
           </div>
-
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold text-foreground">Today&apos;s Appointment Activity</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Live schedule data available from the clinician profile when the member has a clinician profile.
-                </p>
-              </div>
-              <span className="text-sm font-medium text-muted-foreground">
-                {todayAppointments.length} appointments
-              </span>
-            </div>
-            {todayAppointments.length ? (
-              <div className="mt-5 divide-y divide-border">
-                {todayAppointments.map((appointment) => (
-                  <div key={appointment.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <CalendarCheck className="h-4 w-4" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{appointment.patientName || "Patient name unavailable"}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{formatAppointmentType(appointment.type)}</p>
-                      </div>
-                    </div>
-                    <div className="text-sm sm:text-right">
-                      <p className="font-semibold text-foreground">{appointment.time}</p>
-                      <p className="text-xs capitalize text-muted-foreground">{appointment.status}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-5 rounded-xl bg-muted/60 px-4 py-10 text-center">
-                <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                <p className="mt-3 text-sm font-medium text-foreground">No appointments scheduled today</p>
-              </div>
-            )}
-          </div>
         </TabsContent>
       </Tabs>
     </section>
   );
 }
-
-function ActivityRow({ entry }: { entry: TeamMemberActivityEntry }) {
-  return (
-    <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Activity className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground">{humanize(entry.action)}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{entry.targetSummary}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Actor: {entry.actorName}</p>
-        </div>
-      </div>
-      <div className="text-sm sm:text-right">
-        <p className="font-medium text-foreground">{humanize(entry.module)}</p>
-        <p className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</p>
-      </div>
-    </div>
-  );
-}
-

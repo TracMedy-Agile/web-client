@@ -13,9 +13,32 @@ export interface LiveAlert {
 
 interface LiveAlertsProps {
   alerts?: LiveAlert[];
+  isLoading?: boolean;
 }
 
-export default function LiveAlerts({ alerts = [] }: LiveAlertsProps) {
+function LiveAlertsSkeleton() {
+  return (
+    <div className="mt-5 animate-pulse space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-border bg-muted/30 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-4 w-32 rounded bg-muted" />
+              <div className="h-3 w-full max-w-[220px] rounded bg-muted/70" />
+            </div>
+            <div className="h-5 w-16 shrink-0 rounded-full bg-muted" />
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="h-3 w-20 rounded bg-muted" />
+            <div className="h-8 w-24 rounded-lg bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlertsProps) {
   const hasAlerts = alerts.length > 0;
 
   return (
@@ -35,7 +58,9 @@ export default function LiveAlerts({ alerts = [] }: LiveAlertsProps) {
         ) : null}
       </div>
 
-      {hasAlerts ? (
+      {isLoading ? (
+        <LiveAlertsSkeleton />
+      ) : hasAlerts ? (
         <div className="mt-5 space-y-3">
           {alerts.map((alert) => (
             <article

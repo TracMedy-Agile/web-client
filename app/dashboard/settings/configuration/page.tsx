@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { Building2, RotateCcw, Save, Stethoscope, Syringe } from "lucide-react";
 import { toast } from "sonner";
 
 import { InfoBanner, SaveNotice, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+
+const roleIcons = {
+  doctor: Stethoscope,
+  nurse: Syringe,
+  hospitalAdmin: Building2,
+} as const;
 
 type ConfigurationState = {
   episodeDuration: number;
@@ -28,31 +34,25 @@ const defaults: ConfigurationState = {
   escalationRoles: {
     doctor: true,
     nurse: true,
-    hospitalAdmin: true,
+    hospitalAdmin: false,
   },
 };
 
 const roleRows = [
-  { key: "doctor", label: "Doctor", description: "Escalate clinical-critical alerts to doctors on duty." },
-  { key: "nurse", label: "Nurse", description: "Notify nursing staff when patient monitoring needs immediate review." },
-  { key: "hospitalAdmin", label: "Hospital Admin", description: "Include administrators for operational escalation coverage." },
+  { key: "doctor", label: "Doctor", description: "New users assigned this role must verify their WhatsApp number and provide consent during onboarding." },
+  { key: "nurse", label: "Nurse", description: "New users assigned this role must verify their WhatsApp number and provide consent during onboarding." },
+  { key: "hospitalAdmin", label: "Hospital Admin", description: "Users with this role are not eligible for clinical alert escalation by default." },
 ] as const;
 
 function SliderRow({ label, description, value, onChange }: { label: string; description: string; value: number; onChange: (value: number) => void }) {
   return (
-    <div className="rounded-lg border border-border bg-background p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-bold text-foreground">{label}</p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
-        </div>
-        <span className="inline-flex h-8 w-fit items-center rounded-full bg-primary/10 px-3 text-sm font-bold text-primary">{value} days</span>
+    <div className="border-b border-border pb-8">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <p className="text-sm font-semibold text-foreground">{label}</p>
+        <span className="inline-flex h-8 items-center rounded-lg bg-muted px-3 text-sm font-bold text-foreground">{value} days</span>
       </div>
-      <Slider value={[value]} min={1} max={90} step={1} onValueChange={([nextValue]) => onChange(nextValue ?? value)} className="mt-5" />
-      <div className="mt-3 flex justify-between text-xs font-semibold text-muted-foreground">
-        <span>1 day</span>
-        <span>90 days</span>
-      </div>
+      <Slider value={[value]} min={1} max={90} step={1} onValueChange={([nextValue]) => onChange(nextValue ?? value)} />
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -94,68 +94,72 @@ export default function ConfigurationPage() {
 
   return (
     <div>
-      <SettingsHeader title="Configuration" description="Control default care episode rules and escalation behavior for hospital workflows." />
+      <SettingsHeader title="Care Configuration" description="Configure how the system manages patient care." />
 
       <SettingsPanel
         title="Care Configuration"
-        description="Set default episode timing and decide how closure approvals should behave."
+        hideHeader
         footer={
           <>
-            <Button type="button" variant="outline" onClick={resetConfiguration} className="h-11 rounded-lg px-5 font-semibold">
-              <RotateCcw className="h-4 w-4" />
-              Reset to Default
-            </Button>
             <Button type="button" onClick={saveConfiguration} className="h-11 rounded-lg px-5 font-semibold">
               <Save className="h-4 w-4" />
               Save Configuration
+            </Button>
+            <Button type="button" variant="outline" onClick={resetConfiguration} className="h-11 rounded-lg px-5 font-semibold">
+              <RotateCcw className="h-4 w-4" />
+              Reset to Default
             </Button>
           </>
         }
       >
         <SliderRow
           label="Default Episode Duration"
-          description="New episodes run for this number of days unless extended by a clinician."
+          description="New episodes run for 14 days unless extended by a clinician."
           value={configuration.episodeDuration}
           onChange={(episodeDuration) => updateConfiguration({ episodeDuration })}
         />
 
         <SliderRow
-          label="Auto-Close Inactive Episodes"
-          description="Episodes with no patient activity for this number of days are closed for review."
+          label="Auto-Close Inactive Episodes After"
+          description="Episodes with no patient activity for 14 days are auto-closed for review."
           value={configuration.autoCloseAfter}
           onChange={(autoCloseAfter) => updateConfiguration({ autoCloseAfter })}
         />
 
-        <div className="flex flex-col gap-4 rounded-lg border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" aria-hidden />
-            </span>
-            <div>
-              <p className="text-sm font-bold text-foreground">Require Clinician Approval to Close</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">Episodes can only be closed after explicit clinician sign-off, even when auto-close triggers.</p>
-            </div>
+        <div className="flex flex-col gap-4 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-base font-bold text-foreground">Require Clinician Approval to Close</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">Episodes can only be closed after explicit clinician sign-off, even when auto-close triggers.</p>
           </div>
           <Switch checked={configuration.requireClinicianApproval} onCheckedChange={(requireClinicianApproval) => updateConfiguration({ requireClinicianApproval })} aria-label="Require clinician approval to close" />
         </div>
 
-        <div>
-          <h3 className="text-base font-bold text-foreground">Critical Alert Escalation Roles</h3>
-          <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-background">
-            {roleRows.map((role) => (
-              <div key={role.key} className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-foreground">{role.label}</p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{role.description}</p>
+        <div className="pt-4">
+          <h3 className="text-xl font-bold text-foreground">Critical Alert Escalation Roles</h3>
+          <p className="mt-3 max-w-4xl text-base leading-6 text-muted-foreground">Configure which team roles are eligible to receive WhatsApp notifications for critical patient-alert escalations.</p>
+          <p className="text-base leading-6 text-muted-foreground">These settings automatically determine onboarding requirements for newly invited team members.</p>
+          <div className="mt-6 divide-y divide-border rounded-xl border border-border bg-card">
+            {roleRows.map((role) => {
+              const Icon = roleIcons[role.key];
+              return (
+                <div key={role.key} className="flex flex-col gap-4 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex gap-4">
+                    <Icon className="mt-1 h-5 w-5 text-primary" aria-hidden />
+                    <div>
+                      <p className="text-xl font-bold text-foreground">{role.label}</p>
+                      <p className="mt-1 text-base leading-6 text-muted-foreground">{role.description}</p>
+                    </div>
+                  </div>
+                  <Switch checked={configuration.escalationRoles[role.key]} onCheckedChange={(checked) => updateRole(role.key, checked)} aria-label={`Toggle ${role.label} escalation`} />
                 </div>
-                <Switch checked={configuration.escalationRoles[role.key]} onCheckedChange={(checked) => updateRole(role.key, checked)} aria-label={`Toggle ${role.label} escalation`} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <InfoBanner>
-          Role-based defaults help keep escalation paths consistent. Custom permissions from Team Management still control what each staff member can access.
+          <div className="font-bold">Role-based Defaults</div>
+          <p className="mt-1">These settings apply only to newly invited team members. Existing team members keep their current escalation settings unless updated individually from the Team module.</p>
         </InfoBanner>
 
         {notice ? <SaveNotice>{notice}</SaveNotice> : null}

@@ -1,7 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, LockKeyhole, ShieldCheck, Sparkles, UserRoundPlus } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  LockKeyhole,
+  ShieldCheck,
+  Sliders,
+  UserRoundPlus,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -18,13 +28,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -47,14 +55,6 @@ type InviteTeamMemberDialogProps = {
   onInvited?: (result: InviteTeamMemberResult) => void | Promise<void>;
 };
 
-const DEFAULT_PERMISSIONS = [
-  "View connected patients",
-  "Manage care episodes",
-  "Acknowledge alerts",
-  "Send messages",
-  "View appointments",
-];
-
 const ACCESS_LEVELS: Array<{
   value: AccessLevel;
   title: string;
@@ -63,57 +63,127 @@ const ACCESS_LEVELS: Array<{
 }> = [
   {
     value: "standard",
-    title: "Standard Access",
-    description: "Clinical access for day-to-day patient care.",
+    title: "Standard Clinician",
+    description: "Access to assigned patients and care episodes only.",
     icon: ShieldCheck,
   },
   {
     value: "custom",
     title: "Custom Access",
-    description: "Choose individual permissions for this member.",
-    icon: Sparkles,
+    description: "Set detailed access permissions per module.",
+    icon: Sliders,
   },
   {
     value: "full",
     title: "Full Access",
-    description: "Complete clinical and administrative access.",
+    description: "Full administrative control across all settings.",
     icon: LockKeyhole,
   },
 ];
 
 const PERMISSION_GROUPS = [
   {
+    key: "clinical",
     title: "Clinical Care",
-    items: ["View connected patients", "Manage care episodes", "Acknowledge alerts", "Send messages"],
+    icon: ShieldCheck,
+    sections: [
+      {
+        title: "PATIENTS",
+        items: [
+          { id: "view_connected_patients", label: "View Connected Patients", default: true },
+          { id: "manage_patients", label: "Manage Patients", default: true },
+        ],
+      },
+      {
+        title: "CARE EPISODES",
+        items: [
+          { id: "view_care_episodes", label: "View Care Episodes", default: true, locked: true, lockNote: "View Care Episodes was automatically enabled because it is required." },
+          { id: "manage_care_episodes", label: "Manage Care Episodes", default: true },
+        ],
+      },
+      {
+        title: "APPOINTMENTS",
+        items: [
+          { id: "view_appointments", label: "View Appointments", default: true },
+          { id: "manage_appointments", label: "Manage Appointments", default: false },
+        ],
+      },
+      {
+        title: "ALERTS",
+        items: [
+          { id: "view_alerts", label: "View Alerts", default: false },
+          { id: "acknowledge", label: "Acknowledge", default: false },
+        ],
+      },
+      {
+        title: "MESSAGES",
+        items: [
+          { id: "view_messages", label: "View Messages", default: false },
+          { id: "send_messages", label: "Send Messages", default: false },
+        ],
+      },
+    ],
   },
   {
-    title: "Appointments",
-    items: ["View appointments", "Manage appointments"],
-  },
-  {
+    key: "insights",
     title: "Insights",
-    items: ["View reports and analytics", "Export reports"],
+    icon: Sliders,
+    sections: [
+      {
+        title: "",
+        items: [
+          { id: "view_reports_analytics", label: "View reports & analytics", default: true },
+          { id: "export_reports", label: "Export reports", default: true },
+        ],
+      },
+    ],
   },
   {
+    key: "administration",
     title: "Administration",
-    items: ["View team", "Manage team members", "View audit logs", "Manage hospital settings"],
+    icon: LockKeyhole,
+    sections: [
+      {
+        title: "",
+        items: [
+          { id: "view_team", label: "View team", default: true },
+          { id: "manage_team_members", label: "Manage team members", default: true },
+          { id: "view_audit_logs", label: "View audit logs", default: true },
+        ],
+      },
+    ],
   },
 ] as const;
 
-const PERMISSION_MAP: Record<string, TeamPermission> = {
-  "View connected patients": "care_episode",
-  "Manage care episodes": "care_episode",
-  "Acknowledge alerts": "care_episode",
-  "Send messages": "care_episode",
-  "View appointments": "appointments",
-  "Manage appointments": "appointments",
-  "View reports and analytics": "view_all_reports",
-  "Export reports": "view_all_reports",
-  "View team": "manage_team_members",
-  "Manage team members": "manage_team_members",
-  "View audit logs": "audit_log",
-  "Manage hospital settings": "configure_settings",
+const PERMISSION_TO_API: Record<string, TeamPermission> = {
+  view_connected_patients: "care_episode",
+  manage_patients: "care_episode",
+  view_care_episodes: "care_episode",
+  manage_care_episodes: "care_episode",
+  view_appointments: "appointments",
+  manage_appointments: "appointments",
+  view_alerts: "care_episode",
+  acknowledge: "care_episode",
+  view_messages: "care_episode",
+  send_messages: "care_episode",
+  view_reports_analytics: "view_all_reports",
+  export_reports: "view_all_reports",
+  view_team: "manage_team_members",
+  manage_team_members: "manage_team_members",
+  view_audit_logs: "audit_log",
 };
+
+function getDefaultPermissions(): string[] {
+  const defaults: string[] = [];
+  for (const group of PERMISSION_GROUPS) {
+    for (const section of group.sections) {
+      for (const item of section.items) {
+        if (item.default) defaults.push(item.id);
+      }
+    }
+  }
+  return defaults;
+}
 
 function mapRole(value: string): TeamRole {
   if (value === "hospital_admin") return "admin";
@@ -121,10 +191,10 @@ function mapRole(value: string): TeamRole {
   return "doctor";
 }
 
-function mapPermissions(accessLevel: AccessLevel, selected: string[]): TeamPermission[] {
+function mapPermissionsToApi(accessLevel: AccessLevel, selected: string[]): TeamPermission[] {
   if (accessLevel === "full") return ["full_system_access"];
-  const source = accessLevel === "standard" ? DEFAULT_PERMISSIONS : selected;
-  return Array.from(new Set(source.map((permission) => PERMISSION_MAP[permission]).filter(Boolean)));
+  const source = accessLevel === "standard" ? getDefaultPermissions() : selected;
+  return Array.from(new Set(source.map((p) => PERMISSION_TO_API[p]).filter(Boolean)));
 }
 
 export default function InviteTeamMemberDialog({
@@ -136,16 +206,17 @@ export default function InviteTeamMemberDialog({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
   const [specialty, setSpecialty] = useState("");
-  const [ward, setWard] = useState("");
   const [accessLevel, setAccessLevel] = useState<AccessLevel>("standard");
-  const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS);
+  const [permissions, setPermissions] = useState<string[]>(getDefaultPermissions());
   const [sendEmail, setSendEmail] = useState(true);
+  const [fullAccessConfirmed, setFullAccessConfirmed] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<string>("clinical");
 
   const isDirty = useMemo(
-    () => Boolean(fullName || email || role || specialty || ward || accessLevel !== "standard"),
-    [accessLevel, email, fullName, role, specialty, ward],
+    () => Boolean(fullName || email || role || specialty || accessLevel !== "standard"),
+    [accessLevel, email, fullName, role, specialty],
   );
 
   function resetForm() {
@@ -153,10 +224,11 @@ export default function InviteTeamMemberDialog({
     setEmail("");
     setRole("");
     setSpecialty("");
-    setWard("");
     setAccessLevel("standard");
-    setPermissions(DEFAULT_PERMISSIONS);
+    setPermissions(getDefaultPermissions());
     setSendEmail(true);
+    setFullAccessConfirmed(false);
+    setExpandedGroup("clinical");
   }
 
   function closeAndReset() {
@@ -180,24 +252,36 @@ export default function InviteTeamMemberDialog({
     requestClose();
   }
 
-  function togglePermission(permission: string, checked: boolean) {
+  function togglePermission(permissionId: string, checked: boolean) {
     setPermissions((current) =>
-      checked ? [...new Set([...current, permission])] : current.filter((item) => item !== permission),
+      checked ? [...new Set([...current, permissionId])] : current.filter((item) => item !== permissionId),
     );
+  }
+
+  function getGroupEnabledCount(groupKey: string) {
+    const group = PERMISSION_GROUPS.find((g) => g.key === groupKey);
+    if (!group) return 0;
+    let count = 0;
+    for (const section of group.sections) {
+      for (const item of section.items) {
+        if (permissions.includes(item.id)) count++;
+      }
+    }
+    return count;
   }
 
   async function submitInvitation(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (accessLevel === "full" && !fullAccessConfirmed) return;
     setIsSubmitting(true);
     try {
       const result = await inviteTeamMember({
         name: fullName.trim(),
         email: email.trim(),
         role: mapRole(role),
-        ...(ward.trim() ? { ward: ward.trim() } : {}),
         ...(specialty.trim() ? { specialty: specialty.trim() } : {}),
         accessProfile: accessLevel === "full" ? "full_access" : "limited",
-        permissions: mapPermissions(accessLevel, permissions),
+        permissions: mapPermissionsToApi(accessLevel, permissions),
       });
       capturePostHogEvent("team_member_invited", {
         member_id: result.memberId,
@@ -222,11 +306,17 @@ export default function InviteTeamMemberDialog({
     }
   }
 
+  // Configuration summary for custom
+  const clinicalCount = getGroupEnabledCount("clinical");
+  const insightsCount = getGroupEnabledCount("insights");
+  const adminCount = getGroupEnabledCount("administration");
+  const totalPermissions = clinicalCount + insightsCount + adminCount;
+
   return (
     <>
       <Dialog open={open} onOpenChange={handleDialogChange}>
         <DialogContent
-          className="max-h-[92vh] max-w-3xl overflow-y-auto rounded-2xl bg-card p-0"
+          className="max-h-[92vh] max-w-[720px] overflow-y-auto rounded-2xl bg-card p-0"
           onEscapeKeyDown={(event) => {
             if (isDirty) event.preventDefault();
           }}
@@ -237,43 +327,45 @@ export default function InviteTeamMemberDialog({
           <form onSubmit={submitInvitation}>
             <DialogHeader className="border-b border-border px-6 py-5 pr-14">
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#023E8A]/10 text-[#023E8A]">
                   <UserRoundPlus className="h-5 w-5" />
                 </span>
-                <div>
-                  <DialogTitle className="text-xl">Add New Team Member</DialogTitle>
-                  <DialogDescription className="mt-1">
-                    Invite a clinician or administrator to your hospital workspace.
-                  </DialogDescription>
-                </div>
+                <DialogTitle className="text-xl font-bold">Add New Team Member</DialogTitle>
               </div>
             </DialogHeader>
 
-            <div className="space-y-6 px-6 py-5">
-              <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-6 px-6 py-6">
+              {/* Form fields */}
+              <div className="grid gap-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="team-full-name">Full name</Label>
+                  <label htmlFor="team-full-name" className="text-sm font-medium text-foreground">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
                   <Input
                     id="team-full-name"
                     value={fullName}
                     onChange={(event) => setFullName(event.target.value)}
-                    placeholder="e.g. Dr. Emeka Nwosu"
+                    placeholder="e.g. Dr. Fatima Bello"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="team-email">Email address</Label>
+                  <label htmlFor="team-email" className="text-sm font-medium text-foreground">
+                    Email Address <span className="text-red-500">*</span>
+                  </label>
                   <Input
                     id="team-email"
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="name@hospital.com"
+                    placeholder="bello@hospital.com"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="team-role">Role</Label>
+                  <label htmlFor="team-role" className="text-sm font-medium text-foreground">
+                    Role <span className="text-red-500">*</span>
+                  </label>
                   <Select value={role} onValueChange={setRole} required>
                     <SelectTrigger id="team-role">
                       <SelectValue placeholder="Select role" />
@@ -287,27 +379,21 @@ export default function InviteTeamMemberDialog({
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="team-specialty">Specialty</Label>
+                  <label htmlFor="team-specialty" className="text-sm font-medium text-foreground">
+                    Specialty
+                  </label>
                   <Input
                     id="team-specialty"
                     value={specialty}
                     onChange={(event) => setSpecialty(event.target.value)}
-                    placeholder={role === "doctor" ? "e.g. Cardiology" : "Optional"}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="team-ward">Assign ward</Label>
-                  <Input
-                    id="team-ward"
-                    value={ward}
-                    onChange={(event) => setWard(event.target.value)}
-                    placeholder="e.g. Surgical Ward"
+                    placeholder="e.g. Cardiology"
                   />
                 </div>
               </div>
 
-              <fieldset className="space-y-3">
-                <legend className="text-sm font-semibold text-foreground">Access level</legend>
+              {/* Access Level */}
+              <div className="space-y-3">
+                <p className="text-sm font-bold uppercase tracking-wide text-foreground">Access Level</p>
                 <div className="grid gap-3 md:grid-cols-3">
                   {ACCESS_LEVELS.map(({ value, title, description, icon: Icon }) => {
                     const selected = accessLevel === value;
@@ -317,84 +403,158 @@ export default function InviteTeamMemberDialog({
                         type="button"
                         role="radio"
                         aria-checked={selected}
-                        onClick={() => setAccessLevel(value)}
+                        onClick={() => {
+                          setAccessLevel(value);
+                          if (value !== "full") setFullAccessConfirmed(false);
+                        }}
                         className={cn(
-                          "relative rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          selected ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40",
+                          "relative flex items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          selected ? "border-[#023E8A] bg-[#023E8A]/5" : "border-border bg-card hover:border-[#023E8A]/40",
                         )}
                       >
-                        <span className="mb-3 flex items-start justify-between gap-3">
-                          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                            <Icon className="h-4 w-4" />
-                          </span>
-                          <span
-                            className={cn(
-                              "flex h-5 w-5 items-center justify-center rounded-full border",
-                              selected ? "border-primary bg-primary text-primary-foreground" : "border-border",
-                            )}
-                          >
-                            {selected ? <Check className="h-3 w-3" /> : null}
-                          </span>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#023E8A]/10 text-[#023E8A]">
+                          <Icon className="h-4 w-4" />
                         </span>
-                        <span className="block text-sm font-semibold text-foreground">{title}</span>
-                        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className={cn("block text-sm font-semibold", selected ? "text-[#023E8A]" : "text-foreground")}>{title}</span>
+                          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">{description}</span>
+                        </div>
+                        <span
+                          className={cn(
+                            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                            selected ? "border-[#023E8A] bg-[#023E8A] text-white" : "border-border",
+                          )}
+                        >
+                          {selected ? <Check className="h-3 w-3" /> : null}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-              </fieldset>
+              </div>
 
+              {/* Standard: Info banner */}
+              {accessLevel === "standard" ? (
+                <div className="flex gap-3 rounded-xl border-l-4 border-l-amber-400 bg-amber-50 px-4 py-3">
+                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-[#023E8A]" />
+                  <div>
+                    <p className="text-sm font-semibold text-[#023E8A]">Standard Set Implementation</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      This member will receive the standard permission set configured for the selected role. Existing role defaults can be managed from{" "}
+                      <span className="font-medium text-[#023E8A] underline">Roles & Permissions.</span>
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Custom: Permissions Configuration */}
               {accessLevel === "custom" ? (
-                <div className="space-y-4 rounded-xl border border-primary/25 bg-primary/5 p-4">
-                  <div>
-                    <p className="font-semibold text-foreground">Custom permissions</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Select exactly what this team member can see and manage.
-                    </p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-semibold text-foreground">Permissions Configuration</p>
                   </div>
-                  <div className="grid gap-5 md:grid-cols-2">
-                    {PERMISSION_GROUPS.map((group) => (
-                      <fieldset key={group.title}>
-                        <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                          {group.title}
-                        </legend>
-                        <div className="space-y-2">
-                          {group.items.map((permission) => (
-                            <label key={permission} className="flex items-center gap-2 text-sm text-foreground">
-                              <Checkbox
-                                checked={permissions.includes(permission)}
-                                onCheckedChange={(checked) => togglePermission(permission, checked === true)}
-                              />
-                              {permission}
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ))}
+
+                  {PERMISSION_GROUPS.map((group) => {
+                    const isExpanded = expandedGroup === group.key;
+                    const enabledCount = getGroupEnabledCount(group.key);
+                    const GroupIcon = group.icon;
+
+                    return (
+                      <div key={group.key} className={cn("rounded-xl border", isExpanded ? "border-[#023E8A]/30 bg-[#023E8A]/5" : "border-border bg-card")}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between px-4 py-3"
+                          onClick={() => setExpandedGroup(isExpanded ? "" : group.key)}
+                          aria-expanded={isExpanded}
+                        >
+                          <div className="flex items-center gap-2">
+                            <GroupIcon className="h-4 w-4 text-[#023E8A]" />
+                            <span className="text-sm font-semibold text-foreground">{group.title}</span>
+                            <span className="rounded-full bg-[#023E8A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                              {enabledCount} Enabled
+                            </span>
+                          </div>
+                          {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </button>
+
+                        {isExpanded ? (
+                          <div className="border-t border-[#023E8A]/20 px-4 py-4">
+                            <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
+                              {group.sections.map((section) => (
+                                <div key={section.title || "default"}>
+                                  {section.title ? (
+                                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{section.title}</p>
+                                  ) : null}
+                                  <div className="space-y-2.5">
+                                    {section.items.map((item) => (
+                                      <div key={item.id}>
+                                        <label className="flex items-center gap-2.5 text-sm text-foreground">
+                                          <Checkbox
+                                            checked={permissions.includes(item.id)}
+                                            onCheckedChange={(checked) => togglePermission(item.id, checked === true)}
+                                            disabled={item.locked}
+                                            className={cn(
+                                              permissions.includes(item.id) && "border-[#023E8A] bg-[#023E8A] text-white",
+                                            )}
+                                          />
+                                          <span>{item.label}</span>
+                                          {item.locked ? <LockKeyhole className="h-3 w-3 text-muted-foreground" /> : null}
+                                        </label>
+                                        {item.locked && item.lockNote ? (
+                                          <p className="ml-7 mt-0.5 text-[11px] italic text-muted-foreground">{item.lockNote}</p>
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+
+                  {/* Configuration Summary */}
+                  <div className="flex items-center justify-between pt-2">
+                    <div>
+                      <p className="text-sm font-bold uppercase tracking-wide text-foreground">Configuration Summary</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Clinical: {clinicalCount}  Insights: {insightsCount}  Admin: {adminCount}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-foreground">{totalPermissions}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Total Permissions</p>
+                    </div>
                   </div>
                 </div>
               ) : null}
 
+              {/* Full Access: Confirmation checkbox */}
               {accessLevel === "full" ? (
-                <div className="flex gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Full administrative access</p>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      This member would be able to manage users, permissions, hospital settings, and protected audit data.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between gap-4 rounded-xl border border-border p-4">
-                <div>
-                  <Label htmlFor="send-invite-email" className="font-semibold">Send invitation email</Label>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Email a secure account setup link when the invitation is created.
+                <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                  <Checkbox
+                    checked={fullAccessConfirmed}
+                    onCheckedChange={(checked) => setFullAccessConfirmed(checked === true)}
+                    className="mt-0.5 border-red-400 data-[state=checked]:border-red-500 data-[state=checked]:bg-red-500"
+                  />
+                  <p className="text-sm font-medium leading-5 text-red-600">
+                    I understand that this member will receive unrestricted workspace access and that I am responsible for any actions taken by this account.
                   </p>
                 </div>
-                <Switch id="send-invite-email" checked={sendEmail} onCheckedChange={setSendEmail} />
+              ) : null}
+
+              {/* Send invitation email */}
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-border p-4">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Send invitation email</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Member will receive access instructions via email.
+                  </p>
+                </div>
+                <Switch checked={sendEmail} onCheckedChange={setSendEmail} />
               </div>
             </div>
 
@@ -402,7 +562,11 @@ export default function InviteTeamMemberDialog({
               <Button type="button" variant="ghost" onClick={requestClose} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button
+                type="submit"
+                className="gap-2 bg-[#023E8A] hover:bg-[#023E8A]/90"
+                disabled={isSubmitting || (accessLevel === "full" && !fullAccessConfirmed)}
+              >
                 <UserRoundPlus className="h-4 w-4" />
                 {isSubmitting ? "Adding..." : "Add Team Member"}
               </Button>
@@ -411,28 +575,31 @@ export default function InviteTeamMemberDialog({
         </DialogContent>
       </Dialog>
 
+      {/* Discard Dialog - TM-06 */}
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <AlertTriangle className="h-6 w-6" />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+              <AlertTriangle className="h-7 w-7 text-red-500" />
             </div>
-            <AlertDialogTitle className="text-center">Discard invitation?</AlertDialogTitle>
+            <AlertDialogTitle className="text-center text-lg">Discard Invitation?</AlertDialogTitle>
             <AlertDialogDescription className="text-center">
-              Your invitation details have not been saved. Closing now will discard your changes.
+              You have unsaved invitation details for{" "}
+              <span className="font-semibold text-foreground">{fullName || "this member"}</span>.
+              Leaving now will discard all entered information.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Continue editing</AlertDialogCancel>
+          <AlertDialogFooter className="flex-row justify-center gap-3 sm:justify-center">
+            <AlertDialogCancel className="mt-0">Continue Editing</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-red-500 text-white hover:bg-red-600"
               onClick={() => {
                 resetForm();
                 setDiscardOpen(false);
                 onOpenChange(false);
               }}
             >
-              Discard invitation
+              Discard Changes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -440,4 +607,3 @@ export default function InviteTeamMemberDialog({
     </>
   );
 }
-

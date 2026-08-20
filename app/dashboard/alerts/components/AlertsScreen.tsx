@@ -478,7 +478,41 @@ export default function AlertsScreen() {
       ) : null}
 
       {error ? null : isLoading ? (
-        <div className="h-[520px] animate-pulse rounded-xl bg-muted" />
+        <section className="overflow-hidden rounded-xl bg-card shadow-sm">
+          <div className="flex min-h-24 items-center gap-3 border-b border-border px-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-4 w-20 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+              <thead className="border-y border-border bg-primary/5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-6 py-4">Patient Name</th>
+                  <th className="px-6 py-4">Alert Reason</th>
+                  {!isHistory ? <th className="px-6 py-4">Trigger Source</th> : null}
+                  <th className="px-6 py-4">Severity</th>
+                  <th className="px-6 py-4">{isHistory ? "Acknowledged By" : "Assigned Clinician"}</th>
+                  <th className="px-6 py-4">Time Stamp</th>
+                  {!isHistory ? <th className="px-6 py-4 text-right">Action</th> : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <tr key={index} className="animate-pulse">
+                    <td className="px-6 py-3.5"><div className="h-4 w-28 rounded bg-muted" /><div className="mt-1.5 h-3 w-16 rounded bg-muted/70" /></td>
+                    <td className="px-6 py-3.5"><div className="h-4 w-48 rounded bg-muted" /></td>
+                    {!isHistory ? <td className="px-6 py-3.5"><div className="h-4 w-24 rounded bg-muted" /></td> : null}
+                    <td className="px-6 py-3.5"><div className="h-6 w-20 rounded-full bg-muted" /></td>
+                    <td className="px-6 py-3.5"><div className="h-4 w-24 rounded bg-muted" /></td>
+                    <td className="px-6 py-3.5"><div className="h-4 w-20 rounded bg-muted" /></td>
+                    {!isHistory ? <td className="px-6 py-3.5 text-right"><div className="ml-auto h-4 w-14 rounded bg-muted" /></td> : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       ) : isHistory && sourceAlerts.length === 0 ? (
         <EmptyAlerts history onReload={reload} />
       ) : !isHistory && sourceAlerts.length === 0 ? (

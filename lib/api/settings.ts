@@ -1,10 +1,13 @@
 import type { components } from "@/docs/types/api";
 import { apiClient } from "@/lib/services/auth/api-client";
 
+type UpdateFacilityDto = components["schemas"]["UpdateFacilityDto"];
+type FacilityUploadResponseDto = components["schemas"]["FacilityUploadResponseDto"];
 type NotificationPrefsDto = NonNullable<components["schemas"]["UpdateProfileDto"]["notificationPrefs"]>;
 type ChangePasswordDto = components["schemas"]["ChangePasswordDto"];
 
 export type HospitalProfileSettings = {
+  facilityId: string;
   name: string;
   address: string;
   contactEmail: string;
@@ -35,6 +38,7 @@ export type SubscriptionSummary = {
 };
 
 const defaultHospitalProfile: HospitalProfileSettings = {
+  facilityId: "",
   name: "Lagos General Hospital",
   address: "12 Marina Road, Lagos Island, Lagos",
   contactEmail: "admin@lagosgeneral.ng",
@@ -73,10 +77,20 @@ function unwrapData(value: unknown): unknown {
   return record && "data" in record ? record.data : value;
 }
 
-function firstString(record: Record<string, unknown>, keys: string[], fallback = "") {
+function firstString(record: Record<string, unknown> | null, keys: string[], fallback = "") {
+  if (!record) return fallback;
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value;
+  }
+  return fallback;
+}
+
+function nullableString(record: Record<string, unknown> | null, keys: string[], fallback = "") {
+  if (!record) return fallback;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string") return value;
   }
   return fallback;
 }
@@ -108,20 +122,75 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   return unwrapData(payload);
 }
 
-export async function getHospitalProfileSettings(): Promise<HospitalProfileSettings> {
-  const payload = asRecord(await request("/auth/hospital"));
-  if (!payload) return defaultHospitalProfile;
-
-  const contact = asRecord(payload.contact) ?? payload;
+function normalizeHospitalProfile(payload: unknown): HospitalProfileSettings {
+  const record = asRecord(payload);
+  if (!record) return defaultHospitalProfile;
+  const contact = asRecord(record.contact) ?? record;
 
   return {
-    name: firstString(payload, ["name", "facilityName", "hospitalName"], defaultHospitalProfile.name),
-    address: firstString(payload, ["address", "location", "streetAddress"], defaultHospitalProfile.address),
-    contactEmail: firstString(contact, ["contactEmail", "email", "adminEmail"], defaultHospitalProfile.contactEmail),
-    contactPhone: firstString(contact, ["contactPhone", "phone", "phoneNumber"], defaultHospitalProfile.contactPhone),
-    timezone: firstString(payload, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
-    logoUrl: firstString(payload, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
+    facilityId: firstString(record, ["id", "facilityId", "hospitalId"], defaultHospitalProfile.facilityId),
+    name: firstString(record, ["name", "facilityName", "hospitalName"], defaultHospitalProfile.name),
+    address: nullableString(record, ["address", "location", "streetAddress"], defaultHospitalProfile.address),
+    contactEmail: nullableString(contact, ["contactEmail", "email", "adminEmail"], defaultHospitalProfile.contactEmail),
+    contactPhone: nullableString(contact, ["contactPhone", "phone", "phoneNumber"], defaultHospitalProfile.contactPhone),
+    timezone: nullableString(record, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
+    logoUrl: nullableString(record, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
   };
+}
+
+export async function getHospitalProfileSettings(): Promise<HospitalProfileSettings> {
+  return normalizeHospitalProfile(await request("/auth/hospital"));
+}
+
+export async function updateHospitalProfileSettings(profile: HospitalProfileSettings): Promise<HospitalProfileSettings> {
+  if (!profile.facilityId) throw new Error("Unable to save hospital profile because the facility ID is missing.");
+
+  const body: UpdateFacilityDto = {
+    name: profile.name.trim() || null,
+    address: profile.address.trim() || null,
+    contactEmail: profile.contactEmail.trim() || null,
+    contactPhone: profile.contactPhone.trim() || null,
+    timezone: profile.timezone.trim() || null,
+    logoUrl: profile.logoUrl.trim() || null,
+  };
+
+  return normalizeHospitalProfile(await request(`/facilities/${encodeURIComponent(profile.facilityId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  }));
+}
+
+export type FacilityLocation = { latitude: number | null; longitude: number | null };
+
+// PATCH /facilities/{id}/location — hospital_admin only, own facility. Send both null to clear.
+export async function updateHospitalLocation(facilityId: string, location: FacilityLocation): Promise<FacilityLocation> {
+  if (!facilityId) throw new Error("Unable to save facility location because the facility ID is missing.");
+
+  const payload = asRecord(await request(`/facilities/${encodeURIComponent(facilityId)}/location`, {
+    method: "PATCH",
+    body: JSON.stringify({ latitude: location.latitude, longitude: location.longitude }),
+  }));
+
+  return {
+    latitude: typeof payload?.latitude === "number" ? payload.latitude : null,
+    longitude: typeof payload?.longitude === "number" ? payload.longitude : null,
+  };
+}
+
+export async function uploadHospitalLogo(facilityId: string, file: File): Promise<string> {
+  if (!facilityId) throw new Error("Unable to upload hospital logo because the facility ID is missing.");
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("type", "logo");
+
+  const payload = asRecord(await request(`/facilities/${encodeURIComponent(facilityId)}/uploads`, {
+    method: "POST",
+    body: formData,
+  })) as FacilityUploadResponseDto | null;
+
+  if (!payload?.url) throw new Error("The logo upload response did not include a URL.");
+  return payload.url;
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

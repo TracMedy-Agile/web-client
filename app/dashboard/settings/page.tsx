@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { getHospitalProfileSettings, type HospitalProfileSettings } from "@/lib/api/settings";
+import { getHospitalProfileSettings, type HospitalProfileSettings, updateHospitalProfileSettings, uploadHospitalLogo } from "@/lib/api/settings";
 
 const defaultProfile: HospitalProfileSettings = {
+  facilityId: "",
   name: "Lagos General Hospital",
   address: "12 Marina Road, Lagos Island, Lagos",
   contactEmail: "admin@lagosgeneral.ng",
@@ -36,8 +37,11 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<HospitalProfileSettings>(defaultProfile);
   const [initialProfile, setInitialProfile] = useState<HospitalProfileSettings>(defaultProfile);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">("info");
   const [logoPreview, setLogoPreview] = useState("");
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
   const logoPreviewRef = useRef("");
 
   useEffect(() => {
@@ -55,6 +59,7 @@ export default function SettingsPage() {
         if (!isMounted) return;
         const message = error instanceof Error ? error.message : "Unable to load hospital profile.";
         setNotice(message);
+        setNoticeTone("error");
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -91,104 +96,150 @@ export default function SettingsPage() {
     if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
     const preview = URL.createObjectURL(file);
     logoPreviewRef.current = preview;
+    setPendingLogoFile(file);
     setLogoPreview(preview);
-    setNotice("");
+    setNotice("Logo selected. Save configuration to upload it.");
+    setNoticeTone("info");
     capturePostHogEvent("settings_logo_selected", { file_type: file.type, file_size: file.size });
   }
 
   function removeLogo() {
     if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
     logoPreviewRef.current = "";
+    setPendingLogoFile(null);
     setLogoPreview("");
     setProfile((current) => ({ ...current, logoUrl: "" }));
+    setNotice("Logo will be removed when you save configuration.");
+    setNoticeTone("info");
   }
 
   function resetProfile() {
+    if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
+    logoPreviewRef.current = "";
+    setPendingLogoFile(null);
     setProfile(initialProfile);
     setLogoPreview(initialProfile.logoUrl);
     setNotice("Hospital profile has been reset to the last loaded values.");
+    setNoticeTone("info");
     capturePostHogEvent("settings_hospital_profile_reset");
   }
 
-  function saveProfile() {
-    setInitialProfile(profile);
-    setNotice("Hospital profile changes are ready, but the backend has no settings update endpoint yet.");
-    capturePostHogEvent("settings_hospital_profile_saved", { mode: "local_ready" });
-    toast.info("Backend settings update endpoint is not available yet.");
+  async function saveProfile() {
+    setIsSaving(true);
+    setNotice("");
+
+    try {
+      let nextProfile = profile;
+      if (pendingLogoFile) {
+        const logoUrl = await uploadHospitalLogo(profile.facilityId, pendingLogoFile);
+        nextProfile = { ...profile, logoUrl };
+      }
+
+      const savedProfile = await updateHospitalProfileSettings(nextProfile);
+      if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
+      logoPreviewRef.current = "";
+      setPendingLogoFile(null);
+      setProfile(savedProfile);
+      setInitialProfile(savedProfile);
+      setLogoPreview(savedProfile.logoUrl);
+      setNotice("Hospital profile saved successfully.");
+      setNoticeTone("success");
+      capturePostHogEvent("settings_hospital_profile_saved", { mode: "api" });
+      toast.success("Hospital profile saved.");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unable to save hospital profile.";
+      setNotice(message);
+      setNoticeTone("error");
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
     <div>
-      <SettingsHeader title="Hospital Profile" description="Manage the hospital identity and contact details patients and staff see across Tracmedy." />
+      <SettingsHeader title="Hospital Profile" description="Manage your hospital's information" />
 
       <SettingsPanel
         title="Hospital Profile"
-        description="Upload a hospital logo and keep core facility details accurate. PNG/JPG logo uploads support up to 2MB."
+        hideHeader
         footer={
           <>
-            <Button type="button" variant="outline" onClick={resetProfile} className="h-11 rounded-lg px-5 font-semibold">
+            <Button type="button" onClick={() => void saveProfile()} disabled={isSaving} className="h-11 rounded-lg px-5 font-semibold">
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Configuration
+            </Button>
+            <Button type="button" variant="outline" onClick={resetProfile} disabled={isSaving} className="h-11 rounded-lg px-5 font-semibold">
               <RotateCcw className="h-4 w-4" />
               Reset to Default
-            </Button>
-            <Button type="button" onClick={saveProfile} className="h-11 rounded-lg px-5 font-semibold">
-              <Save className="h-4 w-4" />
-              Save Configuration
             </Button>
           </>
         }
       >
         {isLoading ? (
-          <div className="flex min-h-72 items-center justify-center text-sm font-semibold text-muted-foreground">
-            <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
-            Loading hospital profile...
+          <div className="animate-pulse space-y-7">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+              <div className="h-28 w-28 shrink-0 rounded-full bg-muted" />
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-3">
+                  <div className="h-10 w-36 rounded-lg bg-muted" />
+                  <div className="h-10 w-32 rounded-lg bg-muted" />
+                </div>
+                <div className="h-4 w-56 rounded bg-muted" />
+              </div>
+            </div>
+            <div className="grid gap-7 md:grid-cols-2">
+              <div className="h-11 rounded-lg bg-muted md:col-span-2" />
+              <div className="h-11 rounded-lg bg-muted md:col-span-2" />
+              <div className="h-11 rounded-lg bg-muted" />
+              <div className="h-11 rounded-lg bg-muted" />
+              <div className="h-11 rounded-lg bg-muted" />
+            </div>
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-4 rounded-lg border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <div
-                  aria-label="Hospital logo preview"
-                  className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary bg-cover bg-center text-xl font-bold text-primary-foreground"
-                  role="img"
-                  style={logoPreview ? { backgroundImage: `url(${logoPreview})` } : undefined}
-                >
-                  {logoPreview ? null : initials(profile.name)}
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-foreground">Hospital Logo</p>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Recommended square PNG or JPG, maximum 2MB.</p>
-                </div>
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+              <div
+                aria-label="Hospital logo preview"
+                className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary bg-cover bg-center text-4xl font-semibold text-primary-foreground"
+                role="img"
+                style={logoPreview ? { backgroundImage: `url(${logoPreview})` } : undefined}
+              >
+                {logoPreview ? null : initials(profile.name)}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" asChild className="h-10 rounded-lg px-4 text-sm font-semibold">
-                  <label>
-                    <ImagePlus className="h-4 w-4" />
-                    Change Image
-                    <input type="file" accept="image/png,image/jpeg" onChange={handleLogoChange} className="sr-only" />
-                  </label>
-                </Button>
-                <Button type="button" variant="outline" onClick={removeLogo} className="h-10 rounded-lg px-4 text-sm font-semibold">
-                  <X className="h-4 w-4" />
-                  Remove image
-                </Button>
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-3">
+                  <Button type="button" asChild disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold">
+                    <label>
+                      <ImagePlus className="h-4 w-4" />
+                      Change Image
+                      <input type="file" accept="image/png,image/jpeg" onChange={handleLogoChange} disabled={isSaving} className="sr-only" />
+                    </label>
+                  </Button>
+                  <Button type="button" variant="outline" onClick={removeLogo} disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold text-muted-foreground">
+                    <X className="h-4 w-4" />
+                    Remove image
+                  </Button>
+                </div>
+                <p className="text-base text-muted-foreground">We support PNGs, JPGs max size 2MB</p>
               </div>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <Field label="Hospital Name">
-                <Input value={profile.name} onChange={(event) => updateField("name", event.target.value)} className={inputClassName} />
-              </Field>
-              <Field label="Contact Phone">
-                <Input value={profile.contactPhone} onChange={(event) => updateField("contactPhone", event.target.value)} className={inputClassName} />
+            <div className="grid gap-7 md:grid-cols-2">
+              <Field label="Hospital Name" className="md:col-span-2">
+                <Input value={profile.name} onChange={(event) => updateField("name", event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
               <Field label="Address" className="md:col-span-2">
-                <Input value={profile.address} onChange={(event) => updateField("address", event.target.value)} className={inputClassName} />
+                <Input value={profile.address} onChange={(event) => updateField("address", event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
               <Field label="Contact Email">
-                <Input type="email" value={profile.contactEmail} onChange={(event) => updateField("contactEmail", event.target.value)} className={inputClassName} />
+                <Input type="email" value={profile.contactEmail} onChange={(event) => updateField("contactEmail", event.target.value)} disabled={isSaving} className={inputClassName} />
+              </Field>
+              <Field label="Contact Phone">
+                <Input value={profile.contactPhone} onChange={(event) => updateField("contactPhone", event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
               <Field label="Timezone">
-                <Select value={profile.timezone} onValueChange={(value) => updateField("timezone", value)}>
+                <Select value={profile.timezone} onValueChange={(value) => updateField("timezone", value)} disabled={isSaving}>
                   <SelectTrigger className={selectClassName}>
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
@@ -201,7 +252,7 @@ export default function SettingsPage() {
               </Field>
             </div>
 
-            {notice ? <SaveNotice>{notice}</SaveNotice> : null}
+            {notice ? <SaveNotice tone={noticeTone}>{notice}</SaveNotice> : null}
           </>
         )}
       </SettingsPanel>

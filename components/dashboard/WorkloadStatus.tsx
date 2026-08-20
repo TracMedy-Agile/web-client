@@ -13,6 +13,34 @@ export interface ClinicianWorkload {
 
 interface WorkloadStatusProps {
   clinicians?: ClinicianWorkload[];
+  isLoading?: boolean;
+}
+
+function WorkloadStatusSkeleton() {
+  return (
+    <div className="mt-6 grid animate-pulse grid-cols-1 gap-4 lg:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <article key={index} className="rounded-2xl border border-border/80 bg-background/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-4 w-28 rounded bg-muted" />
+              <div className="h-3 w-40 rounded bg-muted/70" />
+            </div>
+            <div className="h-6 w-20 shrink-0 rounded-full bg-muted" />
+          </div>
+          <div className="mt-5 h-2 rounded-full bg-muted" />
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {Array.from({ length: 3 }).map((_, cellIndex) => (
+              <div key={cellIndex} className="rounded-xl bg-card p-3">
+                <div className="h-3 w-12 rounded bg-muted" />
+                <div className="mt-2 h-5 w-8 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
 }
 
 const LOAD_LABEL: Record<ClinicianWorkload["load"], string> = {
@@ -31,7 +59,7 @@ function workloadPercent(clinician: ClinicianWorkload) {
   return Math.min(100, Math.max(8, clinician.episodes * 7 + clinician.alerts * 6));
 }
 
-export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps) {
+export default function WorkloadStatus({ clinicians = [], isLoading = false }: WorkloadStatusProps) {
   const hasData = clinicians.length > 0;
 
   return (
@@ -51,7 +79,9 @@ export default function WorkloadStatus({ clinicians = [] }: WorkloadStatusProps)
         ) : null}
       </div>
 
-      {hasData ? (
+      {isLoading ? (
+        <WorkloadStatusSkeleton />
+      ) : hasData ? (
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {clinicians.map((clinician) => {
             const colors = LOAD_COLOR[clinician.load];

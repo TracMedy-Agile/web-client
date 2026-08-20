@@ -1,6 +1,7 @@
 import type { Clinician } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
 import type { components } from "@/docs/types/api";
 import { apiClient } from "@/lib/services/auth/api-client";
+import { apiErrorFromResponse, networkApiError } from "@/lib/api/errors";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 type UnknownRecord = Record<string, unknown>;
@@ -30,9 +31,11 @@ async function fetchClinicianList(params: URLSearchParams): Promise<UnknownRecor
   const response = await fetch(`${BASE}/clinicians?${params}`, {
     cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => {
+    throw networkApiError("Unable to reach clinician services.");
   });
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error("Unable to load clinicians.");
+  if (!response.ok) throw apiErrorFromResponse(response, payload, "Unable to load clinicians.");
 
   const root = asRecord(payload);
   const data = root?.data ?? payload;
@@ -107,9 +110,11 @@ export async function getFacilityClinician(id: string): Promise<ClinicianProfile
   const response = await fetch(`${BASE}/clinicians/${encodeURIComponent(id)}`, {
     cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => {
+    throw networkApiError("Unable to reach clinician services.");
   });
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(response.status === 404 ? "Team member not found." : "Unable to load this team member.");
+  if (!response.ok) throw apiErrorFromResponse(response, payload, response.status === 404 ? "Team member not found." : "Unable to load this team member.");
 
   const root = asRecord(payload);
   const nested = asRecord(root?.data);
@@ -134,9 +139,11 @@ export async function getTeamMemberActivity(
   const response = await fetch(`${BASE}/team/members/${encodeURIComponent(id)}/activity${query.toString() ? `?${query}` : ""}`, {
     cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => {
+    throw networkApiError("Unable to reach team activity services.");
   });
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(response.status === 404 ? "Team member activity was not found." : "Unable to load team member activity.");
+  if (!response.ok) throw apiErrorFromResponse(response, payload, response.status === 404 ? "Team member activity was not found." : "Unable to load team member activity.");
 
   const root = asRecord(payload);
   const nested = asRecord(root?.data);
@@ -203,16 +210,25 @@ export type SuspendTeamMemberInput = components["schemas"]["SuspendTeamMemberDto
 export type EscalationPreference = components["schemas"]["EscalationPreferenceDto"];
 export type UpdateEscalationPreferenceInput = components["schemas"]["UpdateEscalationPreferenceDto"];
 
+export function getTeamMemberRequestId(member: TeamMember): string {
+  const record = member as unknown as UnknownRecord;
+  const explicitId = value(record, ["memberId", "staffId", "staffMemberId", "clinicianId"]);
+  if (explicitId) return explicitId;
+  if (member.id.startsWith("legacy-")) return member.id.slice("legacy-".length);
+  return member.id;
+}
+
 
 async function teamRequest(path: string, init?: RequestInit): Promise<unknown> {
   const response = await apiClient(path, {
     ...init,
     cache: "no-store",
+  }).catch(() => {
+    throw networkApiError("Unable to reach team services.");
   });
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = value(asRecord(payload) ?? {}, ["message"], response.status === 401 ? "Your session expired. Please sign in again and retry." : "Unable to complete team request.");
-    throw new Error(message);
+    throw apiErrorFromResponse(response, payload, response.status === 401 ? "Your session expired. Please sign in again and retry." : "Unable to complete team request.");
   }
   return payload;
 }
@@ -239,7 +255,7 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 
 export async function getTeamMember(id: string): Promise<TeamMember> {
   const members = await getTeamMembers();
-  const member = members.find((item) => item.id === id || item.userId === id);
+  const member = members.find((item) => item.id === id || item.userId === id || getTeamMemberRequestId(item) === id);
   if (!member) throw new Error("Team member not found.");
   return member;
 }

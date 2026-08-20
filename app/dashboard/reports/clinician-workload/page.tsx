@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Loader2, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   getReportsDateRange,
@@ -201,7 +201,18 @@ export default function ClinicianWorkloadPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((clinician, index) => (
+              {isLoading ? (
+                Array.from({ length: PAGE_SIZE }).map((_, index) => (
+                  <tr key={index} className="animate-pulse border-b border-border/50 last:border-0">
+                    <td className="px-6 py-4"><div className="flex items-center gap-3"><span className="h-10 w-10 shrink-0 rounded-full bg-muted" /><span className="h-4 w-32 rounded bg-muted" /></div></td>
+                    <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-muted" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-8 rounded bg-muted" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-8 rounded bg-muted" /></td>
+                    <td className="px-6 py-4"><div className="h-6 w-20 rounded-full bg-muted" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-16 rounded bg-muted" /></td>
+                  </tr>
+                ))
+              ) : visibleRows.map((clinician, index) => (
                 <tr key={clinician.id} className="border-b border-border/50 text-foreground last:border-0 hover:bg-muted/30">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -224,12 +235,7 @@ export default function ClinicianWorkloadPage() {
               ))}
             </tbody>
           </table>
-          {isLoading ? (
-            <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              Loading facility clinicians…
-            </div>
-          ) : visibleRows.length === 0 ? (
+          {!isLoading && visibleRows.length === 0 ? (
             <div className="p-12 text-center text-sm text-muted-foreground">No clinicians match these filters.</div>
           ) : null}
         </div>

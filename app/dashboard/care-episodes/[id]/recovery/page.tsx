@@ -84,12 +84,14 @@ function isTaskCompleted(task: ApiRecord) {
   return status === "completed" || status === "done" || task.completed === true;
 }
 
-function buildDailyTasks(carePlan: ApiRecord | null): DailyTask[] {
+function buildDailyTasks(carePlan: ApiRecord | null, isToday: boolean): DailyTask[] {
   return getRecordArray(carePlan, ["tasks"]).map((task, index) => ({
     id: getString(task, ["id", "_id", "taskId"]) || `task-${index}`,
     label: getString(task, ["title", "name", "label"], "Task"),
     sub: getString(task, ["frequency", "schedule", "dueAt", "scheduledAt", "dueDate"]),
-    done: isTaskCompleted(task),
+    // The API has no per-day task completion history — a task's status only reflects its
+    // current live state, so it can only be trusted as "done" when viewing today.
+    done: isToday && isTaskCompleted(task),
   }));
 }
 
@@ -271,7 +273,11 @@ export default function CareEpisodeRecoveryPage() {
     return () => { ignore = true; };
   }, [episodeId, taskDate]);
 
-  const dailyTasks = useMemo(() => buildDailyTasks(episode?.currentCarePlan ?? null), [episode]);
+  const todayKey = localDateKey(new Date());
+  const dailyTasks = useMemo(
+    () => buildDailyTasks(episode?.currentCarePlan ?? null, taskDate === todayKey),
+    [episode, taskDate, todayKey],
+  );
   const selectedAlert = alerts.find((alert) => alert.id === reviewAlertId) ?? null;
   const reviewImpact = selectedAlert ? buildReviewImpact(selectedAlert, dailyVitals, medications) : null;
   const adherence = medications.length > 0
@@ -284,7 +290,6 @@ export default function CareEpisodeRecoveryPage() {
   const taskCompletionPercent = taskCompletion
     ? taskCompletion.completionRate * 100
     : displayedTaskCount > 0 ? (displayedCompletedCount / displayedTaskCount) * 100 : 0;
-  const todayKey = localDateKey(new Date());
   const recoveryProbability = episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
   const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
   const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
@@ -415,6 +420,7 @@ export default function CareEpisodeRecoveryPage() {
         initialPatient={{ id: episode.patientId, name: patient?.name || "Patient" }}
         initialCareEpisodeLabel={`Care episode ${episode.id}`}
         initialReason="Recovery follow-up review"
+        autoConfirm
       />
 
       <ReviewImpactModal

@@ -36,7 +36,7 @@ const MONITORING_PROFILES: Record<string, MonitoringProfile> = {
     criticalHighPlaceholder: "160/100",
     trendThresholdPlaceholder: "10 mmHg",
     trendWindow: "24 hours",
-    trendConditions: ["Systolic Increase", "Systolic Decrease", "Diastolic Increase", "Consecutive High Readings"],
+    trendConditions: ["Systolic Increase", "Systolic Decrease", "Diastolic Increase", "Diastolic Decrease", "Consecutive High Readings"],
   },
   "Heart Rate": {
     unit: "bpm",

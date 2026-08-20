@@ -322,3 +322,34 @@ export async function reconnectConnectedPatient(facilityId: string, patientId: s
     method: "PATCH",
   });
 }
+
+export type PatientLookupResult = {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  tracmedyPatientId: string;
+};
+
+// GET /patients/lookup — verify a patient exists (by email or Trac ID) before sending an invite.
+export async function lookupPatient(query: { email?: string; patientId?: string }): Promise<PatientLookupResult | null> {
+  const params = new URLSearchParams();
+  if (query.email) params.set("email", query.email);
+  if (query.patientId) params.set("patientId", query.patientId);
+
+  let payload: unknown;
+  try {
+    payload = await request(`/patients/lookup?${params}`);
+  } catch {
+    return null;
+  }
+  const outer = asRecord(payload);
+  const root = asRecord(outer?.data) ?? outer;
+  if (!root) return null;
+
+  return {
+    name: getStringField(root, "name"),
+    email: getStringField(root, "email"),
+    avatarUrl: getStringField(root, "avatarUrl"),
+    tracmedyPatientId: getStringField(root, "tracmedyPatientId"),
+  };
+}

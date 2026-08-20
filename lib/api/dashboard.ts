@@ -1,11 +1,14 @@
 import type { components } from "@/docs/types/api";
 import type { LiveAlert } from "@/components/dashboard/LiveAlerts";
+import type { RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import type { ClinicianWorkload as DashboardClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
 import { getAlertsSnapshot } from "@/lib/api/alerts";
 import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
 import { apiClient } from "@/lib/services/auth/api-client";
 
 type FacilityForecastSummary = components["schemas"]["FacilityForecastSummaryDto"];
+type FacilityRecoveryTrend = components["schemas"]["FacilityRecoveryTrendDto"];
+export type DashboardRecoveryTrendRange = FacilityRecoveryTrend["range"];
 
 type ApiRecord = Record<string, unknown>;
 
@@ -37,6 +40,17 @@ export async function getFacilityForecastSummary(): Promise<FacilityForecastSumm
   const payload = await readJson(response, "Unable to load facility forecast summary.");
   if (!asRecord(payload)) throw new Error("The facility forecast summary response was invalid.");
   return payload as FacilityForecastSummary;
+}
+export async function getDashboardRecoveryTrend(range: DashboardRecoveryTrendRange = "7d"): Promise<RecoveryTrendPoint[]> {
+  const query = new URLSearchParams({ range });
+  const response = await apiClient(`/forecasts/facility/recovery-trend?${query.toString()}`, { cache: "no-store" });
+  const payload = await readJson(response, "Unable to load facility recovery trend.");
+  const trend = asRecord(payload) ? payload as FacilityRecoveryTrend : null;
+  return trend?.points?.map((point) => ({
+    day: point.day,
+    active: point.active,
+    mean: point.mean,
+  })) ?? [];
 }
 
 function relativeTime(value: string) {
