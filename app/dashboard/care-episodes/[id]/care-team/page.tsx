@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Plus, UsersRound } from "lucide-react";
+import { ChevronDown, ChevronLeft, Plus, Trash2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +23,27 @@ function roleBadgeClass(role: string) {
   if (normalized.includes("nurse")) return "bg-violet-50 text-violet-600";
   if (normalized.includes("pharm")) return "bg-amber-50 text-amber-700";
   if (normalized.includes("physio")) return "bg-emerald-50 text-emerald-600";
-  return "bg-blue-50 text-blue-600";
+  return "bg-blue-50 text-primary";
+}
+
+function roleLabel(role: string) {
+  return humanizeSlug(role) || "Doctor";
+}
+
+function CareTeamSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" />
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-3">
+          <div className="h-8 w-44 animate-pulse rounded bg-slate-200" />
+          <div className="h-5 w-96 max-w-full animate-pulse rounded bg-slate-200" />
+        </div>
+        <div className="h-11 w-36 animate-pulse rounded-xl bg-slate-200" />
+      </div>
+      <div className="h-[520px] animate-pulse rounded-xl bg-white shadow-sm" />
+    </div>
+  );
 }
 
 export default function CareTeamPage() {
@@ -82,84 +102,98 @@ export default function CareTeamPage() {
     return () => { ignore = true; };
   }, [episodeId]);
 
-  if (isLoading) return <div className="space-y-4"><div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" /><div className="h-7 w-40 animate-pulse rounded bg-slate-200" /><div className="h-64 animate-pulse rounded-xl bg-slate-100" /></div>;
+  if (isLoading) return <CareTeamSkeleton />;
+
+  const patientName = displayEpisode.patient?.name || "this patient";
+  const patientCode = displayEpisode.patient?.hospitalId || displayEpisode.patientId || "--";
 
   return (
-    <div className="space-y-6">
-      <Link href={`/dashboard/care-episodes/${episodeId}`} aria-label="Back to care episode" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">
+    <div className="space-y-6 pb-8">
+      <Link href={`/dashboard/care-episodes/${episodeId}`} aria-label="Back to care episode" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 text-slate-800 transition hover:bg-slate-300">
         <ChevronLeft className="h-4 w-4" />
       </Link>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-lg font-bold text-slate-900 md:text-2xl">Care Team</h1>
-          <p className="mt-2 max-w-140 text-sm font-medium leading-6 text-slate-500">
-            Shared ownership and coordinated care for {displayEpisode.patient?.name || "this patient"}.
+          <h1 className="text-2xl font-bold tracking-[-0.02em] text-slate-900 md:text-[28px]">Care Team</h1>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+            Shared ownership and coordinated care for {patientName}{patientCode !== "--" ? ` • ${patientCode}` : ""}.
           </p>
         </div>
 
-          <Button
-            type="button"
-            onClick={() => {
-              capturePostHogEvent("add_clinician_opened", { episode_id: episodeId });
-              setIsModalOpen(true);
-            }}
-            className="h-11 gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" />
-            Add Clinician
-          </Button>
-
+        <Button
+          type="button"
+          onClick={() => {
+            capturePostHogEvent("add_clinician_opened", { episode_id: episodeId });
+            setIsModalOpen(true);
+          }}
+          className="h-11 gap-2 rounded-xl bg-primary px-6 text-sm font-bold text-white shadow-none hover:bg-primary/90"
+        >
+          <Plus className="h-4 w-4" />
+          Add Clinician
+        </Button>
       </div>
 
-      <Card className="rounded-xl border-border bg-white shadow-sm">
+      <Card className="rounded-xl border border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-              <UsersRound className="h-4 w-4 text-primary" />
-              Clinicians
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">{team.length}</span>
-            </h2>
-            <span className="text-xs font-medium text-slate-500">Assigned clinicians from the episode record</span>
+          <div className="mb-5 flex items-center gap-2 border-b border-slate-100 pb-5">
+            <UsersRound className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-bold text-slate-900">Clinicians</h2>
+            <span className="ml-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-500">{team.length}</span>
           </div>
 
-          {error ? <p className="py-10 text-center text-sm font-medium text-red-600">{error}</p> : null}
+          {error ? <p className="py-12 text-center text-sm font-medium text-red-600">{error}</p> : null}
           {!error && team.length === 0 ? (
-            <p className="py-10 text-center text-sm font-medium text-slate-500">No clinicians are assigned to this care team yet.</p>
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-slate-50 px-6 py-12 text-center">
+              <UsersRound className="h-10 w-10 text-slate-300" />
+              <p className="mt-3 text-sm font-bold text-slate-900">No clinicians assigned yet</p>
+              <p className="mt-1 max-w-md text-sm font-medium leading-6 text-slate-500">
+                Add clinicians from the hospital directory to coordinate care for this episode.
+              </p>
+            </div>
           ) : null}
           {!error && team.length > 0 ? (
-            <div className="divide-y divide-border">
+            <div className="space-y-3">
               {team.map((member) => (
-                <div key={member.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
+                <article key={member.id} className="grid gap-4 rounded-xl border border-border bg-white px-4 py-4 shadow-sm md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center md:px-6 md:py-5">
+                  <div className="flex min-w-0 items-center gap-4">
                     <span
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
                       style={{ backgroundColor: getAvatarColor(member.name) }}
                     >
                       {getInitials(member.name)}
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-slate-900">{member.name}</span>
-                        <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", roleBadgeClass(member.role))}>
-                          {humanizeSlug(member.role) || "Clinician"}
+                        <h3 className="truncate text-base font-bold text-slate-900">{member.name}</h3>
+                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", roleBadgeClass(member.role))}>
+                          {roleLabel(member.role)}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs font-medium text-slate-500">Added {formatLongDate(member.assignedAt)}</p>
+                      <p className="mt-1 text-sm font-medium text-slate-500">Care team member</p>
+                      <p className="mt-2 text-sm font-semibold text-primary">Added {formatLongDate(member.assignedAt)}</p>
                     </div>
                   </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={removingClinicianId === member.clinicianId}
-                      onClick={() => void removeMember(member)}
-                      className="h-9 self-start px-3 text-sm font-bold text-red-600 sm:self-center"
-                    >
-                      {removingClinicianId === member.clinicianId ? "Removing..." : "Remove"}
-                    </Button>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Role</p>
+                    <div className="flex h-10 items-center justify-between rounded-lg border border-border bg-white px-3 text-sm font-semibold text-slate-700">
+                      <span>{roleLabel(member.role)}</span>
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    </div>
+                  </div>
 
-                </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={removingClinicianId === member.clinicianId}
+                    onClick={() => void removeMember(member)}
+                    className="h-10 justify-start gap-2 px-0 text-xs font-extrabold uppercase tracking-[0.04em] text-red-500 hover:bg-red-50 hover:text-red-600 md:justify-center md:px-3"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {removingClinicianId === member.clinicianId ? "Removing" : "Remove"}
+                  </Button>
+                </article>
               ))}
             </div>
           ) : null}

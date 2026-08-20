@@ -172,20 +172,19 @@ export default function DashboardMetricCards() {
     };
   }, []);
 
-  const change = (trend: Trend | null) => isLoading ? "..." : hasError ? "--" : trend?.change;
+  const change = (trend: Trend | null) => hasError ? "--" : trend?.change;
   const value = (metric: number | null, suffix = "") => {
-    if (isLoading) return "...";
     if (hasError || metric === null) return "--";
     return `${metric}${suffix}`;
   };
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-      <MetricCard icon={Users} iconClassName="bg-secondary/30 text-primary" label="Active Patients" value={value(metrics.activePatients)} change={change(metrics.activePatientsTrend)} changeType={metrics.activePatientsTrend.type} changeTitle="Active patient episodes created in the latest 30 days compared with the previous 30 days" description="Currently monitored" />
-      <MetricCard icon={ShieldAlert} iconClassName="bg-amber-50 text-amber-600" label="High Risk Today" value={value(metrics.highRiskToday)} change={change(metrics.highRiskTrend)} changeType={metrics.highRiskTrend.type} changeTitle="High and critical risk episode movement across the latest 30-day cohort" description="Needs close follow-up" />
-      <MetricCard icon={AlertTriangle} iconClassName="bg-red-50 text-red-500" label="Critical Alerts" value={value(metrics.criticalAlerts)} change={change(metrics.criticalAlertsTrend)} changeType={metrics.criticalAlertsTrend.type} changeTitle="Critical alert movement in the latest 7 days compared with the previous 7 days" description="Open clinical alerts" />
-      <MetricCard icon={TrendingUp} iconClassName="bg-emerald-50 text-emerald-600" label="Avg Recovery %" value={value(metrics.recovery, "%")} change={change(metrics.recoveryTrend)} changeType={metrics.recoveryTrend.type} changeTitle="Average recovery progress for the latest 30-day episode cohort compared with the previous cohort" description="Across active episodes" />
-      <MetricCard icon={HeartPulse} iconClassName="bg-sky-50 text-primary" label="Readmission Rate" value={value(metrics.readmissionRate, "%")} change={change(metrics.readmissionTrend)} changeType={metrics.readmissionTrend?.type ?? "positive"} changeTitle="Lower readmission movement is positive" description="Last 30 days" />
+      <MetricCard isLoading={isLoading} icon={Users} iconClassName="bg-secondary/30 text-primary" label="Active Patients" value={value(metrics.activePatients)} change={change(metrics.activePatientsTrend)} changeType={metrics.activePatientsTrend.type} changeTitle="Active patient episodes created in the latest 30 days compared with the previous 30 days" description="Currently monitored" />
+      <MetricCard isLoading={isLoading} icon={ShieldAlert} iconClassName="bg-amber-50 text-amber-600" label="High Risk Today" value={value(metrics.highRiskToday)} change={change(metrics.highRiskTrend)} changeType={metrics.highRiskTrend.type} changeTitle="High and critical risk episode movement across the latest 30-day cohort" description="Needs close follow-up" />
+      <MetricCard isLoading={isLoading} icon={AlertTriangle} iconClassName="bg-red-50 text-red-500" label="Critical Alerts" value={value(metrics.criticalAlerts)} change={change(metrics.criticalAlertsTrend)} changeType={metrics.criticalAlertsTrend.type} changeTitle="Critical alert movement in the latest 7 days compared with the previous 7 days" description="Open clinical alerts" />
+      <MetricCard isLoading={isLoading} icon={TrendingUp} iconClassName="bg-emerald-50 text-emerald-600" label="Avg Recovery %" value={value(metrics.recovery, "%")} change={change(metrics.recoveryTrend)} changeType={metrics.recoveryTrend.type} changeTitle="Average recovery progress for the latest 30-day episode cohort compared with the previous cohort" description="Across active episodes" />
+      <MetricCard isLoading={isLoading} icon={HeartPulse} iconClassName="bg-sky-50 text-primary" label="Readmission Rate" value={value(metrics.readmissionRate, "%")} change={change(metrics.readmissionTrend)} changeType={metrics.readmissionTrend?.type ?? "positive"} changeTitle="Lower readmission movement is positive" description="Last 30 days" />
     </div>
   );
 }

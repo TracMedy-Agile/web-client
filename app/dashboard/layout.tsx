@@ -1,6 +1,7 @@
 import Sidebar from "@/components/dashboard/Sidebar";
 import Navbar from "@/components/dashboard/Navbar";
 import DashboardUserProvider from "@/components/auth/DashboardUserProvider";
+import DashboardPermissionGuard from "@/components/auth/DashboardPermissionGuard";
 import DashboardNetworkGuard from "@/components/system/DashboardNetworkGuard";
 import SessionExpiryGuard from "@/components/system/SessionExpiryGuard";
 
@@ -17,7 +18,9 @@ export default function DashboardLayout({
           <Navbar />
           <main className="min-h-0 flex-1 overflow-y-auto bg-[#f1f5f9] p-3 md:p-6 lg:p-8">
             <SessionExpiryGuard>
-              <DashboardNetworkGuard>{children}</DashboardNetworkGuard>
+              <DashboardNetworkGuard>
+                <DashboardPermissionGuard>{children}</DashboardPermissionGuard>
+              </DashboardNetworkGuard>
             </SessionExpiryGuard>
           </main>
         </div>

@@ -693,7 +693,7 @@ export default function AppointmentDetailsPage() {
                     {historySteps.map((step, index) => (
                       <div key={`${step.title}-${index}`} className="relative">
                         <span className={cn("absolute -left-8 top-0 flex h-8 w-8 items-center justify-center rounded-full text-white", step.active ? "bg-primary" : "bg-[#CBD5E1]")}><Clock3 className="h-3.5 w-3.5" /></span>
-                        <div className={cn(step.active ? "text-[#111827]" : "text-[#9AA4B2]")}>
+                        <div className={cn("ml-3", step.active ? "text-[#111827]" : "text-[#9AA4B2]")}>
                           <p className="text-sm font-bold">{step.title}</p>
                           <p className="mt-1 text-xs font-medium">{step.description}</p>
                           {step.timestamp ? <p className="mt-3 text-xs font-bold uppercase text-primary">{step.timestamp}</p> : null}

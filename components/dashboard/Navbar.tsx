@@ -1,48 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout } from "@/lib/api/auth";
 import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import MobileSidebarButton from "@/components/dashboard/MobileSidebarButton";
-import { Bell, ChevronDown, LogOut } from "lucide-react";
+import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 
 import {
+  formatNotificationTime,
   getNotifications,
   getUnreadNotificationCount,
   markAllNotificationsAsRead,
   markNotificationAsRead,
+  notificationDestination,
   type NotificationRecord,
 } from '@/lib/api/notifications';
 import { CheckCheck, Loader2 } from 'lucide-react';
-
-
-function notificationDestination(notification: NotificationRecord) {
-  const { data, type } = notification;
-  const href = typeof data.href === 'string' ? data.href : typeof data.url === 'string' ? data.url : '';
-  if (href.startsWith('/dashboard')) return href;
-  if (typeof data.appointmentId === 'string') return `/dashboard/appointments/${data.appointmentId}`;
-  if (typeof data.episodeId === 'string') {
-    if (type.toLowerCase().includes('message')) {
-      return `/dashboard/messages?${new URLSearchParams({ episodeId: data.episodeId })}`;
-    }
-    return `/dashboard/care-episodes/${data.episodeId}`;
-  }
-  if (typeof data.patientId === 'string') return `/dashboard/connected-patients/${data.patientId}`;
-  if (type.toLowerCase().includes('alert')) return '/dashboard/alerts';
-  return '';
-}
-
-function formatNotificationTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-}
 
 function formatRoleLabel(value?: string | null) {
   if (!value) return "Staff member";
@@ -51,6 +26,19 @@ function formatRoleLabel(value?: string | null) {
     .filter(Boolean)
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function UserAvatar({ name, avatarUrl, className }: { name: string; avatarUrl?: string; className: string }) {
+  return (
+    <div
+      role="img"
+      aria-label={name}
+      className={`flex items-center justify-center rounded-full bg-primary bg-cover bg-center font-semibold text-primary-foreground ${className}`}
+      style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
+    >
+      {avatarUrl ? null : getInitials(name)}
+    </div>
+  );
 }
 
 function getInitials(name?: string | null) {
@@ -68,6 +56,8 @@ interface NavbarProps {
 }
 
 const DASHBOARD_ROUTE_TITLES = [
+  { href: "/dashboard/profile", title: "Profile" },
+  { href: "/dashboard/notifications", title: "Notifications" },
   { href: "/dashboard/connected-patients", title: "Connected Patients" },
   { href: "/dashboard/care-episodes", title: "Care Episodes" },
   { href: "/dashboard/appointments", title: "Appointments" },
@@ -138,6 +128,7 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
 
   const name = user?.name || "Staff member";
   const role = user?.specialty || formatRoleLabel(user?.role);
+  const avatarUrl = user?.avatarUrl || undefined;
   const resolvedTitle = title === "Dashboard" ? getDashboardRouteTitle(pathname) : title;
 
   async function loadNotifications() {
@@ -265,6 +256,13 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
                 </button>
               ))}
             </div>
+            <Link
+              href="/dashboard/notifications"
+              onClick={() => setIsNotificationsOpen(false)}
+              className={'block border-t border-border px-4 py-3 text-center text-sm font-bold text-primary hover:bg-muted/60 hover:underline'}
+            >
+              View all notifications
+            </Link>
           </div>
         ) : null}
         </div>
@@ -277,9 +275,7 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
             aria-expanded={isMenuOpen}
             className="flex items-center gap-2"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-              {getInitials(name)}
-            </div>
+            <UserAvatar name={name} avatarUrl={avatarUrl} className="h-9 w-9 shrink-0 text-sm" />
             <div className="text-sm text-left">
               <p className="font-semibold text-foreground">{name}</p>
               <p className="text-muted-foreground">{role}</p>
@@ -293,14 +289,24 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
               className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-card p-4 shadow-lg"
             >
               <div className="flex items-center gap-3 p-1">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                  {getInitials(name)}
-                </div>
+                <UserAvatar name={name} avatarUrl={avatarUrl} className="h-10 w-10 shrink-0 text-sm" />
                 <div>
                   <p className="font-semibold text-foreground">{name}</p>
                   <p className="text-sm text-muted-foreground">{role}</p>
                 </div>
               </div>
+
+              <div className="my-3 border-t border-border p-1" />
+
+              <Link
+                href="/dashboard/profile"
+                role="menuitem"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex w-full items-center gap-2 rounded-md p-1 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                <User className="h-4 w-4" />
+                My Profile
+              </Link>
 
               <div className="my-3 border-t border-border p-1" />
 

@@ -113,7 +113,9 @@ function getAppointmentItems(payload: unknown): ApiRecord[] {
   const record = asRecord(data);
   if (!record) return [];
 
-  for (const key of ["items", "appointments", "results"]) {
+  // The list response is double-wrapped ({ data: { data: [...], total, page, limit } }),
+  // so the paginated array lives under a nested "data" key, not "items"/"appointments"/"results".
+  for (const key of ["data", "items", "appointments", "results"]) {
     const value = record[key];
     if (Array.isArray(value)) return value.filter((item): item is ApiRecord => Boolean(asRecord(item)));
   }

@@ -62,21 +62,17 @@ export const invoiceHistory: SettingsInvoice[] = [outstandingInvoice, overdueInv
 
 const tabs = [
   { href: "/dashboard/settings/billing", label: "Current Cycle" },
-  { href: "/dashboard/settings/billing/outstanding", label: "Outstanding Invoice" },
-  { href: "/dashboard/settings/billing/overdue", label: "Overdue Invoice" },
-  { href: "/dashboard/settings/billing/overdue-after-cancellation", label: "After Cancellation" },
-  { href: "/dashboard/settings/billing/overdue-variant", label: "Overdue Retry" },
   { href: "/dashboard/settings/billing/invoices", label: "Invoices" },
 ] as const;
 
 export function BillingTabs() {
   const pathname = usePathname() || "";
   return (
-    <nav aria-label="Billing sections" className="mb-5 overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-sm">
-      <div className="flex min-w-max gap-1">
+    <nav aria-label="Billing sections" className="mb-6 overflow-x-auto border-b border-border">
+      <div className="flex min-w-max gap-8">
         {tabs.map((tab) => {
           const active = pathname === tab.href;
-          return <Link key={tab.href} href={tab.href} className={cn("rounded-md px-4 py-2 text-sm font-bold transition", active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>{tab.label}</Link>;
+          return <Link key={tab.href} href={tab.href} className={cn("border-b-2 px-8 py-3 text-base font-medium transition", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>{tab.label}</Link>;
         })}
       </div>
     </nav>

@@ -2,6 +2,15 @@ import type { components } from "@/docs/types/api";
 
 type ApiAuditLog = components["schemas"]["AuditLogResponseDto"];
 
+export class AuditLogAccessDeniedError extends Error {
+  status = 403;
+
+  constructor(message = "You do not have permission to view audit logs.") {
+    super(message);
+    this.name = "AuditLogAccessDeniedError";
+  }
+}
+
 export type AuditLogEntry = {
   id: string;
   staffName: string;
@@ -54,7 +63,11 @@ async function request(path: string, query?: URLSearchParams): Promise<unknown> 
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(stringValue(asRecord(payload)?.message, "Failed to load audit logs."));
+    const message = stringValue(asRecord(payload)?.message, "Failed to load audit logs.");
+    if (response.status === 403) {
+      throw new AuditLogAccessDeniedError(message);
+    }
+    throw new Error(message);
   }
   return payload;
 }

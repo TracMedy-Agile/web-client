@@ -24,8 +24,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import AccessDeniedState from "@/components/system/AccessDeniedState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
+  AuditLogAccessDeniedError,
   getAllAuditLogs,
   getAuditLog,
   getAuditLogs,
@@ -129,6 +131,7 @@ export default function AuditLogsPage() {
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [isAuditAccessDenied, setIsAuditAccessDenied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -140,6 +143,7 @@ export default function AuditLogsPage() {
     const timeout = window.setTimeout(async () => {
       setIsRefreshing(true);
       setLoadError("");
+      setIsAuditAccessDenied(false);
       try {
         const response = await getAuditLogs({
           search: searchQuery.trim() || undefined,
@@ -151,12 +155,19 @@ export default function AuditLogsPage() {
           setEntries(response.data);
           setTotalEntries(response.meta.total);
           setTotalPages(response.meta.totalPages);
+          setIsAuditAccessDenied(false);
         }
       } catch (requestError) {
         if (!ignore) {
           setEntries([]);
           setTotalEntries(0);
-          setLoadError(requestError instanceof Error ? requestError.message : "Failed to load audit logs.");
+          setTotalPages(1);
+          if (requestError instanceof AuditLogAccessDeniedError) {
+            setLoadError("");
+            setIsAuditAccessDenied(true);
+          } else {
+            setLoadError(requestError instanceof Error ? requestError.message : "Failed to load audit logs.");
+          }
         }
       } finally {
         if (!ignore) setIsRefreshing(false);
@@ -188,6 +199,7 @@ export default function AuditLogsPage() {
 
   function clearFilters() {
     setIsRefreshing(true);
+    setIsAuditAccessDenied(false);
     setSearchQuery("");
     setModule("all");
     setPage(1);
@@ -235,6 +247,14 @@ export default function AuditLogsPage() {
     } catch (requestError) {
       toast.error(requestError instanceof Error ? requestError.message : "Failed to load audit details.");
     }
+  }
+
+  if (isAuditAccessDenied) {
+    return (
+      <div className="mx-auto w-full max-w-[1440px]">
+        <AccessDeniedState description="Audit logs are available to hospital admins and clinicians with granted audit-log permission. Ask your hospital admin to enable Audit log access for your team profile, then try again." />
+      </div>
+    );
   }
 
   return (
@@ -332,9 +352,40 @@ export default function AuditLogsPage() {
             </button>
           </div>
         ) : isRefreshing && pageEntries.length === 0 ? (
-          <div className="flex min-h-[360px] items-center justify-center" aria-live="polite">
-            <Loader2 className="h-7 w-7 animate-spin text-[#0756d8]" />
+          <div className="w-full overflow-hidden" aria-live="polite" aria-busy="true">
             <span className="sr-only">Loading audit logs</span>
+            <table className="w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[19%]" />
+                <col className="w-[14%]" />
+                <col className="w-[28%]" />
+                <col className="w-[18%]" />
+                <col className="w-[13%]" />
+                <col className="w-[8%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-[#eaecf0] bg-[#f8fafc] text-[11px] font-bold uppercase tracking-wide text-[#667085]">
+                  <th className="px-3 py-4 lg:px-5">Staff Name</th>
+                  <th className="px-3 py-4 lg:px-4">Module</th>
+                  <th className="px-3 py-4 lg:px-4">Action Taken</th>
+                  <th className="px-3 py-4 lg:px-4">Timestamp</th>
+                  <th className="px-3 py-4 lg:px-4">IP Address</th>
+                  <th className="px-2 py-4 text-right lg:px-4">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: PAGE_SIZE }).map((_, index) => (
+                  <tr key={index} className="animate-pulse border-b border-[#eaecf0] last:border-0">
+                    <td className="px-3 py-4 lg:px-5"><div className="h-3.5 w-28 rounded bg-muted" /><div className="mt-2 h-3 w-16 rounded bg-muted/70" /></td>
+                    <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-20 rounded bg-muted" /></td>
+                    <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-40 rounded bg-muted" /></td>
+                    <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-24 rounded bg-muted" /></td>
+                    <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-20 rounded bg-muted" /></td>
+                    <td className="px-2 py-4 text-right lg:px-4"><div className="ml-auto h-3.5 w-10 rounded bg-muted" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : null}
 

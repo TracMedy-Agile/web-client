@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
-  CalendarClock,
   ChevronLeft,
   ChevronRight,
-  CircleUserRound,
-  FilterX,
+  Download,
+  Eye,
   Search,
   ShieldAlert,
   Stethoscope,
+  Syringe,
   UserRoundPlus,
+  Users,
   UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,25 +24,48 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import AccessDeniedState from "@/components/system/AccessDeniedState";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { getTeamMembers, type TeamMember } from "@/lib/api/clinicians";
+import { getTeamMemberRequestId, getTeamMembers, type TeamMember } from "@/lib/api/clinicians";
+import { errorMessage, isAccessDeniedError, isNetworkError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils";
 import InviteTeamMemberDialog from "./components/InviteTeamMemberDialog";
-import TeamMemberActions from "./components/TeamMemberActions";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 6;
+
+const ROLE_LABELS: Record<string, string> = {
+  doctor: "Doctor",
+  nurse: "Nurse",
+  admin: "Admin",
+  hospital_admin: "Admin",
+  physiotherapist: "Physiotherapist",
+};
+
+const ROLE_CLASSES: Record<string, string> = {
+  doctor: "bg-[#023E8A]/10 text-[#023E8A] border border-[#023E8A]/20",
+  nurse: "bg-teal-500/10 text-teal-700 border border-teal-500/20",
+  admin: "bg-slate-500/10 text-slate-700 border border-slate-500/20",
+  hospital_admin: "bg-slate-500/10 text-slate-700 border border-slate-500/20",
+  physiotherapist: "bg-purple-500/10 text-purple-700 border border-purple-500/20",
+};
+
+const STATUS_DOT: Record<string, string> = {
+  active: "bg-emerald-500",
+  pending: "bg-amber-500",
+  suspended: "bg-red-500",
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  active: "text-emerald-600",
+  pending: "text-amber-600",
+  suspended: "text-red-600",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  pending: "Pending invite",
+  pending: "Pending",
   suspended: "Suspended",
-};
-
-const STATUS_CLASSES: Record<string, string> = {
-  active: "bg-emerald-500/10 text-emerald-700",
-  pending: "bg-amber-500/10 text-amber-700",
-  suspended: "bg-destructive/10 text-destructive",
 };
 
 function initials(name: string | null) {
@@ -62,22 +85,32 @@ function humanize(value: string) {
     .join(" ");
 }
 
+function roleLabel(value: string) {
+  return ROLE_LABELS[value] ?? humanize(value);
+}
+
+function roleClass(value: string) {
+  return ROLE_CLASSES[value] ?? "bg-muted text-muted-foreground border border-border";
+}
+
 function statusLabel(value: string) {
   return STATUS_LABELS[value] ?? humanize(value);
 }
 
-function statusClass(value: string) {
-  return STATUS_CLASSES[value] ?? "bg-muted text-muted-foreground";
-}
-
-function memberDepartment(member: TeamMember) {
-  return member.ward || member.specialty || "Not specified";
-}
-
-function formatDate(value?: string | null) {
+function formatRelativeTime(value?: string | null) {
   if (!value) return "Never";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unavailable";
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins} mins ago`;
+  if (diffHours < 24) return `${diffHours} hours ago`;
+  if (diffDays === 1) return "Yesterday";
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
@@ -85,18 +118,39 @@ function SummarySkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="h-28 animate-pulse rounded-xl border border-border bg-card" />
+        <div key={index} className="h-[120px] animate-pulse rounded-xl border border-border bg-card" />
       ))}
     </div>
   );
 }
 
+function exportTeamMembers(members: TeamMember[]) {
+  const headers = ["Full Name", "Role", "Specialty", "Assigned Patients", "Status", "Last Login", "Email"];
+  const rows = members.map((m) => [
+    m.name,
+    roleLabel(m.role),
+    m.specialty || m.ward || "",
+    String(m.assignedPatientCount),
+    statusLabel(m.status),
+    m.lastLoginAt || "Never",
+    m.email,
+  ]);
+  const csv = [headers.join(","), ...rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "team-members.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown | null>(null);
   const [search, setSearch] = useState("");
-  const [department, setDepartment] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -107,7 +161,7 @@ export default function TeamPage() {
     try {
       setMembers(await getTeamMembers());
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to load the hospital team.");
+      setError(requestError);
     } finally {
       setIsLoading(false);
     }
@@ -119,20 +173,13 @@ export default function TeamPage() {
     void loadMembers();
   }, [loadMembers]);
 
-  const departments = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          members
-            .map(memberDepartment)
-            .filter((item) => item !== "Not specified"),
-        ),
-      ).sort(),
+  const roleOptions = useMemo(
+    () => Array.from(new Set(members.map((m) => m.role))).filter(Boolean).sort(),
     [members],
   );
 
   const statusOptions = useMemo(
-    () => Array.from(new Set(members.map((member) => member.status))).filter(Boolean).sort(),
+    () => Array.from(new Set(members.map((m) => m.status))).filter(Boolean).sort(),
     [members],
   );
 
@@ -142,28 +189,27 @@ export default function TeamPage() {
       const matchesSearch =
         !term ||
         member.name.toLowerCase().includes(term) ||
-        member.email.toLowerCase().includes(term) ||
-        member.role.toLowerCase().includes(term) ||
-        member.systemRole.toLowerCase().includes(term) ||
-        (member.ward || "").toLowerCase().includes(term) ||
-        (member.specialty || "").toLowerCase().includes(term);
-      const matchesDepartment = department === "all" || memberDepartment(member) === department;
+        member.email.toLowerCase().includes(term);
+      const matchesRole = roleFilter === "all" || member.role === roleFilter;
       const matchesStatus = status === "all" || member.status === status;
-      return matchesSearch && matchesDepartment && matchesStatus;
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [department, members, search, status]);
+  }, [members, search, roleFilter, status]);
 
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
   const visibleMembers = filteredMembers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const activeAccounts = members.filter((member) => member.status === "active").length;
-  const pendingInvites = members.filter((member) => member.status === "pending" || member.inviteState === "pending").length;
-  const assignedPatients = members.reduce((sum, member) => sum + member.assignedPatientCount, 0);
+
+  // Summary card counts
+  const doctorCount = members.filter((m) => m.role === "doctor").length;
+  const nurseCount = members.filter((m) => m.role === "nurse").length;
+  const adminCount = members.filter((m) => m.role === "admin" || m.role === "hospital_admin").length;
+  const totalCount = members.length;
 
   const summaries = [
-    { label: "Total Members", value: members.length, icon: UsersRound, detail: "Facility workspace" },
-    { label: "Active Accounts", value: activeAccounts, icon: Activity, detail: "Can access the workspace" },
-    { label: "Pending Invites", value: pendingInvites, icon: CalendarClock, detail: "Awaiting acceptance" },
-    { label: "Assigned Patients", value: assignedPatients, icon: Stethoscope, detail: "Active episode load" },
+    { label: "Doctors", value: doctorCount, icon: Stethoscope, color: "text-[#023E8A]", bg: "bg-[#023E8A]/10" },
+    { label: "Nurses", value: nurseCount, icon: Syringe, color: "text-teal-600", bg: "bg-teal-500/10" },
+    { label: "Admin Staffs", value: adminCount, icon: Users, color: "text-[#023E8A]", bg: "bg-[#023E8A]/10" },
+    { label: "Total Team Members", value: totalCount, icon: UsersRound, color: "text-[#023E8A]", bg: "bg-[#023E8A]/10" },
   ];
 
   function openInvitation() {
@@ -171,124 +217,142 @@ export default function TeamPage() {
     setInviteOpen(true);
   }
 
+  function getPaginationNumbers() {
+    const pages: (number | "ellipsis")[] = [];
+    if (pageCount <= 5) {
+      for (let i = 1; i <= pageCount; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (page > 3) pages.push("ellipsis");
+      const start = Math.max(2, page - 1);
+      const end = Math.min(pageCount - 1, page + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (page < pageCount - 2) pages.push("ellipsis");
+      pages.push(pageCount);
+    }
+    return pages;
+  }
+
+  if (isAccessDeniedError(error)) {
+    return <AccessDeniedState description="Team Management is available to users granted team-management access by the hospital." />;
+  }
+
   if (error) {
-    return <NetworkErrorState onRetry={loadMembers} />;
+    if (isNetworkError(error)) return <NetworkErrorState onRetry={loadMembers} />;
+
+    return (
+      <section role="alert" className="mx-auto flex min-h-[520px] w-full max-w-[900px] flex-col items-center justify-center rounded-xl border border-border bg-card px-6 py-14 text-center shadow-sm">
+        <ShieldAlert className="h-12 w-12 text-destructive" />
+        <h2 className="mt-5 text-2xl font-bold text-foreground">Unable to load Team Management</h2>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{errorMessage(error, "Unable to load the hospital team.")}</p>
+        <Button type="button" onClick={() => void loadMembers()} className="mt-6 h-11 rounded-lg px-5 font-semibold">Try Again</Button>
+      </section>
+    );
   }
 
   return (
     <section className="mx-auto w-full max-w-[1500px] space-y-6" aria-labelledby="team-title">
+      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 id="team-title" className="text-2xl font-bold tracking-tight text-foreground">
             Team Management
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            View clinicians in your facility and manage their workspace access.
+            Manage your clinical staff and roles
           </p>
         </div>
-        <Button className="h-11 rounded-lg px-5 font-semibold sm:self-center" onClick={openInvitation}>
+        <Button className="h-11 gap-2 rounded-lg bg-[#023E8A] px-5 font-semibold hover:bg-[#023E8A]/90 sm:self-center" onClick={openInvitation}>
           <UserRoundPlus className="h-4 w-4" />
           Add Team Member
         </Button>
       </div>
 
+      {/* Summary Cards */}
       {isLoading ? (
         <SummarySkeleton />
-      ) : (
+      ) : members.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {summaries.map(({ label, value, icon: Icon, detail }) => (
+          {summaries.map(({ label, value, icon: Icon, color, bg }) => (
             <article key={label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">{label}</p>
-                  <p className="mt-2 text-3xl font-bold text-foreground">{value}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-                </div>
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </span>
-              </div>
+              <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", bg, color)}>
+                <Icon className="h-5 w-5" />
+              </span>
+              <p className="mt-4 text-sm text-muted-foreground">{label}</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">{value}</p>
             </article>
           ))}
         </div>
-      )}
+      ) : null}
 
-      <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
-        <div className="flex gap-3">
-          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-          <p className="text-sm leading-6 text-muted-foreground">
-            This directory uses live team-management data, including roles, access profiles, assigned patients, invitation status, and account status.
-          </p>
-        </div>
-      </div>
-
+      {/* Table container */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              className="h-11 pl-10"
-              placeholder="Search by name, email, role, or specialty"
-              aria-label="Search team members"
-            />
+        {/* Filters */}
+        {members.length > 0 ? (
+          <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                className="h-11 pl-10"
+                placeholder="Search by name"
+                aria-label="Search team members"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Select
+                value={roleFilter}
+                onValueChange={(value) => {
+                  setRoleFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-11 w-full lg:w-40" aria-label="Filter by role">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roleOptions.map((item) => (
+                    <SelectItem key={item} value={item}>{roleLabel(item)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={status}
+                onValueChange={(value) => {
+                  setStatus(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-11 w-full lg:w-40" aria-label="Filter by status">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  {statusOptions.map((value) => (
+                    <SelectItem key={value} value={value}>{statusLabel(value)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 gap-2"
+                onClick={() => exportTeamMembers(filteredMembers)}
+                aria-label="Export team members"
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            </div>
           </div>
-          <Select
-            value={department}
-            onValueChange={(value) => {
-              setDepartment(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-11 w-full lg:w-52" aria-label="Filter by ward or specialty">
-              <SelectValue placeholder="All wards" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All wards</SelectItem>
-              {departments.map((item) => (
-                <SelectItem key={item} value={item}>{item}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={status}
-            onValueChange={(value) => {
-              setStatus(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-11 w-full lg:w-48" aria-label="Filter by account status">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {statusOptions.map((value) => (
-                <SelectItem key={value} value={value}>{statusLabel(value)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {search || department !== "all" || status !== "all" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-11"
-              onClick={() => {
-                setSearch("");
-                setDepartment("all");
-                setStatus("all");
-                setPage(1);
-              }}
-            >
-              <FilterX className="h-4 w-4" />
-              Reset
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
 
+        {/* Loading */}
         {isLoading ? (
           <div className="space-y-3 p-4" aria-label="Loading team members">
             {Array.from({ length: 6 }).map((_, index) => (
@@ -296,15 +360,20 @@ export default function TeamPage() {
             ))}
           </div>
         ) : members.length === 0 ? (
-          <div className="flex min-h-[430px] flex-col items-center justify-center px-6 py-14 text-center">
-            <span className="flex h-24 w-24 items-center justify-center rounded-full border-[10px] border-primary/5 bg-primary/10 text-primary">
-              <CircleUserRound className="h-10 w-10" />
-            </span>
-            <h2 className="mt-6 text-xl font-bold text-foreground">Build Your Clinical Team</h2>
+          /* TM-02 Empty State */
+          <div className="flex min-h-[480px] flex-col items-center justify-center px-6 py-14 text-center" style={{ background: "linear-gradient(180deg, rgba(144, 224, 239, 0.08) 0%, rgba(2, 62, 138, 0.04) 100%)" }}>
+            <div className="relative flex h-28 w-28 items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-[#023E8A]/5" />
+              <div className="absolute inset-3 rounded-full bg-[#023E8A]/8" />
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm">
+                <UserRoundPlus className="h-8 w-8 text-[#023E8A]" />
+              </div>
+            </div>
+            <h2 className="mt-6 text-xl font-bold text-foreground">Build Your Clinical Team.</h2>
             <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              Invite doctors, nurses, and administrators to collaborate on patient care.
+              Invite your doctors, nurses, and staff to begin managing patient outcomes together
             </p>
-            <Button className="mt-6" onClick={openInvitation}>
+            <Button className="mt-6 gap-2 bg-[#023E8A] hover:bg-[#023E8A]/90" onClick={openInvitation}>
               <UserRoundPlus className="h-4 w-4" />
               Add Team Member
             </Button>
@@ -317,6 +386,7 @@ export default function TeamPage() {
           </div>
         ) : (
           <>
+            {/* Mobile cards */}
             <div className="divide-y divide-border lg:hidden">
               {visibleMembers.map((member) => (
                 <article key={member.id} className="p-4">
@@ -325,122 +395,98 @@ export default function TeamPage() {
                       {initials(member.name)}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <Link
-                            href={`/dashboard/team/${member.id}`}
-                            className="block truncate text-sm font-semibold text-foreground hover:text-primary"
-                          >
-                            {member.name || "Unnamed clinician"}
-                          </Link>
-                          <p className="mt-0.5 break-all text-xs text-muted-foreground">{member.email}</p>
-                        </div>
-                        <TeamMemberActions
-                          memberId={member.id}
-                          name={member.name}
-                          email={member.email}
-                          specialty={member.specialty || ""}
-                          ward={member.ward || ""}
-                          role={member.role}
-                          status={member.status}
-                          accessProfile={member.accessProfile}
-                          permissions={member.permissions}
-                          onChanged={loadMembers}
-                        />
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", statusClass(member.status))}>
-                          {statusLabel(member.status)}
+                      <Link
+                        href={`/dashboard/team/${getTeamMemberRequestId(member)}`}
+                        className="block truncate text-sm font-semibold text-foreground hover:text-primary"
+                      >
+                        {member.name || "Unnamed clinician"}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className={cn("inline-flex rounded px-2 py-0.5 text-xs font-semibold", roleClass(member.role))}>
+                          {roleLabel(member.role)}
                         </span>
-                        <span className="text-xs text-muted-foreground">{memberDepartment(member)}</span>
+                        <span className="text-xs text-muted-foreground">{member.specialty || member.ward || "Not specified"}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[member.status] ?? "bg-gray-400")} />
+                          <span className={STATUS_TEXT[member.status] ?? "text-muted-foreground"}>{statusLabel(member.status)}</span>
+                        </span>
+                        <span>{member.assignedPatientCount} patients</span>
+                        <span>{formatRelativeTime(member.lastLoginAt)}</span>
                       </div>
                     </div>
+                    <Link
+                      href={`/dashboard/team/${getTeamMemberRequestId(member)}`}
+                      className="flex items-center gap-1.5 text-sm font-medium text-[#023E8A] hover:text-[#023E8A]/80"
+                      aria-label={`View ${member.name}`}
+                    >
+                      <Eye className="h-4 w-4" />
+                      View
+                    </Link>
                   </div>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-muted/50 p-3 text-sm">
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Assigned patients</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{member.assignedPatientCount}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Role</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{statusLabel(member.role)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted-foreground">Access</dt>
-                      <dd className="mt-1 font-semibold text-foreground">{statusLabel(member.accessProfile)}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">Last login</dt>
-                      <dd className="mt-1 truncate font-semibold text-foreground" title={member.lastLoginAt || "Never"}>{formatDate(member.lastLoginAt)}</dd>
-                    </div>
-                  </dl>
                 </article>
               ))}
             </div>
 
+            {/* Desktop table */}
             <div className="hidden lg:block">
-              <table className="w-full table-fixed text-left">
-                <thead className="bg-muted/60 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <table className="w-full text-left">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    <th className="w-[32%] px-4 py-3">Full name</th>
-                    <th className="hidden w-[18%] px-4 py-3 xl:table-cell">Role / Ward</th>
-                    <th className="w-[16%] px-4 py-3 xl:w-[13%]">Assigned patients</th>
-                    <th className="hidden w-[15%] px-4 py-3 2xl:table-cell">Access</th>
-                    <th className="w-[18%] px-4 py-3 xl:w-[15%]">Status</th>
-                    <th className="hidden w-[16%] px-4 py-3 2xl:table-cell">Last login</th>
-                    <th className="w-28 px-4 py-3 text-right">Actions</th>
+                    <th className="px-5 py-3.5">Full Name</th>
+                    <th className="px-5 py-3.5">Role</th>
+                    <th className="px-5 py-3.5">Speciality</th>
+                    <th className="px-5 py-3.5">Assigned Patient</th>
+                    <th className="px-5 py-3.5">Status</th>
+                    <th className="px-5 py-3.5">Last Login</th>
+                    <th className="px-5 py-3.5">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {visibleMembers.map((member) => (
-                    <tr key={member.id} className="transition hover:bg-muted/40">
-                      <td className="px-4 py-4">
+                    <tr key={member.id} className="transition hover:bg-muted/30">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
                             {initials(member.name)}
                           </span>
-                          <div className="min-w-0">
-                            <Link
-                              href={`/dashboard/team/${member.id}`}
-                              className="block truncate text-sm font-semibold text-foreground hover:text-primary"
-                            >
-                              {member.name || "Unnamed clinician"}
-                            </Link>
-                            <p className="truncate text-xs text-muted-foreground">{member.email}</p>
-                          </div>
+                          <span className="text-sm font-medium text-foreground">
+                            {member.name || "Unnamed clinician"}
+                          </span>
                         </div>
                       </td>
-                      <td className="hidden truncate px-4 py-4 text-sm text-foreground xl:table-cell" title={memberDepartment(member)}>
-                        <span className="block font-medium">{statusLabel(member.role)}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{memberDepartment(member)}</span>
-                      </td>
-                      <td className="px-4 py-4 text-sm font-semibold text-foreground">{member.assignedPatientCount}</td>
-                      <td className="hidden px-4 py-4 2xl:table-cell">
-                        <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
-                          {statusLabel(member.accessProfile)}
+                      <td className="px-5 py-4">
+                        <span className={cn("inline-flex rounded px-2.5 py-1 text-xs font-semibold", roleClass(member.role))}>
+                          {roleLabel(member.role)}
                         </span>
                       </td>
-                      <td className="px-4 py-4">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", statusClass(member.status))}>
-                          {statusLabel(member.status)}
+                      <td className="px-5 py-4 text-sm text-foreground">
+                        {member.specialty || member.ward || "Not specified"}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-foreground">
+                        {member.assignedPatientCount}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="flex items-center gap-1.5">
+                          <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[member.status] ?? "bg-gray-400")} />
+                          <span className={cn("text-sm font-medium", STATUS_TEXT[member.status] ?? "text-muted-foreground")}>
+                            {statusLabel(member.status)}
+                          </span>
                         </span>
                       </td>
-                      <td className="hidden truncate px-4 py-4 text-sm text-muted-foreground 2xl:table-cell" title={member.lastLoginAt || "Never"}>
-                        {formatDate(member.lastLoginAt)}
+                      <td className="px-5 py-4 text-sm text-muted-foreground">
+                        {formatRelativeTime(member.lastLoginAt)}
                       </td>
-                      <td className="px-4 py-4 text-right">
-                        <TeamMemberActions
-                          memberId={member.id}
-                          name={member.name}
-                          email={member.email}
-                          specialty={member.specialty || ""}
-                          ward={member.ward || ""}
-                          role={member.role}
-                          status={member.status}
-                          accessProfile={member.accessProfile}
-                          permissions={member.permissions}
-                          onChanged={loadMembers}
-                        />
+                      <td className="px-5 py-4">
+                        <Link
+                          href={`/dashboard/team/${getTeamMemberRequestId(member)}`}
+                          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#023E8A] hover:text-[#023E8A]/80"
+                          aria-label={`View ${member.name}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                          View
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -448,27 +494,44 @@ export default function TeamPage() {
               </table>
             </div>
 
+            {/* Pagination */}
             <div className="flex flex-col gap-3 border-t border-border px-5 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <span>
-                Showing {(page - 1) * PAGE_SIZE + 1}-
-                {Math.min(page * PAGE_SIZE, filteredMembers.length)} of {filteredMembers.length} team members
+                Showing <span className="font-medium text-foreground">{(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filteredMembers.length)}</span> of <span className="font-medium text-foreground">{filteredMembers.length}</span> Team Members
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="outline"
                   size="icon"
+                  className="h-9 w-9 rounded-lg"
                   aria-label="Previous page"
                   disabled={page === 1}
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="min-w-20 text-center font-medium text-foreground">
-                  {page} of {pageCount}
-                </span>
+                {getPaginationNumbers().map((item, idx) =>
+                  item === "ellipsis" ? (
+                    <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground">...</span>
+                  ) : (
+                    <Button
+                      key={item}
+                      variant={page === item ? "default" : "outline"}
+                      size="icon"
+                      className={cn(
+                        "h-9 w-9 rounded-lg text-sm",
+                        page === item && "bg-[#023E8A] text-white hover:bg-[#023E8A]/90",
+                      )}
+                      onClick={() => setPage(item)}
+                    >
+                      {item}
+                    </Button>
+                  ),
+                )}
                 <Button
                   variant="outline"
                   size="icon"
+                  className="h-9 w-9 rounded-lg"
                   aria-label="Next page"
                   disabled={page === pageCount}
                   onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
@@ -485,4 +548,3 @@ export default function TeamPage() {
     </section>
   );
 }
-

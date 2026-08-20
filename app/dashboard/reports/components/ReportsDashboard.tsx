@@ -8,7 +8,6 @@ import {
   CalendarRange,
   Download,
   FileSearch,
-  Loader2,
   RefreshCw,
   TrendingUp,
   TriangleAlert,
@@ -336,6 +335,41 @@ function EmptyAnalytics({
   );
 }
 
+function AnalyticsSkeleton() {
+  return (
+    <>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <section className="animate-pulse rounded-xl border border-border bg-card p-5 shadow-sm lg:col-span-2">
+          <div className="h-4 w-56 rounded bg-muted" />
+          <div className="mt-2 h-3 w-72 rounded bg-muted/70" />
+          <div className="mt-6 h-64 rounded-lg bg-muted/60" />
+        </section>
+        <section className="animate-pulse rounded-xl border border-border bg-card p-5 shadow-sm">
+          <div className="h-4 w-40 rounded bg-muted" />
+          <div className="mt-2 h-3 w-28 rounded bg-muted/70" />
+          <div className="mt-8 h-48 rounded-lg bg-muted/60" />
+        </section>
+      </div>
+      <section className="animate-pulse rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="h-4 w-44 rounded bg-muted" />
+        <div className="mt-2 h-3 w-64 rounded bg-muted/70" />
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="rounded-xl border border-border p-4">
+              <div className="h-4 w-24 rounded bg-muted" />
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="h-3 rounded bg-muted/70" />
+                <div className="h-3 rounded bg-muted/70" />
+                <div className="h-3 rounded bg-muted/70" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
 function appointmentTrend(snapshot: ReportsSnapshot | null) {
   if (!snapshot || snapshot.previousAppointmentCount === 0) return null;
   return Math.round(
@@ -553,12 +587,7 @@ export default function ReportsDashboard({ empty = false }: ReportsDashboardProp
       </div>
 
       {isLoading ? (
-        <section className="flex min-h-[520px] items-center justify-center rounded-xl bg-card">
-          <div className="text-center text-sm text-muted-foreground">
-            <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-primary" />
-            Loading facility analytics…
-          </div>
-        </section>
+        <AnalyticsSkeleton />
       ) : showEmpty ? (
         <EmptyAnalytics onRefresh={handleRefresh} refreshing={isLoading} />
       ) : snapshot ? (

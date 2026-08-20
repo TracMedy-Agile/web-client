@@ -80,3 +80,30 @@ export async function markNotificationAsRead(id: string): Promise<void> {
 export async function markAllNotificationsAsRead(): Promise<void> {
   await request('/notifications/read-all', { method: 'PATCH' });
 }
+
+export function notificationDestination(notification: NotificationRecord): string {
+  const { data, type } = notification;
+  const href = typeof data.href === 'string' ? data.href : typeof data.url === 'string' ? data.url : '';
+  if (href.startsWith('/dashboard')) return href;
+  if (typeof data.appointmentId === 'string') return `/dashboard/appointments/${data.appointmentId}`;
+  if (typeof data.episodeId === 'string') {
+    if (type.toLowerCase().includes('message')) {
+      return `/dashboard/messages?${new URLSearchParams({ episodeId: data.episodeId })}`;
+    }
+    return `/dashboard/care-episodes/${data.episodeId}`;
+  }
+  if (typeof data.patientId === 'string') return `/dashboard/connected-patients/${data.patientId}`;
+  if (type.toLowerCase().includes('alert')) return '/dashboard/alerts';
+  return '';
+}
+
+export function formatNotificationTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}

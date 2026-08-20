@@ -10,6 +10,7 @@ interface MetricCardProps {
   changeType?: "positive" | "negative";
   changeTitle?: string;
   description?: string;
+  isLoading?: boolean;
 }
 
 export default function MetricCard({
@@ -21,6 +22,7 @@ export default function MetricCard({
   changeType = "positive",
   changeTitle,
   description,
+  isLoading = false,
 }: MetricCardProps) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5">
@@ -29,7 +31,9 @@ export default function MetricCard({
         <div className={cn("relative flex h-11 w-11 items-center justify-center rounded-xl", iconClassName)}>
           <Icon className="h-5 w-5" />
         </div>
-        {change ? (
+        {isLoading ? (
+          <span className="relative h-6 w-14 animate-pulse rounded-full bg-muted" />
+        ) : change ? (
           <span
             title={changeTitle}
             className={cn(
@@ -42,8 +46,16 @@ export default function MetricCard({
         ) : null}
       </div>
       <p className="mt-5 text-sm font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-[32px]">{value}</p>
-      {description ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p> : null}
+      {isLoading ? (
+        <span className="mt-2 block h-7 w-16 animate-pulse rounded bg-muted md:h-8" />
+      ) : (
+        <p className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-[32px]">{value}</p>
+      )}
+      {isLoading ? (
+        <span className="mt-3 block h-3 w-24 animate-pulse rounded bg-muted" />
+      ) : description ? (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   );
 }

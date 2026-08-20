@@ -209,11 +209,32 @@ function AppointmentsPageContent() {
 
       <section className="rounded-sm bg-white p-4">
         {isCheckingAppointments ? (
-          <div className="flex min-h-[560px] items-center justify-center">
-            <div className="flex items-center gap-3 text-sm font-semibold text-[#71809B]">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              Loading appointments
-            </div>
+          <div className="w-full overflow-hidden" aria-busy="true">
+            <span className="sr-only">Loading appointments</span>
+            <table className="w-full table-fixed border-collapse text-left">
+              <thead>
+                <tr className="bg-[#EEF4FF] text-xs font-semibold uppercase text-[#71809B]">
+                  <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:px-4">Patient Name</th>
+                  <th className="hidden px-4 py-4 xl:table-cell">Appointment ID</th>
+                  <th className="px-2 py-4 sm:px-3 xl:px-4">Date &amp; Time</th>
+                  <th className="hidden px-3 py-4 lg:table-cell xl:px-4">Appointment Type</th>
+                  <th className="hidden px-4 py-4 xl:table-cell">Department / Service</th>
+                  <th className="px-2 py-4 sm:px-3 xl:px-4">Status</th>
+                  <th className="rounded-r-sm px-2 py-4 sm:px-3 xl:px-4">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }, (_, index) => (
+                  <tr key={index} className="text-sm text-[#344054]">
+                    {["", "hidden xl:table-cell", "", "hidden lg:table-cell", "hidden xl:table-cell", "", ""].map((visibility, cellIndex) => (
+                      <td key={cellIndex} className={cn("px-2 py-4 sm:px-3 xl:px-4", visibility)}>
+                        <div className="h-4 w-full max-w-[150px] animate-pulse rounded bg-[#EEF2F7]" />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : isEmptyStateVisible ? (
           <AppointmentEmptyState onRefresh={checkForAppointments} />

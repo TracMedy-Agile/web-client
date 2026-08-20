@@ -112,7 +112,7 @@ export function getTrendMeta(trend: string | null) {
   return { label: "Stable", className: "bg-blue-50 text-primary", Icon: Minus };
 }
 
-export type BiometricMetric = "Blood Pressure" | "Heart Rate" | "SpO2";
+export type BiometricMetric = "Blood Pressure" | "Heart Rate" | "SpO2" | "Temperature" | "Weight" | "Blood Sugar";
 export type BiometricRange = "7d" | "14d" | "30d";
 
 export type BiometricPoint = {
@@ -125,6 +125,9 @@ export const BIOMETRIC_METRICS: { label: BiometricMetric; unit: string }[] = [
   { label: "Blood Pressure", unit: "MMHG" },
   { label: "Heart Rate", unit: "BPM" },
   { label: "SpO2", unit: "%" },
+  { label: "Temperature", unit: "DEG C" },
+  { label: "Weight", unit: "KG" },
+  { label: "Blood Sugar", unit: "MG/DL" },
 ];
 
 export const BIOMETRIC_RANGES: { key: BiometricRange; days: number }[] = [
@@ -144,9 +147,18 @@ export function buildBiometricData(metric: BiometricMetric, records: DailyVitals
     } else if (metric === "Heart Rate") {
       value = record.vitals.heartRate;
       abnormal = value !== null && (value < 60 || value > 100);
-    } else {
+    } else if (metric === "SpO2") {
       value = record.vitals.spo2;
       abnormal = value !== null && value < 95;
+    } else if (metric === "Temperature") {
+      value = record.vitals.temperature;
+      abnormal = value !== null && (value < 36.1 || value > 37.5);
+    } else if (metric === "Weight") {
+      value = record.vitals.weight;
+      abnormal = false;
+    } else {
+      value = record.vitals.bloodSugar;
+      abnormal = value !== null && (value < 70 || value > 140);
     }
 
     if (!record.hasEntry || value === null) return [];
