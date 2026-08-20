@@ -76,6 +76,18 @@ Re-audited 2026-08-19. This tracks backend contract gaps and bugs that affect *b
 
 ---
 
+## Team → Add New Team Member: invite email link is broken, and the page can't be personalized
+
+**What you'll see:** a new team member gets an invite email, but clicking "Accept Invitation" in it 404s instead of opening the activation page.
+
+**Why:** `team.service.ts:474` builds the link as `${FRONTEND_URL}/team/accept?token=...`, but the page actually lives at `/accept-invite` (`app/(auth)/accept-invite/page.tsx`) — the path was never updated to match. Separately, the email template itself (`team-invite.html`) has `{{Inviter Name}}` and `{{Role}}` placeholders in its copy that are never filled in — `sendInviteEmail()` only passes `userEmail`, `inviteLink`, `hospitalName` as template variables, so those two placeholders render literally in the sent email.
+
+**Frontend status:** the activation page at `/accept-invite` is built and matches the `team-invite.png` design (full name, verified email, live password-strength checklist, terms checkbox). It reads `hospitalName`, `inviterName`, `role`, and `email` as optional query params on the link and renders the personalized header/verified-email field when they're present — but degrades to generic copy when they're not (which is always, today), since the invite link only ever carries `?token=`. There's also no `GET`-by-token endpoint to fetch invite context another way, so this can't be fixed from the frontend alone.
+
+**Blocked on:** (1) fixing the link path in `team.service.ts:474` to `/accept-invite?token=...`; (2) either adding `hospitalName`, `inviterName`, `role`, `email` as query params on that link, or exposing a public `GET /team/members/invite/:token` lookup, so the activation page can show the real inviter/hospital/role instead of the generic fallback; (3) fixing the unused `{{Inviter Name}}`/`{{Role}}` placeholders in `team-invite.html` so they don't render literally in the email itself.
+
+---
+
 ## Settings pages that only show mock/static data
 
 These pages exist in the UI (some per design files, some as placeholders) but have nothing to connect to — confirmed by searching the full OpenAPI spec, none of these paths exist at all:

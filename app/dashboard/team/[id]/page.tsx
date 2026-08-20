@@ -5,10 +5,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
-  Bell,
   Calendar,
   CheckCircle2,
   Clock,
@@ -49,6 +47,7 @@ import { cn } from "@/lib/utils";
 import TeamMemberActions from "../components/TeamMemberActions";
 
 type EscalationChannel = UpdateEscalationPreferenceInput["channels"][number];
+type WhatsappSeverityThreshold = NonNullable<UpdateEscalationPreferenceInput["whatsappSeverityThreshold"]>;
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -173,6 +172,12 @@ function channelsFromPreference(preference: EscalationPreference | null, member:
   );
 }
 
+function whatsappSeverityThreshold(value: string | null | undefined): WhatsappSeverityThreshold {
+  return value === "info" || value === "low" || value === "moderate" || value === "high" || value === "critical"
+    ? value
+    : "critical";
+}
+
 function getActivityIcon(action: string) {
   const normalized = action.toLowerCase();
   if (normalized.includes("login") || normalized.includes("logged")) return LogIn;
@@ -277,7 +282,7 @@ export default function TeamMemberPage() {
       const requestMemberId = getTeamMemberRequestId(member);
       const preference = await updateTeamMemberEscalationPreference(requestMemberId, {
         channels: nextChannels,
-        whatsappSeverityThreshold: escalation?.whatsappSeverityThreshold ?? "critical",
+        whatsappSeverityThreshold: whatsappSeverityThreshold(escalation?.whatsappSeverityThreshold),
       });
       setEscalation(preference);
       capturePostHogEvent("team_escalation_preference_updated", { member_id: requestMemberId, channels: nextChannels });
@@ -404,7 +409,7 @@ export default function TeamMemberPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
               </div>
               <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
-              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy.name}</p> : null}
             </article>
             <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-center gap-2">
@@ -414,7 +419,7 @@ export default function TeamMemberPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
               </div>
               <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
-              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy.name}</p> : null}
             </article>
             <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-center gap-2">
@@ -561,7 +566,7 @@ export default function TeamMemberPage() {
                 </div>
                 {member.invitedBy ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    By: <span className="font-medium text-[#023E8A]">{member.invitedBy}</span>
+                    By: <span className="font-medium text-[#023E8A]">{member.invitedBy.name}</span>
                   </p>
                 ) : null}
               </div>

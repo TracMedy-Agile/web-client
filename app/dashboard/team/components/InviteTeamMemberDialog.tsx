@@ -81,7 +81,20 @@ const ACCESS_LEVELS: Array<{
   },
 ];
 
-const PERMISSION_GROUPS = [
+type PermissionItem = {
+  id: string;
+  label: string;
+  default: boolean;
+  locked?: boolean;
+  lockNote?: string;
+};
+
+const PERMISSION_GROUPS: {
+  key: string;
+  title: string;
+  icon: typeof ShieldCheck;
+  sections: { title: string; items: PermissionItem[] }[];
+}[] = [
   {
     key: "clinical",
     title: "Clinical Care",
@@ -153,7 +166,7 @@ const PERMISSION_GROUPS = [
       },
     ],
   },
-] as const;
+];
 
 const PERMISSION_TO_API: Record<string, TeamPermission> = {
   view_connected_patients: "care_episode",
