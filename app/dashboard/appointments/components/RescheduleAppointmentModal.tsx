@@ -30,6 +30,7 @@ type RescheduleAppointmentModalProps = {
   appointmentDate?: string;
   appointmentTime?: string;
   hospitalId?: string;
+  initialAppointmentType?: AppointmentType;
   onClose: () => void;
   onSuccess?: () => void;
 };
@@ -90,7 +91,12 @@ function getPatientInitials(name: string) {
 
 function buildQuickSlots(value: string): QuickSlotOption[] {
   const parsed = Date.parse(toInputDate(value));
-  const baseDate = Number.isFinite(parsed) ? new Date(parsed) : new Date();
+  const parsedDate = Number.isFinite(parsed) ? new Date(parsed) : new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Anchor quick slots to today whenever the original appointment date has already passed, so
+  // rescheduling a missed appointment doesn't offer "recommended" slots that are still in the past.
+  const baseDate = parsedDate < today ? new Date() : parsedDate;
   baseDate.setHours(12, 0, 0, 0);
 
   return [
@@ -205,15 +211,20 @@ export default function RescheduleAppointmentModal({
   appointmentDate = "",
   appointmentTime = "",
   hospitalId = "--",
+  initialAppointmentType = "physical",
   onClose,
   onSuccess,
 }: RescheduleAppointmentModalProps) {
   const quickSlots = useMemo(() => buildQuickSlots(appointmentDate), [appointmentDate]);
+  const todayIso = useMemo(() => toInputDate(new Date().toISOString()), []);
   const patientInitials = getPatientInitials(patientName);
-  const [appointmentType, setAppointmentType] = useState<AppointmentType>("physical");
+  const [appointmentType, setAppointmentType] = useState<AppointmentType>(initialAppointmentType);
   const [quickSlot, setQuickSlot] = useState(() => quickSlots[0]?.value ?? "");
-  const [selectedDate, setSelectedDate] = useState(() => toInputDate(appointmentDate));
-  const [selectedTime, setSelectedTime] = useState(() => toInputTime(appointmentTime || appointmentDate));
+  // Keep these in sync with whichever quick slot is shown pre-selected above — otherwise
+  // confirming without touching the form submits the original (possibly already-past) date/time
+  // instead of the highlighted recommendation.
+  const [selectedDate, setSelectedDate] = useState(() => quickSlots[0]?.inputDate ?? toInputDate(appointmentDate));
+  const [selectedTime, setSelectedTime] = useState(() => toInputTime(quickSlots[0]?.time ?? (appointmentTime || appointmentDate)));
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -316,6 +327,7 @@ export default function RescheduleAppointmentModal({
                 <input
                   type="date"
                   value={selectedDate}
+                  min={todayIso}
                   onChange={(event) => setSelectedDate(event.target.value)}
                   aria-label="Select new appointment date"
                   className={cn(

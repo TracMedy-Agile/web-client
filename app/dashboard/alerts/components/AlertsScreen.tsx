@@ -93,6 +93,12 @@ function downloadCsv(alerts: ClinicalAlert[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+
+function formatThresholdSummary(alert: ClinicalAlert) {
+  const detail = alert.thresholdDetails[0];
+  if (!detail) return "";
+  return `${detail.label}: ${detail.value} vs ${detail.threshold}`;
+}
 function SeverityBadge({ severity }: { severity: AlertSeverity }) {
   return (
     <span className={`inline-flex min-w-[90px] justify-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${severityStyles[severity]}`}>
@@ -115,6 +121,7 @@ function getReviewImpactData(alert: ClinicalAlert, impact: AlertReviewImpact | n
     generatedAt: impact?.generatedAt,
     source: impact?.analysisSource,
     suggestedReview: impact?.suggestedReview,
+    thresholdDetails: impact?.thresholdDetails?.length ? impact.thresholdDetails : alert.thresholdDetails,
     evidence: impact?.evidence ?? [
       { label: "Patient reference", value: alert.patientCode, status: "RECORDED" },
       { label: "Risk category", value: alert.riskCategory || alert.severity, status: severity },
@@ -367,7 +374,11 @@ export default function AlertsScreen() {
     setIsReviewLoading(true);
     void getAlertReviewImpact(alert)
       .then((impact) => {
-        if (reviewRequestId.current === requestId) setReviewImpact(impact);
+        if (reviewRequestId.current !== requestId) return;
+        setReviewImpact(impact);
+        if (impact.analysisSummary) {
+          capturePostHogEvent("ai_insight_viewed", { source: "alert_impact", alert_id: alert.id, episode_id: alert.episodeId });
+        }
       })
       .finally(() => {
         if (reviewRequestId.current === requestId) setIsReviewLoading(false);
@@ -637,7 +648,11 @@ export default function AlertsScreen() {
                 {visibleAlerts.map((alert) => (
                   <tr key={alert.id} className="hover:bg-muted/30">
                     <td className="px-6 py-3.5"><span className="block font-semibold text-foreground">{alert.patientName}</span><span className="mt-1 block text-xs text-muted-foreground">{alert.patientCode}</span></td>
-                    <td className="max-w-80 px-6 py-3.5 font-medium text-foreground">{alert.reason}</td>
+                                        <td className="max-w-80 px-6 py-3.5">
+                      <span className="block font-medium text-foreground">{alert.reason}</span>
+                      {formatThresholdSummary(alert) ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{formatThresholdSummary(alert)}</span> : null}
+                      {alert.thresholdDetails[0]?.warningMessage ? <span className="mt-1 block text-xs font-semibold text-red-600">{alert.thresholdDetails[0].warningMessage}</span> : null}
+                    </td>
                     {!isHistory ? <td className="px-6 py-3.5 text-muted-foreground">{alert.triggerSource}</td> : null}
                     <td className="px-6 py-3.5"><SeverityBadge severity={alert.severity} /></td>
                     <td className="px-6 py-3.5 text-muted-foreground">{isHistory ? alert.acknowledgedBy : alert.assignedClinician}</td>

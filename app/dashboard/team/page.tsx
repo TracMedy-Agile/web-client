@@ -391,8 +391,11 @@ export default function TeamPage() {
               {visibleMembers.map((member) => (
                 <article key={member.id} className="p-4">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                      {initials(member.name)}
+                    <span
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary bg-cover bg-center text-sm font-bold text-primary-foreground"
+                      style={member.avatarUrl ? { backgroundImage: `url(${member.avatarUrl})` } : undefined}
+                    >
+                      {member.avatarUrl ? null : initials(member.name)}
                     </span>
                     <div className="min-w-0 flex-1">
                       <Link
@@ -448,8 +451,11 @@ export default function TeamPage() {
                     <tr key={member.id} className="transition hover:bg-muted/30">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-slate-600">
-                            {initials(member.name)}
+                          <span
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 bg-cover bg-center text-sm font-bold text-slate-600"
+                            style={member.avatarUrl ? { backgroundImage: `url(${member.avatarUrl})` } : undefined}
+                          >
+                            {member.avatarUrl ? null : initials(member.name)}
                           </span>
                           <span className="text-sm font-medium text-foreground">
                             {member.name || "Unnamed clinician"}

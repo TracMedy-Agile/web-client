@@ -96,7 +96,7 @@ export default function SecuritySettingsPage() {
         <SettingsPanel title="Account Protection" hideHeader>
           <div className="flex flex-col gap-4 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-base font-medium text-foreground">Two Factor Authentication</p>
+              <p className="text-sm font-semibold text-foreground">Two Factor Authentication</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">Add an extra layer of security to your account</p>
             </div>
             <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} aria-label="Toggle two factor authentication" />
@@ -105,16 +105,16 @@ export default function SecuritySettingsPage() {
           <div className="grid gap-5 rounded-xl border border-border bg-card p-5 md:grid-cols-2">
             <Field label="Session Timeout">
               <Select value={sessionTimeout} onValueChange={setSessionTimeout}><SelectTrigger className={selectClassName}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="15">15 minutes</SelectItem><SelectItem value="30">30 minutes</SelectItem><SelectItem value="60">1 hour</SelectItem><SelectItem value="120">2 hours</SelectItem></SelectContent></Select>
-              <span className="block text-sm leading-5 text-muted-foreground">Auto-logout after 30 minutes of inactivity</span>
+              <span className="block text-xs leading-5 text-muted-foreground">Auto-logout after 30 minutes of inactivity</span>
             </Field>
             <Field label="Max Login Attempt">
               <Select value={maxLoginAttempts} onValueChange={setMaxLoginAttempts}><SelectTrigger className={selectClassName}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3">3</SelectItem><SelectItem value="4">4</SelectItem><SelectItem value="5">5</SelectItem></SelectContent></Select>
-              <span className="block text-sm leading-5 text-muted-foreground">max login attempt cannot exceed 5</span>
+              <span className="block text-xs leading-5 text-muted-foreground">max login attempt cannot exceed 5</span>
             </Field>
           </div>
 
           <div className="space-y-3 pl-5">
-            <h3 className="text-xl font-bold text-foreground">Active sessions</h3>
+            <h3 className="text-lg font-bold text-foreground">Active sessions</h3>
             <Button type="button" variant="outline" onClick={saveSecurityPreferences} className="h-11 rounded-lg border-destructive px-5 font-semibold text-destructive hover:text-destructive">Log out all devices</Button>
           </div>
 

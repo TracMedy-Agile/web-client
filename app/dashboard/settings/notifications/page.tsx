@@ -43,7 +43,7 @@ function PreferenceRow({ row, checked, onChange }: { row: PreferenceRowConfig; c
   return (
     <div className="flex min-h-[77px] flex-col gap-4 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="text-base font-medium text-foreground">{row.title}</p>
+        <p className="text-sm font-semibold text-foreground">{row.title}</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{row.description}</p>
       </div>
       <Switch checked={checked} disabled={row.disabled} onCheckedChange={onChange} aria-label={`Toggle ${row.title}`} />

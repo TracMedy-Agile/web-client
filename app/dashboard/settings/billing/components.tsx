@@ -72,7 +72,7 @@ export function BillingTabs() {
       <div className="flex min-w-max gap-8">
         {tabs.map((tab) => {
           const active = pathname === tab.href;
-          return <Link key={tab.href} href={tab.href} className={cn("border-b-2 px-8 py-3 text-base font-medium transition", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>{tab.label}</Link>;
+          return <Link key={tab.href} href={tab.href} className={cn("border-b-2 px-8 py-3 text-sm font-medium transition", active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>{tab.label}</Link>;
         })}
       </div>
     </nav>

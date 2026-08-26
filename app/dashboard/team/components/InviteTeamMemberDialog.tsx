@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 
 type AccessLevel = "standard" | "custom" | "full";
 type TeamRole = InviteTeamMemberInput["role"];
-type TeamPermission = NonNullable<InviteTeamMemberInput["permissions"]>[number];
+type BackendTeamPermission = NonNullable<InviteTeamMemberInput["permissions"]>[number];
 
 type InviteTeamMemberDialogProps = {
   open: boolean;
@@ -103,15 +103,13 @@ const PERMISSION_GROUPS: {
       {
         title: "PATIENTS",
         items: [
-          { id: "view_connected_patients", label: "View Connected Patients", default: true },
-          { id: "manage_patients", label: "Manage Patients", default: true },
+          { id: "connected_patients", label: "Connected Patients", default: true },
         ],
       },
       {
         title: "CARE EPISODES",
         items: [
-          { id: "view_care_episodes", label: "View Care Episodes", default: true, locked: true, lockNote: "View Care Episodes was automatically enabled because it is required." },
-          { id: "manage_care_episodes", label: "Manage Care Episodes", default: true },
+          { id: "care_episode", label: "Care Episodes", default: true, locked: true, lockNote: "Care Episodes was automatically enabled because it is required." },
         ],
       },
       {
@@ -124,15 +122,13 @@ const PERMISSION_GROUPS: {
       {
         title: "ALERTS",
         items: [
-          { id: "view_alerts", label: "View Alerts", default: false },
-          { id: "acknowledge", label: "Acknowledge", default: false },
+          { id: "alerts", label: "Alerts", default: false },
         ],
       },
       {
         title: "MESSAGES",
         items: [
-          { id: "view_messages", label: "View Messages", default: false },
-          { id: "send_messages", label: "Send Messages", default: false },
+          { id: "messages", label: "Messages", default: false },
         ],
       },
     ],
@@ -168,17 +164,13 @@ const PERMISSION_GROUPS: {
   },
 ];
 
-const PERMISSION_TO_API: Record<string, TeamPermission> = {
-  view_connected_patients: "care_episode",
-  manage_patients: "care_episode",
-  view_care_episodes: "care_episode",
-  manage_care_episodes: "care_episode",
+const PERMISSION_TO_API: Record<string, BackendTeamPermission> = {
+  connected_patients: "care_episode",
+  care_episode: "care_episode",
   view_appointments: "appointments",
   manage_appointments: "appointments",
-  view_alerts: "care_episode",
-  acknowledge: "care_episode",
-  view_messages: "care_episode",
-  send_messages: "care_episode",
+  alerts: "care_episode",
+  messages: "care_episode",
   view_reports_analytics: "view_all_reports",
   export_reports: "view_all_reports",
   view_team: "manage_team_members",
@@ -204,7 +196,7 @@ function mapRole(value: string): TeamRole {
   return "doctor";
 }
 
-function mapPermissionsToApi(accessLevel: AccessLevel, selected: string[]): TeamPermission[] {
+function mapPermissionsToApi(accessLevel: AccessLevel, selected: string[]): BackendTeamPermission[] {
   if (accessLevel === "full") return ["full_system_access"];
   const source = accessLevel === "standard" ? getDefaultPermissions() : selected;
   return Array.from(new Set(source.map((p) => PERMISSION_TO_API[p]).filter(Boolean)));

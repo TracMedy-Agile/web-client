@@ -20,6 +20,7 @@ type DashboardUser = {
   facilityId: string;
   hospitalId: string;
   avatarUrl: string;
+  accessProfile: string;
   permissions: string[];
   permissionsLoaded: boolean;
 };
@@ -59,8 +60,12 @@ function ownValue(record: Record<string, unknown> | null, key: string) {
   return record[key];
 }
 
+const PERMISSION_KEYS = ["permissions", "permissionKeys", "grantedPermissions", "accessPermissions", "scopes"] as const;
+const STRICT_PERMISSIONS = new Set(["connected_patients", "care_episode", "appointments", "alerts", "messages", "configure_settings", "view_all_reports"]);
+
 function permissionValues(record: Record<string, unknown> | null) {
-  const rawPermissions = ownValue(record, "permissions");
+  const key = PERMISSION_KEYS.find((permissionKey) => typeof ownValue(record, permissionKey) !== "undefined");
+  const rawPermissions = key ? ownValue(record, key) : undefined;
   if (typeof rawPermissions === "undefined") return null;
   if (!Array.isArray(rawPermissions)) {
     const permission = asString(rawPermissions);
@@ -71,11 +76,20 @@ function permissionValues(record: Record<string, unknown> | null) {
     .filter(Boolean);
 }
 
+function normalizePermissionKey(permission: string) {
+  const key = permission.trim().toLowerCase();
+  if (key === "view_connected_patients" || key === "manage_patients") return "connected_patients";
+  if (key === "view_care_episodes" || key === "manage_care_episodes") return "care_episode";
+  if (key === "view_alerts" || key === "acknowledge" || key === "acknowledge_alerts") return "alerts";
+  if (key === "view_messages" || key === "send_messages") return "messages";
+  return key;
+}
+
 function uniquePermissions(permissions: readonly string[]) {
   const seen = new Set<string>();
   const normalized: string[] = [];
   for (const permission of permissions) {
-    const key = permission.trim().toLowerCase();
+    const key = normalizePermissionKey(permission);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     normalized.push(key);
@@ -131,8 +145,8 @@ export function isDashboardAdmin(user: DashboardUser | null) {
 export function canAccessDashboardPermission(user: DashboardUser | null, permission: string) {
   if (!user) return false;
   if (isDashboardAdmin(user)) return true;
-  if (!user.permissionsLoaded) return true;
-  return user.permissions.includes("full_system_access") || user.permissions.includes(permission);
+  if (!user.permissionsLoaded) return !STRICT_PERMISSIONS.has(permission);
+  return user.accessProfile === "full_access" || user.permissions.includes("full_system_access") || user.permissions.includes(permission);
 }
 
 function parseUser(payload: unknown): DashboardUser | null {
@@ -162,6 +176,7 @@ function parseUser(payload: unknown): DashboardUser | null {
     facilityId: firstString(data, ["facilityId"]) || firstString(facility, ["id", "facilityId"]),
     hospitalId: firstString(data, ["hospitalId"]) || firstString(facility, ["hospitalId", "tracId"]),
     avatarUrl: firstString(data, ["avatarUrl", "photoUrl"]),
+    accessProfile: firstString(data, ["accessProfile", "accessLevel"]) || firstString(outer, ["accessProfile", "accessLevel"]),
     permissions: resolvedPermissions.permissions,
     permissionsLoaded: resolvedPermissions.permissionsLoaded,
   };

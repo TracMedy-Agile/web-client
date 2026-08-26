@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
   canAccessDashboardPermission,
@@ -10,8 +10,11 @@ import AccessDeniedState from "@/components/system/AccessDeniedState";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 
 type DashboardPermission =
+  | "connected_patients"
   | "care_episode"
   | "appointments"
+  | "alerts"
+  | "messages"
   | "manage_team_members"
   | "audit_log"
   | "view_all_reports"
@@ -22,21 +25,38 @@ type GuardedRoute = {
   permission: DashboardPermission;
 };
 
+// Only routes backed by real server-side enforcement are gated here. `manage_team_members` and
+// `audit_log` are the only two permissions any backend route actually checks (TeamPermissionGuard
+// is wired onto team.controller.ts and audit.controller.ts only). connected_patients/care_episode/
+// appointments/alerts/messages/view_all_reports/configure_settings are stored on the staff record
+// but never checked by any API route — and connected_patients/alerts/messages specifically can
+// never be satisfied at all, since the Team edit UI collapses those checkboxes into the single
+// `care_episode` value on save (see TeamMemberActions.tsx), so the backend never stores those
+// literal strings. Blocking those pages here would just lock clinicians out with no way to
+// restore access via any checkbox. Add them back once the backend adds the matching
+// @TeamPermissionRequired(...) checks (see docs/backend.md, "Team → Permissions").
 const GUARDED_ROUTES: readonly GuardedRoute[] = [
-  { prefix: "/dashboard/connected-patients", permission: "care_episode" },
-  { prefix: "/dashboard/care-episodes", permission: "care_episode" },
-  { prefix: "/dashboard/alerts", permission: "care_episode" },
-  { prefix: "/dashboard/messages", permission: "care_episode" },
-  { prefix: "/dashboard/appointments", permission: "appointments" },
-  { prefix: "/dashboard/reports", permission: "view_all_reports" },
   { prefix: "/dashboard/team", permission: "manage_team_members" },
   { prefix: "/dashboard/audit-logs", permission: "audit_log" },
   { prefix: "/dashboard/audit", permission: "audit_log" },
-  { prefix: "/dashboard/settings", permission: "configure_settings" },
 ] as const;
 
 function requiredPermissionForPath(pathname: string) {
   return GUARDED_ROUTES.find((route) => pathname === route.prefix || pathname.startsWith(`${route.prefix}/`))?.permission ?? null;
+}
+
+function isDashboardApiRequest(input: RequestInfo | URL) {
+  const rawUrl = typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
+
+  try {
+    return new URL(rawUrl, window.location.origin).pathname.startsWith("/api/");
+  } catch {
+    return false;
+  }
 }
 
 function AccessCheckSkeleton() {
@@ -67,6 +87,27 @@ function AccessCheckError({ onRetry }: { onRetry: () => void }) {
 export default function DashboardPermissionGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { status, user, refetch } = useDashboardUser();
+  const [backendAccessDeniedPath, setBackendAccessDeniedPath] = useState<string | null>(null);
+  const backendAccessDenied = backendAccessDeniedPath === pathname;
+
+  useEffect(() => {
+    let active = true;
+    const originalFetch = window.fetch;
+
+    const guardedFetch: typeof window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      if (active && response.status === 403 && isDashboardApiRequest(args[0])) {
+        setBackendAccessDeniedPath(window.location.pathname);
+      }
+      return response;
+    };
+
+    window.fetch = guardedFetch;
+    return () => {
+      active = false;
+      if (window.fetch === guardedFetch) window.fetch = originalFetch;
+    };
+  }, []);
 
   if (status === "loading") {
     return <AccessCheckSkeleton />;
@@ -76,7 +117,7 @@ export default function DashboardPermissionGuard({ children }: { children: React
     return <NetworkErrorState onRetry={refetch} />;
   }
 
-  if (status === "access-denied") {
+  if (status === "access-denied" || backendAccessDenied) {
     return <AccessDeniedState />;
   }
 

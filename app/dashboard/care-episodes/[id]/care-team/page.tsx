@@ -158,10 +158,10 @@ export default function CareTeamPage() {
                 <article key={member.id} className="grid gap-4 rounded-xl border border-border bg-white px-4 py-4 shadow-sm md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center md:px-6 md:py-5">
                   <div className="flex min-w-0 items-center gap-4">
                     <span
-                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                      style={{ backgroundColor: getAvatarColor(member.name) }}
+                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-base font-bold text-white shadow-sm"
+                      style={member.avatarUrl ? { backgroundImage: `url(${member.avatarUrl})` } : { backgroundColor: getAvatarColor(member.name) }}
                     >
-                      {getInitials(member.name)}
+                      {member.avatarUrl ? null : getInitials(member.name)}
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
