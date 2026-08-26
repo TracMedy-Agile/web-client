@@ -18,6 +18,9 @@ import {
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
+import VideoCallView from "@/components/video-call/VideoCallView";
+import { getCallToken, joinCall, startCall } from "@/lib/api/video-call";
 import AppointmentDateRangePicker from "../components/AppointmentDateRangePicker";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
 import ScheduleAppointmentModal from "../components/ScheduleAppointmentModal";
@@ -32,14 +35,22 @@ type MetricCardData = {
   iconWrapClassName: string;
 };
 
-type ConsultationStatus = "ready" | "completed" | "in-progress" | "upcoming";
+type ConsultationStatus = "ready" | "completed" | "in-progress" | "upcoming" | "missed";
+type AppointmentType = "physical" | "teleconsultation";
 
 type ApiRecord = Record<string, unknown>;
+
+type ActiveVideoCallSession = {
+  appointmentId: string;
+  callCid: string;
+  token: string;
+};
 
 type Consultation = {
   id: string;
   patientName: string;
   appointmentId: string;
+  appointmentType: AppointmentType;
   scheduledPrimary: string;
   scheduledSecondary: string;
   scheduledDate: string;
@@ -49,18 +60,23 @@ type Consultation = {
   hospitalId: string;
   reason: string;
   status: ConsultationStatus;
+  callStatus: string;
+  streamCallCid: string | null;
+  isJoinWindow: boolean;
   statusDetail: string;
   waitMinutes: number | null;
   completedAt: string;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
+const READY_JOIN_WINDOW_MINUTES = 30;
 
 const statusStyles: Record<ConsultationStatus, string> = {
   ready: "bg-[#E7F2FF] text-primary",
   completed: "bg-emerald-50 text-emerald-600",
   "in-progress": "bg-red-50 text-red-500",
   upcoming: "bg-orange-50 text-orange-500",
+  missed: "bg-slate-100 text-slate-500",
 };
 
 const statusDotStyles: Record<ConsultationStatus, string> = {
@@ -68,6 +84,7 @@ const statusDotStyles: Record<ConsultationStatus, string> = {
   completed: "bg-emerald-500",
   "in-progress": "bg-red-500",
   upcoming: "bg-orange-500",
+  missed: "bg-slate-500",
 };
 
 function asRecord(value: unknown): ApiRecord | null {
@@ -227,14 +244,47 @@ function getScheduledTime(record: ApiRecord) {
   return getString(record, ["time", "appointmentTime", "scheduledTime", "startsAt", "startTime"]);
 }
 
-function getAppointmentDateTime(dateValue: string, timeValue: string) {
-  if (!dateValue && !timeValue) return null;
-  if (dateValue.includes("T")) {
-    const parsed = Date.parse(dateValue);
-    return Number.isFinite(parsed) ? new Date(parsed) : null;
+function getTimeParts(value: string) {
+  if (!value) return null;
+
+  const isoParsed = Date.parse(value);
+  if (value.includes("T") && Number.isFinite(isoParsed)) {
+    const date = new Date(isoParsed);
+    return { hours: date.getHours(), minutes: date.getMinutes() };
   }
 
-  const parsed = Date.parse(`${dateValue || new Date().toISOString().slice(0, 10)}T${timeValue || "00:00"}`);
+  const match = value.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] ?? "0");
+  const period = match[3]?.toUpperCase();
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes > 59) return null;
+  if (period === "PM" && hours < 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  if (hours < 0 || hours > 23) return null;
+
+  return { hours, minutes };
+}
+
+function getAppointmentDateTime(dateValue: string, timeValue: string) {
+  if (!dateValue && !timeValue) return null;
+
+  const dateSource = dateValue || timeValue;
+  const dateMatch = dateSource.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const timeParts = getTimeParts(timeValue);
+
+  if (dateMatch) {
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]) - 1;
+    const day = Number(dateMatch[3]);
+
+    if (timeParts) return new Date(year, month, day, timeParts.hours, timeParts.minutes);
+    if (!dateValue.includes("T")) return new Date(year, month, day, 0, 0);
+  }
+
+  const parsed = Date.parse(dateValue || timeValue);
   return Number.isFinite(parsed) ? new Date(parsed) : null;
 }
 
@@ -261,16 +311,58 @@ function getStatusDetail(status: ConsultationStatus, appointmentDate: Date | nul
   return "";
 }
 
-function mapStatus(status: string, appointmentDate: Date | null): ConsultationStatus {
-  const normalized = status.toLowerCase().replace(/[\s-]+/g, "_");
-  if (normalized.includes("complete")) return "completed";
-  if (normalized.includes("progress") || normalized.includes("checked_in")) return "in-progress";
-  if (normalized.includes("ready")) return "ready";
+function normalizeAppointmentType(type: string): AppointmentType {
+  const normalized = type.toLowerCase().replace(/[\s-]+/g, "_");
+  return normalized.includes("tele") ? "teleconsultation" : "physical";
+}
 
-  if (normalized.includes("confirm") && appointmentDate) {
-    const minutesUntil = Math.round((appointmentDate.getTime() - Date.now()) / 60000);
-    if (minutesUntil >= -5 && minutesUntil <= 15) return "ready";
-  }
+function normalizeCallStatus(status: string | null | undefined) {
+  const normalized = (status ?? "not_started").toLowerCase().replace(/[\s-]+/g, "_");
+  if (["not_started", "waiting", "active", "ended", "missed"].includes(normalized)) return normalized;
+  return "not_started";
+}
+
+function canJoinConsultationCall(consultation: Consultation) {
+  return consultation.callStatus !== "ended" && consultation.callStatus !== "missed";
+}
+
+// The backend only ever lets an appointment's assigned clinician (or its patient) join its call
+// — not other clinicians, and not hospital_admin. isAssigned must reflect that same check so the
+// button is never shown for a click that would just 403.
+function shouldShowJoinAction(consultation: Consultation, isAssigned: boolean) {
+  if (!isAssigned) return false;
+  if (consultation.status === "completed" || consultation.status === "in-progress") return false;
+  return consultation.isJoinWindow && canJoinConsultationCall(consultation);
+}
+
+function shouldShowUpcomingActions(consultation: Consultation, isAssigned: boolean) {
+  if (consultation.status !== "upcoming" && consultation.status !== "missed") return false;
+  return !shouldShowJoinAction(consultation, isAssigned);
+}
+function isWithinReadyWindow(appointmentDate: Date | null) {
+  if (!appointmentDate) return false;
+  const minutesUntil = Math.round((appointmentDate.getTime() - Date.now()) / 60000);
+  return minutesUntil >= -5 && minutesUntil <= READY_JOIN_WINDOW_MINUTES;
+}
+
+// The call window is considered closed 5 minutes past the scheduled time — the same boundary
+// isWithinReadyWindow uses as its lower bound, so "ready" and "missed" never overlap or gap.
+function isPastJoinWindow(appointmentDate: Date | null) {
+  if (!appointmentDate) return false;
+  const minutesUntil = Math.round((appointmentDate.getTime() - Date.now()) / 60000);
+  return minutesUntil < -5;
+}
+
+function mapStatus(status: string, callStatus: string, isJoinWindow: boolean, isPastDue: boolean): ConsultationStatus {
+  const normalized = status.toLowerCase().replace(/[\s-]+/g, "_");
+  const normalizedCallStatus = normalizeCallStatus(callStatus);
+
+  if (normalizedCallStatus === "active") return "in-progress";
+  if (normalized.includes("complete") || normalizedCallStatus === "ended") return "completed";
+  if (normalized.includes("progress") || normalized.includes("checked_in")) return "in-progress";
+  if (normalized.includes("no_show") || normalizedCallStatus === "missed") return "missed";
+  if (isJoinWindow) return "ready";
+  if (isPastDue) return "missed";
 
   return "upcoming";
 }
@@ -280,7 +372,16 @@ function normalizeConsultation(record: ApiRecord): Consultation {
   const scheduledDate = getScheduledDate(record);
   const scheduledTime = getScheduledTime(record);
   const appointmentDate = getAppointmentDateTime(scheduledDate, scheduledTime);
-  const status = mapStatus(getString(record, ["status"], "upcoming"), appointmentDate);
+  const rawStatus = getString(record, ["status"], "upcoming");
+  const normalizedRawStatus = rawStatus.toLowerCase().replace(/[\s-]+/g, "_");
+  const callStatus = normalizeCallStatus(getString(record, ["callStatus"]));
+  // Cancelled/no-show/pending/completed appointments have their own meaning and must never be
+  // swept into "ready" or the time-based "missed" fallback below just because their scheduled
+  // time has passed.
+  const isBlockedFromTiming = ["pending", "cancelled", "canceled", "no_show", "completed"].some((blockedStatus) => normalizedRawStatus.includes(blockedStatus));
+  const isJoinWindow = !isBlockedFromTiming && isWithinReadyWindow(appointmentDate);
+  const isPastDue = !isBlockedFromTiming && isPastJoinWindow(appointmentDate);
+  const status = mapStatus(rawStatus, callStatus, isJoinWindow, isPastDue);
   const waitMinutes = getNumber(record, ["waitMinutes", "waitTime", "averageWaitMinutes"]);
   const clinicianId = getString(record, ["clinicianId"]);
   const patientName = getString(record, ["patientName"], "") || getString(patient, ["name", "fullName"], "Unknown Patient");
@@ -289,6 +390,7 @@ function normalizeConsultation(record: ApiRecord): Consultation {
     id: getString(record, ["id", "_id", "appointmentId", "code"], "--"),
     patientName,
     appointmentId: getString(record, ["appointmentId", "code", "id"], "--"),
+    appointmentType: normalizeAppointmentType(getString(record, ["type", "appointmentType"], "teleconsultation")),
     scheduledPrimary: scheduledDate.includes("T") ? formatDate(scheduledDate) : formatDate(scheduledDate || getString(record, ["createdAt"], "")),
     scheduledSecondary: formatTime(scheduledTime || scheduledDate),
     scheduledDate: getIsoDate(scheduledDate),
@@ -299,6 +401,9 @@ function normalizeConsultation(record: ApiRecord): Consultation {
     hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracmedyId", "medicalRecordNumber", "id"], "--"),
     reason: getString(record, ["reason", "notes"], "Teleconsultation"),
     status,
+    callStatus,
+    streamCallCid: getString(record, ["streamCallCid"]) || null,
+    isJoinWindow,
     statusDetail: getStatusDetail(status, appointmentDate, record),
     waitMinutes,
     completedAt: getString(record, ["completedAt", "updatedAt"], ""),
@@ -355,22 +460,29 @@ function FilterSelect({
   );
 }
 
+function getConsultationStatusLabel(status: ConsultationStatus): string {
+  if (status === "ready") return "Ready to join";
+  if (status === "in-progress") return "In Progress";
+  if (status === "missed") return "Missed";
+  if (status === "completed") return "Completed";
+  return "Upcoming";
+}
+
 function ConsultationStatusBadge({ consultation }: { consultation: Consultation }) {
   const status = consultation.status;
+  const label = getConsultationStatusLabel(status);
 
   if (status === "ready" || status === "in-progress") {
     return (
       <span className={cn("inline-flex flex-col rounded-full px-3 py-1 text-xs font-bold", statusStyles[status])}>
         <span className="inline-flex items-center gap-1.5">
           <span className={cn("h-1.5 w-1.5 rounded-full", statusDotStyles[status])} />
-          {status === "ready" ? "Ready to join" : "In Progress"}
+          {label}
         </span>
         {consultation.statusDetail ? <span className="mt-1 text-xs">{consultation.statusDetail}</span> : null}
       </span>
     );
   }
-
-  const label = status === "completed" ? "Completed" : "Upcoming";
 
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold", statusStyles[status])}>
@@ -392,7 +504,7 @@ function downloadConsultationsCsv(consultations: Consultation[]) {
     consultation.scheduledPrimary,
     consultation.scheduledSecondary,
     consultation.clinician,
-    consultation.status,
+    getConsultationStatusLabel(consultation.status),
   ]);
   const csv = [headers, ...rows].map((row) => row.map(escapeCsvValue).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -413,6 +525,12 @@ function isToday(value: string) {
 }
 
 export default function VirtualConsultationsPage() {
+  const { user } = useDashboardUser();
+  const currentUserId = (user?.id ?? "").toLowerCase();
+  const isAssignedClinician = useCallback(
+    (consultation: Consultation) => Boolean(consultation.clinicianId && currentUserId && consultation.clinicianId.toLowerCase() === currentUserId),
+    [currentUserId],
+  );
   const [rawConsultations, setRawConsultations] = useState<Consultation[]>([]);
   const [clinicianNames, setClinicianNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -424,6 +542,8 @@ export default function VirtualConsultationsPage() {
   const [dateRange, setDateRange] = useState({ dateFrom: "", dateTo: "" });
   const [reschedulingAppointment, setReschedulingAppointment] = useState<Consultation | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [activeCallAppointmentId, setActiveCallAppointmentId] = useState<string | null>(null);
+  const [activeVideoCallSession, setActiveVideoCallSession] = useState<ActiveVideoCallSession | null>(null);
 
   const loadConsultations = useCallback(async (refreshing = false) => {
     if (refreshing) setIsRefreshing(true);
@@ -441,6 +561,68 @@ export default function VirtualConsultationsPage() {
       setIsRefreshing(false);
     }
   }, []);
+
+  const prepareCallSession = useCallback(async (consultation: Consultation) => {
+    if (!canJoinConsultationCall(consultation)) throw new Error("This consultation call is not available to join.");
+    // The backend only allows the appointment's own assigned clinician (or patient) to
+    // start/join/token a call — anyone else 403s, which the dashboard's global fetch guard
+    // treats as an access-denied event for the whole page. Block it here first instead.
+    if (!isAssignedClinician(consultation)) throw new Error("Only the clinician assigned to this appointment can join its call.");
+
+    let callCid = consultation.streamCallCid;
+
+    if (consultation.callStatus === "not_started") {
+      const startResponse = await startCall(consultation.id);
+      callCid = startResponse.callCid;
+    }
+
+    if (!callCid) throw new Error("Call session was not returned.");
+
+    const tokenResponse = await getCallToken(consultation.id);
+    if (!tokenResponse.token) throw new Error("Call token was not returned.");
+
+    const joinResponse = await joinCall(consultation.id);
+    return {
+      appointmentId: consultation.id,
+      callCid,
+      token: tokenResponse.token,
+      callStatus: normalizeCallStatus(joinResponse.callStatus),
+    };
+  }, [isAssignedClinician]);
+
+  const startConsultation = useCallback(async (consultation: Consultation) => {
+    if (activeCallAppointmentId || !canJoinConsultationCall(consultation)) return;
+    setActiveCallAppointmentId(consultation.id);
+
+    try {
+      const session = await prepareCallSession(consultation);
+      setActiveVideoCallSession({ appointmentId: session.appointmentId, callCid: session.callCid, token: session.token });
+      toast.success(session.callStatus === "active" ? "Consultation session active." : "Consultation session ready.");
+      void loadConsultations(true);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Unable to join consultation.";
+      toast.error(message);
+    } finally {
+      setActiveCallAppointmentId(null);
+    }
+  }, [activeCallAppointmentId, loadConsultations, prepareCallSession]);
+
+  const rejoinConsultation = useCallback(async (consultation: Consultation) => {
+    if (activeCallAppointmentId || !canJoinConsultationCall(consultation)) return;
+    setActiveCallAppointmentId(consultation.id);
+
+    try {
+      const session = await prepareCallSession(consultation);
+      setActiveVideoCallSession({ appointmentId: session.appointmentId, callCid: session.callCid, token: session.token });
+      toast.success(session.callStatus === "active" ? "Consultation session active." : "Consultation session ready.");
+      void loadConsultations(true);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Unable to rejoin consultation.";
+      toast.error(message);
+    } finally {
+      setActiveCallAppointmentId(null);
+    }
+  }, [activeCallAppointmentId, loadConsultations, prepareCallSession]);
 
   useEffect(() => {
     let ignore = false;
@@ -616,6 +798,7 @@ export default function VirtualConsultationsPage() {
                 { label: "Completed", value: "completed" },
                 { label: "In Progress", value: "in-progress" },
                 { label: "Upcoming", value: "upcoming" },
+                { label: "Missed", value: "missed" },
               ]}
             />
             <FilterSelect className="w-full xl:w-[140px]" value={clinicianFilter} onChange={setClinicianFilter} options={clinicianOptions} />
@@ -670,13 +853,13 @@ export default function VirtualConsultationsPage() {
                       </td>
                       <td className="px-2 py-4 text-right sm:px-3 xl:px-4">
                         <div className="flex justify-end">
-                          {consultation.status === "ready" ? (
-                            <button type="button" onClick={() => toast.info("Video consultation launch is coming soon.")} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-white shadow-sm">
+                          {shouldShowJoinAction(consultation, isAssignedClinician(consultation)) ? (
+                            <button type="button" onClick={() => void startConsultation(consultation)} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                               Join Consultation
                             </button>
                           ) : null}
-                          {consultation.status === "in-progress" ? (
-                            <button type="button" onClick={() => toast.info("Video consultation launch is coming soon.")} className="h-10 rounded-xl border border-primary bg-white px-5 text-xs font-bold text-primary">
+                          {consultation.status === "in-progress" && isAssignedClinician(consultation) ? (
+                            <button type="button" onClick={() => void rejoinConsultation(consultation)} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-xl border border-primary bg-white px-5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
                               Rejoin Session
                             </button>
                           ) : null}
@@ -685,7 +868,7 @@ export default function VirtualConsultationsPage() {
                               View Details
                             </Link>
                           ) : null}
-                          {consultation.status === "upcoming" ? (
+                          {shouldShowUpcomingActions(consultation, isAssignedClinician(consultation)) ? (
                             <div className="flex items-center gap-4 lg:gap-6">
                               <Link href={`/dashboard/appointments/${encodeURIComponent(consultation.id)}`} className="text-xs font-bold text-primary">
                                 View Details
@@ -694,6 +877,11 @@ export default function VirtualConsultationsPage() {
                                 Reschedule
                               </button>
                             </div>
+                          ) : null}
+                          {(consultation.status === "ready" || consultation.status === "in-progress") && !isAssignedClinician(consultation) ? (
+                            <Link href={`/dashboard/appointments/${encodeURIComponent(consultation.id)}`} className="text-xs font-bold text-primary">
+                              View Details
+                            </Link>
                           ) : null}
                         </div>
                       </td>
@@ -748,6 +936,7 @@ export default function VirtualConsultationsPage() {
         appointmentDate={reschedulingAppointment?.scheduledDate}
         appointmentTime={reschedulingAppointment?.scheduledTime}
         hospitalId={reschedulingAppointment?.hospitalId}
+        initialAppointmentType={reschedulingAppointment?.appointmentType ?? "teleconsultation"}
         onClose={() => setReschedulingAppointment(null)}
         onSuccess={() => {
           toast.success("Appointment rescheduled successfully.");
@@ -763,6 +952,17 @@ export default function VirtualConsultationsPage() {
           void loadConsultations(true);
         }}
       />
+      {activeVideoCallSession ? (
+        <VideoCallView
+          appointmentId={activeVideoCallSession.appointmentId}
+          callCid={activeVideoCallSession.callCid}
+          token={activeVideoCallSession.token}
+          onEnd={async () => {
+            setActiveVideoCallSession(null);
+            await loadConsultations(true);
+          }}
+        />
+      ) : null}
     </>
   );
 }

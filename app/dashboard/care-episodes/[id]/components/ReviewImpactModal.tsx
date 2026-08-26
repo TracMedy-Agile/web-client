@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Info, LoaderCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { ThresholdAlertDetail } from "@/lib/api/alerts";
 
 export type ReviewImpactEvidenceRow = {
   label: string;
@@ -22,6 +23,7 @@ export type ReviewImpactData = {
   generatedAt?: string;
   source?: string;
   suggestedReview?: string[];
+  thresholdDetails?: ThresholdAlertDetail[];
   expectedLabel?: string;
   actualLabel?: string;
   evidence: ReviewImpactEvidenceRow[];
@@ -47,6 +49,7 @@ const EVIDENCE_STATUS_BADGE: Record<string, string> = {
   "NORMAL RANGE": "bg-emerald-50 text-emerald-700",
   LINKED: "bg-red-50 text-red-700",
   RECORDED: "bg-blue-50 text-blue-700",
+  THRESHOLD: "bg-red-50 text-red-700",
 };
 
 function evidenceBadgeClass(status: string) {
@@ -105,6 +108,29 @@ export function ReviewImpactModal({
                 Trend direction: {alert.trend}
               </p>
             </section>
+            {alert.thresholdDetails?.length ? (
+              <section className="mt-6 rounded-xl border border-red-100 bg-red-50/60 px-4 py-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-red-500">Threshold trigger details</p>
+                <div className="mt-3 space-y-3">
+                  {alert.thresholdDetails.map((detail) => (
+                    <div key={`${detail.label}-${detail.value}-${detail.threshold}`} className="rounded-lg bg-card px-3 py-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">Breached value</p>
+                          <p className="mt-1 text-sm font-bold text-foreground">{detail.label}: {detail.value}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">Configured threshold</p>
+                          <p className="mt-1 text-sm font-bold text-foreground">{detail.threshold}</p>
+                        </div>
+                      </div>
+                      {detail.warningMessage ? <p className="mt-3 text-sm font-semibold text-red-600">{detail.warningMessage}</p> : null}
+                      {detail.responseInstruction ? <p className="mt-1 text-xs font-medium text-foreground/80">{detail.responseInstruction}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {alert.analysisSummary ? (
               <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">AI advisory insight</p>

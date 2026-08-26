@@ -49,6 +49,8 @@ import {
   getCareEpisodeDailyVitals,
   getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
+  getCareEpisodeTaskCompletion,
+  getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
   getNumber,
   getRecordArray,
@@ -58,17 +60,25 @@ import {
   type DailyVitalsRecord,
   type EpisodeForecast,
   type MedicationAdherenceRecord,
+  type TaskCompletionLog,
+  type TaskCompletionRecord,
 } from "@/lib/api/care-episodes";
 import {
   BIOMETRIC_METRICS,
   BIOMETRIC_RANGES,
   buildBiometricData,
+  formatLongDate,
+  formatTime,
   humanizeSlug,
   type BiometricMetric,
   type BiometricPoint,
   type BiometricRange,
 } from "./_shared/utils";
 import { CloseCareEpisodeModal, type CloseCareEpisodePayload, type EpisodeOutcomeSummary } from "./components/CloseCareEpisodeModal";
+import {
+  buildCareTaskRows,
+  buildMedicationCompletionTimelineEvents,
+} from "./_shared/taskCompletion";
 
 type TimelineEntry = {
   id: string;
@@ -105,30 +115,11 @@ function getHeaderRiskBadge(riskCategory: string | null) {
   return { label: "Unrated", className: "bg-slate-100 text-slate-500" };
 }
 
-function getRiskFactors(riskData: ApiRecord | null) {
-  if (!riskData) return [];
-  for (const key of ["triggerFactors", "contributingFactors", "riskFactors", "factors"]) {
-    const value = riskData[key];
-    if (!Array.isArray(value)) continue;
-    return value.map((item) => {
-      if (typeof item === "string") return item;
-      const record = asRecord(item);
-      return getString(record, ["label", "reason", "description", "name"]);
-    }).filter(Boolean);
-  }
-  return [];
-}
-
-function formatLongDate(value: string) {
-  const parsed = Date.parse(value);
-  if (!value || !Number.isFinite(parsed)) return "--";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(parsed));
-}
-
-function formatTime(value: string) {
-  const parsed = Date.parse(value);
-  if (!value || !Number.isFinite(parsed)) return "--";
-  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(parsed));
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getPercentField(record: ApiRecord | null, keys: string[]): number | null {
@@ -136,6 +127,7 @@ function getPercentField(record: ApiRecord | null, keys: string[]): number | nul
   if (value === null) return null;
   return clamp(value <= 1 ? Math.round(value * 100) : Math.round(value));
 }
+
 
 function getTrendMeta(trend: string | null) {
   const value = (trend ?? "").toLowerCase();
@@ -146,16 +138,6 @@ function getTrendMeta(trend: string | null) {
     return { label: "Decrease", className: "bg-red-50 text-red-500", Icon: ArrowDown };
   }
   return { label: "Stable", className: "bg-blue-50 text-primary", Icon: Minus };
-}
-
-function isTaskMissed(task: ApiRecord) {
-  const status = getString(task, ["status"]).toLowerCase();
-  return status === "missed" || status === "overdue" || task.missed === true;
-}
-
-function isTaskCompleted(task: ApiRecord) {
-  const status = getString(task, ["status"]).toLowerCase();
-  return status === "completed" || status === "done" || task.completed === true;
 }
 
 function isMedicationAdherent(medication: ApiRecord) {
@@ -188,6 +170,22 @@ function normalizeTimelineEntry(event: ApiRecord, index: number): TimelineEntry 
     time: getString(event, ["timestamp", "time", "createdAt"]),
     category: getTimelineCategory(event),
   };
+}
+
+function timelineEntrySortValue(event: TimelineEntry) {
+  const parsed = Date.parse(event.time);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mergeTimelineEntries(base: TimelineEntry[], additions: TimelineEntry[]) {
+  const seen = new Set<string>();
+  return [...additions, ...base]
+    .filter((entry) => {
+      if (seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    })
+    .sort((a, b) => timelineEntrySortValue(b) - timelineEntrySortValue(a));
 }
 
 const TIMELINE_ICON: Record<TimelineEntry["category"], { Icon: typeof AlertCircle; className: string }> = {
@@ -324,6 +322,8 @@ export default function CareEpisodeDetailPage() {
   const [episodeForecast, setEpisodeForecast] = useState<EpisodeForecast | null>(null);
   const [forecastError, setForecastError] = useState("");
   const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
+  const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
+  const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
   const [vitalsLoading, setVitalsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -420,6 +420,25 @@ export default function CareEpisodeDetailPage() {
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
+    const today = localDateKey(new Date());
+
+    Promise.allSettled([
+      getCareEpisodeTaskCompletion(episodeId, today),
+      getCareEpisodeTaskCompletionLog(episodeId, today),
+    ]).then(([completionResult, logResult]) => {
+      if (ignore) return;
+      setTaskCompletion(completionResult.status === "fulfilled" ? completionResult.value : null);
+      setTaskCompletionLog(logResult.status === "fulfilled" ? logResult.value : null);
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
     getCareEpisodeForecast(episodeId)
       .then((forecast) => {
         if (!ignore) {
@@ -442,6 +461,11 @@ export default function CareEpisodeDetailPage() {
     [biometricMetric, dailyVitals],
   );
   const biometricUnit = BIOMETRIC_METRICS.find((item) => item.label === biometricMetric)?.unit ?? "";
+  const todayKey = localDateKey(new Date());
+  const careTaskRows = useMemo(
+    () => buildCareTaskRows(episode?.currentCarePlan ?? null, { date: todayKey, completionLog: taskCompletionLog, medicationRecords }),
+    [episode, medicationRecords, taskCompletionLog, todayKey],
+  );
 
   const monitoring = useMemo(() => {
     if (!episode) return null;
@@ -458,12 +482,11 @@ export default function CareEpisodeDetailPage() {
       : fallbackAdherence;
     const medicationTrend = getTrendMeta(getString(episode.currentCarePlan, ["medicationTrend", "adherenceTrend"]));
 
-    const tasks = getRecordArray(episode.currentCarePlan, ["tasks"]);
-    const missedTasks = tasks.filter(isTaskMissed);
+    const missedTasks = careTaskRows.filter((task) => task.missed && !task.done);
     const lastMissed = missedTasks[missedTasks.length - 1];
-    const lastMissedLabel = lastMissed ? getString(lastMissed, ["title", "name", "label"], "Task") : "";
+    const lastMissedLabel = lastMissed?.label ?? "";
 
-    const completedTasks = tasks.filter(isTaskCompleted).length;
+    const completedTasks = taskCompletion?.completed ?? careTaskRows.filter((task) => task.done).length;
     const engagementScore = clamp(Math.round((checkInConsistency + medicationAdherence) / 2));
     const engagementTier = engagementScore >= 75 ? "High" : engagementScore >= 45 ? "Moderate" : "Low";
     const engagementTrend = getTrendMeta(getString(episode.riskData, ["engagementTrend"]));
@@ -473,14 +496,25 @@ export default function CareEpisodeDetailPage() {
       checkInTrend,
       medicationAdherence,
       medicationTrend,
-      missedTasksCount: missedTasks.length,
+      missedTasksCount: taskCompletion?.missed ?? missedTasks.length,
       lastMissedLabel,
       completedTasks,
       engagementScore,
       engagementTier,
       engagementTrend,
     };
-  }, [episode, medicationRecords]);
+  }, [careTaskRows, episode, medicationRecords, taskCompletion]);
+
+  const medicationCompletionTimeline = useMemo(() => {
+    if (!episode) return [];
+    return buildMedicationCompletionTimelineEvents(episode.id || episodeId, episode.currentCarePlan, taskCompletionLog, medicationRecords, todayKey)
+      .map((event, index) => normalizeTimelineEntry(event as unknown as ApiRecord, timeline.length + index));
+  }, [episode, episodeId, medicationRecords, taskCompletionLog, timeline.length, todayKey]);
+  const displayedTimeline = useMemo(
+    () => mergeTimelineEntries(timeline, medicationCompletionTimeline).slice(0, 5),
+    [medicationCompletionTimeline, timeline],
+  );
+
 
   const outcomes = useMemo(() => {
     const riskScore = episode?.riskScore ?? null;
@@ -559,13 +593,6 @@ export default function CareEpisodeDetailPage() {
   const progressPercent = episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays);
   const visibleCareTeam = episode.careTeam.slice(0, 3);
   const extraCareTeamCount = Math.max(episode.careTeam.length - visibleCareTeam.length, 0);
-  const riskFactors = getRiskFactors(episode.riskData);
-  const riskWindow = getString(
-    episode.riskData,
-    ["timeToIntervention", "recommendedInterventionWindow", "interventionWindow"],
-    "Not provided",
-  );
-  const displayedRiskScore = episode.riskScore === null ? null : clamp(Math.round(episode.riskScore));
 
   return (
     <div className="space-y-6">
@@ -600,9 +627,10 @@ export default function CareEpisodeDetailPage() {
                         <span
                           key={member.id || member.name}
                           title={member.name}
-                          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-50 text-[10px] font-bold text-primary"
+                          className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-blue-50 bg-cover bg-center text-[10px] font-bold text-primary"
+                          style={member.avatarUrl ? { backgroundImage: `url(${member.avatarUrl})` } : undefined}
                         >
-                          {getInitials(member.name)}
+                          {member.avatarUrl ? null : getInitials(member.name)}
                         </span>
                       ))}
                       {extraCareTeamCount > 0 ? (
@@ -794,88 +822,6 @@ export default function CareEpisodeDetailPage() {
         </div>
       </section>
 
-      <Card id="risk-intelligence" className="scroll-mt-24 rounded-xl border-border bg-card shadow-sm">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                  <AlertTriangle className="h-5 w-5" />
-                </span>
-                <div>
-                  <h2 className="text-base font-bold text-foreground">Risk Intelligence</h2>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Clinical decision support from the latest episode risk assessment.</p>
-                </div>
-              </div>
-            </div>
-            <Button asChild variant="outline" className="h-10 rounded-lg border-border bg-card text-sm font-semibold text-foreground">
-              <Link href="/dashboard/alerts">View all alerts</Link>
-            </Button>
-          </div>
-
-          {displayedRiskScore === null && !episode.riskCategory && !episode.riskTrend && riskFactors.length === 0 ? (
-            <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/30 px-5 py-8 text-center">
-              <p className="text-sm font-semibold text-foreground">No risk assessment recorded</p>
-              <p className="mt-1 text-sm text-muted-foreground">Risk intelligence will appear when the backend adds risk data to this episode.</p>
-            </div>
-          ) : (
-            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-              <div className="rounded-xl border border-border bg-muted/30 p-5">
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Current risk score</p>
-                    <p className="mt-2 text-4xl font-bold text-foreground">{displayedRiskScore === null ? "Ã¢â‚¬â€" : displayedRiskScore}</p>
-                  </div>
-                  <span className={cn("rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>{riskBadge.label}</span>
-                </div>
-                <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      (displayedRiskScore ?? 0) >= 70 ? "bg-red-500" : (displayedRiskScore ?? 0) >= 40 ? "bg-amber-500" : "bg-emerald-500",
-                    )}
-                    style={{ width: `${displayedRiskScore ?? 0}%` }}
-                  />
-                </div>
-                <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trend</dt>
-                    <dd className="mt-1 text-sm font-semibold capitalize text-foreground">{episode.riskTrend || "Not provided"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Intervention window</dt>
-                    <dd className="mt-1 text-sm font-semibold text-foreground">{riskWindow}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk history</dt>
-                    <dd className="mt-1 text-sm font-semibold text-foreground">{episode.riskHistory.length} assessment{episode.riskHistory.length === 1 ? "" : "s"}</dd>
-                  </div>
-                </dl>
-              </div>
-
-              <div className="rounded-xl border border-border p-5">
-                <h3 className="text-sm font-bold text-foreground">Contributing factors</h3>
-                {riskFactors.length > 0 ? (
-                  <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {riskFactors.map((factor, index) => (
-                      <li key={`${factor}-${index}`} className="flex items-start gap-2 rounded-lg bg-muted/40 px-3 py-3 text-sm font-medium text-foreground">
-                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                        {factor}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-4 rounded-lg bg-muted/40 px-4 py-5 text-sm text-muted-foreground">No contributing factors were supplied with this assessment.</p>
-                )}
-                <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                  Review the patientÃ¢â‚¬â„¢s current episode and clinical context before acting on any risk signal.
-                </p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1034,13 +980,13 @@ export default function CareEpisodeDetailPage() {
             </Link>
           </div>
 
-          {timeline.length === 0 ? (
+          {displayedTimeline.length === 0 ? (
             <p className="py-8 text-center text-sm font-medium text-slate-500">No timeline events recorded yet.</p>
           ) : (
             <>
               <p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Today</p>
               <div className="space-y-4">
-                {timeline.map((event) => {
+                {displayedTimeline.map((event) => {
                   const iconMeta = TIMELINE_ICON[event.category];
                   return (
                     <div key={event.id} className="flex gap-3 rounded-lg border border-slate-200 p-4">

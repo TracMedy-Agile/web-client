@@ -122,6 +122,7 @@ export type CareTeamMember = {
   name: string;
   role: string;
   assignedAt: string;
+  avatarUrl: string;
 };
 
 export type CareEpisodeDetail = CareEpisodeRecord & {
@@ -422,6 +423,7 @@ function normalizeCareTeamMember(record: ApiRecord): CareTeamMember {
     name: getString(record, ["name", "fullName", "clinicianName"]),
     role: getString(record, ["role", "title", "specialty", "specialization"]),
     assignedAt: getString(record, ["assignedAt", "createdAt"]),
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
@@ -450,7 +452,7 @@ async function getFacilityPatient(facilityId: string, patientId: string): Promis
   return normalizePatientIdentity(asRecord(root.patient));
 }
 
-export type ClinicianSummary = { id: string; name: string; department: string };
+export type ClinicianSummary = { id: string; name: string; department: string; avatarUrl: string };
 
 export async function getClinicianSummary(clinicianId: string): Promise<ClinicianSummary | null> {
   if (!clinicianId) return null;
@@ -462,6 +464,7 @@ export async function getClinicianSummary(clinicianId: string): Promise<Clinicia
     id: getString(body, ["id"], clinicianId),
     name,
     department: getString(body, ["department"]),
+    avatarUrl: getString(body, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
@@ -477,7 +480,7 @@ async function enrichCareTeamNames(careTeam: CareTeamMember[]): Promise<CareTeam
   return careTeam.map((member) => {
     const clinician = nameById.get(member.clinicianId);
     return clinician
-      ? { ...member, name: clinician.name, role: member.role || clinician.department }
+      ? { ...member, name: clinician.name, role: member.role || clinician.department, avatarUrl: member.avatarUrl || clinician.avatarUrl }
       : { ...member, name: member.name || "Unknown" };
   });
 }
@@ -779,6 +782,74 @@ export async function getCareEpisodeTaskCompletion(
   };
 }
 
+export type TaskCompletionLogEntry = {
+  taskId: string;
+  completed: boolean;
+  status: string;
+  completedAt: string | null;
+  source: string | null;
+  notes: string | null;
+};
+
+export type TaskCompletionLog = {
+  date: string;
+  tasks: TaskCompletionLogEntry[];
+  completedTaskIds: string[];
+};
+
+function getStringArray(record: ApiRecord | null, keys: string[]): string[] {
+  if (!record) return [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  return [];
+}
+
+function normalizeTaskCompletionLogEntry(record: ApiRecord, index: number): TaskCompletionLogEntry {
+  const status = getString(record, ["status", "action"]);
+  const normalizedStatus = status.toLowerCase();
+  const completed = record.completed === true || ["completed", "done", "taken"].includes(normalizedStatus);
+  return {
+    taskId: getString(record, ["taskId", "carePlanTaskId", "carePlanTaskKey", "key", "id", "_id"]) || `task-${index}`,
+    completed,
+    status: status || (completed ? "completed" : "pending"),
+    completedAt: getString(record, ["completedAt", "loggedAt", "timestamp", "createdAt"]) || null,
+    source: getString(record, ["source"]) || null,
+    notes: getString(record, ["notes", "note"]) || null,
+  };
+}
+
+export async function getCareEpisodeTaskCompletionLog(
+  episodeId: string,
+  date: string,
+): Promise<TaskCompletionLog> {
+  const payload = await request(
+    `/care-episodes/${encodeURIComponent(episodeId)}/tasks/completion-log`,
+    undefined,
+    new URLSearchParams({ date }),
+  );
+  const data = unwrapData(payload);
+  const record = asRecord(data);
+  const list = Array.isArray(data)
+    ? data
+    : getRecordArray(record, ["tasks", "items", "logs", "completionLog", "completedTasks"]);
+  const tasks = list
+    .map(asRecord)
+    .filter((item): item is ApiRecord => Boolean(item))
+    .map(normalizeTaskCompletionLogEntry);
+  const completedTaskIds = Array.from(new Set([
+    ...getStringArray(record, ["completedTaskIds", "completedTasks", "taskIds"]),
+    ...tasks.filter((task) => task.completed).map((task) => task.taskId),
+  ]));
+
+  return {
+    date: getString(record, ["date"], date),
+    tasks,
+    completedTaskIds,
+  };
+}
+
 export async function getCareEpisodeForecast(episodeId: string): Promise<EpisodeForecast> {
   const payload = await request(`/forecasts/episodes/${encodeURIComponent(episodeId)}`);
   const forecast = unwrapData(payload);
@@ -844,9 +915,11 @@ export async function getCareEpisodeDailyVitals(id: string, days = 7): Promise<D
 
 export type MedicationAdherenceRecord = Omit<MedicationAdherenceApiRecord, "lastTakenAt"> & {
   lastTakenAt: string | null;
+  source?: string;
 };
 
 function normalizeMedicationAdherence(record: ApiRecord): MedicationAdherenceRecord {
+  const source = getString(record, ["source"]);
   return {
     medicationId: getString(record, ["medicationId", "id", "_id"]),
     name: getString(record, ["name", "medicationName"], "Medication"),
@@ -856,6 +929,7 @@ function normalizeMedicationAdherence(record: ApiRecord): MedicationAdherenceRec
     missedCount: getNumber(record, ["missedCount"]) ?? 0,
     adherencePercentage: getNumber(record, ["adherencePercentage"]) ?? 0,
     lastTakenAt: getString(record, ["lastTakenAt"]) || null,
+    ...(source ? { source } : {}),
   };
 }
 

@@ -12,6 +12,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import type { components } from "@/docs/types/api";
 import { confirmAppointment, createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
 import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { cn } from "@/lib/utils";
@@ -19,13 +20,24 @@ import { cn } from "@/lib/utils";
 type AppointmentType = "physical" | "teleconsultation";
 type AppointmentPriority = "Routine" | "Urgent" | "Critical";
 type InitialPatient = { id: string; name: string };
+type CreatedAppointmentPayload = components["schemas"]["CreateAppointmentResponseDto"];
+
+export type ScheduledAppointmentResult = {
+  id: CreatedAppointmentPayload["id"];
+  type: CreatedAppointmentPayload["type"];
+  date: CreatedAppointmentPayload["date"];
+  time: CreatedAppointmentPayload["time"];
+  reason: CreatedAppointmentPayload["reason"];
+  episodeId: CreatedAppointmentPayload["episodeId"];
+};
 
 type ScheduleAppointmentModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAppointmentCreated?: () => void;
+  onAppointmentCreated?: (appointment: ScheduledAppointmentResult) => void;
   initialAppointmentType?: AppointmentType;
   initialPatient?: InitialPatient;
+  initialCareEpisodeId?: string;
   initialCareEpisodeLabel?: string;
   initialReason?: string;
   /** Immediately confirms the appointment after creation, instead of leaving it pending review. */
@@ -56,6 +68,7 @@ type ClinicianOption = {
   id: string;
   label: string;
   schedule: string;
+  avatarUrl: string;
 };
 
 type ApiRecord = Record<string, unknown>;
@@ -98,6 +111,33 @@ function getString(record: ApiRecord | null, keys: string[], fallback = "") {
 function unwrapData(payload: unknown) {
   const record = asRecord(payload);
   return record && "data" in record ? record.data : payload;
+}
+
+function toApiAppointmentType(type: AppointmentType): CreatedAppointmentPayload["type"] {
+  return type === "teleconsultation" ? "teleconsultation" : "in_person";
+}
+
+function getAppointmentType(record: ApiRecord | null, fallback: AppointmentType): CreatedAppointmentPayload["type"] {
+  const value = getString(record, ["type"]);
+  return value === "teleconsultation" || value === "in_person" || value === "nurse_checkin"
+    ? value
+    : toApiAppointmentType(fallback);
+}
+
+function normalizeCreatedAppointment(
+  payload: unknown,
+  formValues: ScheduleAppointmentFormData,
+  episodeId?: string,
+): ScheduledAppointmentResult {
+  const data = asRecord(unwrapData(payload));
+  return {
+    id: getString(data, ["id"]),
+    type: getAppointmentType(data, formValues.appointmentType),
+    date: getString(data, ["date"], formValues.date),
+    time: getString(data, ["time"], formValues.time),
+    reason: getString(data, ["reason"], formValues.reason || "Routine checkup") || null,
+    episodeId: getString(data, ["episodeId"], episodeId ?? "") || null,
+  };
 }
 
 function getPatientItems(payload: unknown): ApiRecord[] {
@@ -150,6 +190,7 @@ function normalizeClinician(record: ApiRecord): ClinicianOption {
     id,
     label: `Dr. ${name} - ${department || "No department"}`,
     schedule,
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
   };
 }
 
@@ -199,6 +240,23 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
+function getClinicianInitials(label: string) {
+  const cleanLabel = label.replace(/^Dr\.\s+/i, "").split(" - ")[0] || label;
+  const parts = cleanLabel.trim().split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase() || "DR";
+}
+
+function ClinicianAvatar({ clinician }: { clinician: ClinicianOption }) {
+  return (
+    <span
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#E7F2FF] bg-cover bg-center text-xs font-bold text-primary"
+      style={clinician.avatarUrl ? { backgroundImage: `url(${clinician.avatarUrl})` } : undefined}
+      aria-hidden="true"
+    >
+      {clinician.avatarUrl ? null : getClinicianInitials(clinician.label)}
+    </span>
+  );
+}
 function SelectLike({
   children,
   className,
@@ -254,7 +312,7 @@ function AppointmentTypeCard({
   );
 }
 
-function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facilityId: string, patientId: string) {
+function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facilityId: string, patientId: string, episodeId?: string) {
   const clinicianId = formValues.clinicianId.trim();
 
   return {
@@ -266,6 +324,7 @@ function buildAppointmentPayload(formValues: ScheduleAppointmentFormData, facili
     duration: parseInt(formValues.duration, 10) || 30,
     reason: formValues.reason || "Routine checkup",
     ...(clinicianId ? { clinicianId } : {}),
+    ...(episodeId ? { episodeId } : {}),
     priority: "normal",
     ...(formValues.location.trim() ? { location: formValues.location.trim() } : {}),
     department: formValues.department.trim(),
@@ -278,6 +337,7 @@ export default function ScheduleAppointmentModal({
   onAppointmentCreated,
   initialAppointmentType = "physical",
   initialPatient,
+  initialCareEpisodeId,
   initialCareEpisodeLabel,
   initialReason = "",
   autoConfirm = false,
@@ -305,6 +365,7 @@ export default function ScheduleAppointmentModal({
   const [apiError, setApiError] = useState("");
   const [capacity, setCapacity] = useState<AppointmentCapacity | null>(null);
   const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
+  const [isClinicianPickerOpen, setIsClinicianPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -418,7 +479,7 @@ export default function ScheduleAppointmentModal({
 
   const clinicianOptions = useMemo(() => {
     if (!currentClinicianId || clinicians.some((clinician) => clinician.id === currentClinicianId)) return clinicians;
-    return [{ id: currentClinicianId, label: currentClinicianLabel, schedule: "Current clinician" }, ...clinicians];
+    return [{ id: currentClinicianId, label: currentClinicianLabel, schedule: "Current clinician", avatarUrl: "" }, ...clinicians];
   }, [clinicians, currentClinicianId, currentClinicianLabel]);
 
   const selectedClinician = clinicianOptions.find((clinician) => clinician.id === formData.clinicianId);
@@ -467,21 +528,19 @@ export default function ScheduleAppointmentModal({
     setIsSubmitting(true);
 
     try {
-      const created = await createAppointment(buildAppointmentPayload(formData, facilityId, selectedPatientId));
+      const created = await createAppointment(buildAppointmentPayload(formData, facilityId, selectedPatientId, initialCareEpisodeId));
+      const createdAppointment = normalizeCreatedAppointment(created, formData, initialCareEpisodeId);
       if (autoConfirm) {
-        const record = created && typeof created === "object" ? created as Record<string, unknown> : null;
-        const data = record && typeof record.data === "object" && record.data !== null ? record.data as Record<string, unknown> : record;
-        const newAppointmentId = typeof data?.id === "string" ? data.id : "";
-        if (newAppointmentId) {
+        if (createdAppointment.id) {
           // Best-effort — if this fails the appointment still exists as pending, which is
           // still correct (just not auto-confirmed); don't block the success flow on it.
-          await confirmAppointment(newAppointmentId).catch(() => undefined);
+          await confirmAppointment(createdAppointment.id).catch(() => undefined);
         }
       }
       setFormData(freshFormData());
       setSelectedPatientId("");
       setPatientResults([]);
-      onAppointmentCreated?.();
+      onAppointmentCreated?.(createdAppointment);
       onOpenChange(false);
       toast.success("Appointment added successfully.");
       router.refresh();
@@ -670,28 +729,56 @@ export default function ScheduleAppointmentModal({
               <SectionHeader>Assignment &amp; Continuity</SectionHeader>
 
               <div className="grid gap-6 sm:grid-cols-2">
-                <label className="block">
+                <div className="relative block">
                   <span className="mb-2 block text-sm font-bold text-[#111827]">Assigned Doctor / Staff</span>
-                  <select
-                    className="h-12 w-full rounded-lg border border-[#D0D5DD] bg-white px-4 text-sm font-medium text-[#111827] focus:border-primary/40 focus:outline-none"
-                    value={formData.clinicianId}
-                    onChange={(event) => updateFormData("clinicianId", event.target.value)}
+                  <button
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded={isClinicianPickerOpen}
+                    onClick={() => setIsClinicianPickerOpen((current) => !current)}
+                    className="flex h-12 w-full items-center justify-between gap-3 rounded-lg border border-[#D0D5DD] bg-white px-4 text-left text-sm font-medium text-[#111827] focus:border-primary/40 focus:outline-none"
                   >
-                    <option value="">Select a clinician</option>
-                    {clinicianOptions.map((clinician) => (
-                      <option key={clinician.id} value={clinician.id}>
-                        {clinician.label}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="flex min-w-0 items-center gap-3">
+                      {selectedClinician ? <ClinicianAvatar clinician={selectedClinician} /> : null}
+                      <span className={cn("truncate", selectedClinician ? "text-[#111827]" : "text-[#71809B]")}>{selectedClinician?.label ?? "Select a clinician"}</span>
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-[#71809B]" />
+                  </button>
+                  {isClinicianPickerOpen ? (
+                    <div role="listbox" className="absolute z-50 mt-2 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-white py-2 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+                      {clinicianOptions.length > 0 ? clinicianOptions.map((clinician) => (
+                        <button
+                          key={clinician.id}
+                          type="button"
+                          role="option"
+                          aria-selected={formData.clinicianId === clinician.id}
+                          onClick={() => {
+                            updateFormData("clinicianId", clinician.id);
+                            setIsClinicianPickerOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#F3F4F6]",
+                            formData.clinicianId === clinician.id ? "bg-[#E7F2FF]" : "bg-white",
+                          )}
+                        >
+                          <ClinicianAvatar clinician={clinician} />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-bold text-[#111827]">{clinician.label}</span>
+                            <span className="mt-1 block truncate text-xs font-medium text-[#71809B]">{clinician.schedule || "Schedule not set"}</span>
+                          </span>
+                        </button>
+                      )) : (
+                        <span className="block px-4 py-3 text-sm font-medium text-[#71809B]">No clinicians available</span>
+                      )}
+                    </div>
+                  ) : null}
                   <span className="mt-3 flex items-center gap-2 text-xs font-medium text-[#71809B]">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />
                     {selectedClinician
                       ? `Schedule: ${selectedClinician.schedule || "Not set"}`
                       : "Select a clinician to view their schedule"}
                   </span>
-                </label>
-
+                </div>
                 <label className="block">
                   <span className="mb-2 block text-sm font-bold text-[#111827]">Link Care Episode</span>
                   <SelectLike>{formData.careEpisode}</SelectLike>

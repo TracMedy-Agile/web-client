@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   CalendarClock,
   CalendarPlus,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   History,
@@ -30,25 +31,24 @@ import {
   getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeTaskCompletion,
+  getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
-  getRecordArray,
-  getString,
   type ApiRecord,
   type CareEpisodeDetail,
   type DailyVitalsRecord,
   type EpisodeForecast,
   type MedicationAdherenceRecord,
+  type TaskCompletionLog,
   type TaskCompletionRecord,
 } from "@/lib/api/care-episodes";
 import { SubHeaderSkeleton } from "../_shared/SubHeader";
 import { CircularProgress } from "../_shared/CircularProgress";
-import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent } from "../_shared/utils";
+import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent, getSavedWarningSignsFromPlan } from "../_shared/utils";
 import { ReviewImpactModal, type ReviewImpactData } from "../components/ReviewImpactModal";
-import ScheduleAppointmentModal from "@/app/dashboard/appointments/components/ScheduleAppointmentModal";
+import { buildCareTaskRows } from "../_shared/taskCompletion";
+import ScheduleAppointmentModal, { type ScheduledAppointmentResult } from "@/app/dashboard/appointments/components/ScheduleAppointmentModal";
 
 type ProgressionPoint = { day: string; expected: number; actual: number | null };
-type DailyTask = { id: string; label: string; sub: string; done: boolean };
-
 function localDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -68,6 +68,7 @@ type RecoveryAlert = {
   title: string;
   description: string;
   meta: string;
+  thresholdDetails: ClinicalAlert["thresholdDetails"];
 };
 
 function buildExpectedProgression(totalDays: number): ProgressionPoint[] {
@@ -79,22 +80,6 @@ function buildExpectedProgression(totalDays: number): ProgressionPoint[] {
   }));
 }
 
-function isTaskCompleted(task: ApiRecord) {
-  const status = getString(task, ["status"]).toLowerCase();
-  return status === "completed" || status === "done" || task.completed === true;
-}
-
-function buildDailyTasks(carePlan: ApiRecord | null, isToday: boolean): DailyTask[] {
-  return getRecordArray(carePlan, ["tasks"]).map((task, index) => ({
-    id: getString(task, ["id", "_id", "taskId"]) || `task-${index}`,
-    label: getString(task, ["title", "name", "label"], "Task"),
-    sub: getString(task, ["frequency", "schedule", "dueAt", "scheduledAt", "dueDate"]),
-    // The API has no per-day task completion history — a task's status only reflects its
-    // current live state, so it can only be trusted as "done" when viewing today.
-    done: isToday && isTaskCompleted(task),
-  }));
-}
-
 function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
   return alerts.map((alert) => ({
     id: alert.id,
@@ -102,6 +87,7 @@ function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
     title: alert.reason,
     description: `Triggered by ${alert.triggerSource}.`,
     meta: formatRelativeTime(alert.timestamp),
+    thresholdDetails: alert.thresholdDetails,
   }));
 }
 function vitalMetricForAlert(alert: RecoveryAlert, records: DailyVitalsRecord[]) {
@@ -128,6 +114,7 @@ function vitalMetricForAlert(alert: RecoveryAlert, records: DailyVitalsRecord[])
 }
 
 function buildReviewImpact(alert: RecoveryAlert, vitals: DailyVitalsRecord[], medications: MedicationAdherenceRecord[]): ReviewImpactData {
+  const thresholdDetail = alert.thresholdDetails[0] ?? null;
   const metric = vitalMetricForAlert(alert, vitals);
   const evidence: ReviewImpactData["evidence"] = [];
   if (metric) {
@@ -156,13 +143,21 @@ function buildReviewImpact(alert: RecoveryAlert, vitals: DailyVitalsRecord[], me
   return {
     title: alert.title,
     subtitle: "Reviewing evidence available for this care episode",
-    expectedLabel: "Alert threshold",
-    expected: "Not supplied by API",
-    actualLabel: metric ? `Latest ${metric.label.toLowerCase()}` : "Latest recorded value",
-    actual: latest != null && metric ? `${latest}${metric.unit}` : "No linked vital available",
+    expectedLabel: thresholdDetail ? "Configured threshold" : "Alert threshold",
+    expected: thresholdDetail?.threshold ?? "Not supplied by API",
+    actualLabel: thresholdDetail ? "Breached value" : metric ? `Latest ${metric.label.toLowerCase()}` : "Latest recorded value",
+    actual: thresholdDetail ? `${thresholdDetail.label}: ${thresholdDetail.value}` : latest != null && metric ? `${latest}${metric.unit}` : "No linked vital available",
     trend,
+    analysisSummary: thresholdDetail?.warningMessage,
+    thresholdDetails: alert.thresholdDetails,
     evidence,
   };
+}
+
+function appointmentTypeLabel(type: ScheduledAppointmentResult["type"]) {
+  if (type === "teleconsultation") return "Teleconsultation";
+  if (type === "nurse_checkin") return "Nurse Check-in";
+  return "Physical Visit";
 }
 
 function latestVitalsSummary(records: DailyVitalsRecord[]) {
@@ -192,6 +187,7 @@ export default function CareEpisodeRecoveryPage() {
   const [assessmentDates, setAssessmentDates] = useState<string[]>([]);
   const [taskDate, setTaskDate] = useState(() => localDateKey(new Date()));
   const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
+  const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
   const [reviewAlertId, setReviewAlertIdState] = useState<string | null>(null);
   const setReviewAlertId = (alertId: string | null) => setReviewAlertIdState(alertId);
   const [isLoading, setIsLoading] = useState(true);
@@ -199,6 +195,7 @@ export default function CareEpisodeRecoveryPage() {
   const [alertsError, setAlertsError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [isScheduleFollowUpOpen, setIsScheduleFollowUpOpen] = useState(false);
+  const [scheduledFollowUp, setScheduledFollowUp] = useState<ScheduledAppointmentResult | null>(null);
 
   useEffect(() => {
     if (episodeId) capturePostHogEvent("recovery_outcomes_viewed", { episode_id: episodeId });
@@ -267,17 +264,24 @@ export default function CareEpisodeRecoveryPage() {
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
-    getCareEpisodeTaskCompletion(episodeId, taskDate)
-      .then((result) => { if (!ignore) setTaskCompletion(result); })
-      .catch(() => { if (!ignore) setTaskCompletion(null); });
+    Promise.allSettled([
+      getCareEpisodeTaskCompletion(episodeId, taskDate),
+      getCareEpisodeTaskCompletionLog(episodeId, taskDate),
+    ]).then(([completionResult, logResult]) => {
+      if (ignore) return;
+      setTaskCompletion(completionResult.status === "fulfilled" ? completionResult.value : null);
+      setTaskCompletionLog(logResult.status === "fulfilled" ? logResult.value : null);
+    });
+
     return () => { ignore = true; };
   }, [episodeId, taskDate]);
 
   const todayKey = localDateKey(new Date());
   const dailyTasks = useMemo(
-    () => buildDailyTasks(episode?.currentCarePlan ?? null, taskDate === todayKey),
-    [episode, taskDate, todayKey],
+    () => buildCareTaskRows(episode?.currentCarePlan ?? null, { date: taskDate, completionLog: taskCompletionLog, medicationRecords: medications }),
+    [episode, medications, taskCompletionLog, taskDate],
   );
+  const savedWarningSigns = useMemo(() => getSavedWarningSignsFromPlan(episode?.currentCarePlan ?? null), [episode]);
   const selectedAlert = alerts.find((alert) => alert.id === reviewAlertId) ?? null;
   const reviewImpact = selectedAlert ? buildReviewImpact(selectedAlert, dailyVitals, medications) : null;
   const adherence = medications.length > 0
@@ -333,6 +337,10 @@ export default function CareEpisodeRecoveryPage() {
   const openScheduleFollowUp = () => {
     capturePostHogEvent("recovery_action_opened", { episode_id: episodeId, action: "schedule_follow_up" });
     setIsScheduleFollowUpOpen(true);
+  };
+  const handleFollowUpCreated = (appointment: ScheduledAppointmentResult) => {
+    setScheduledFollowUp(appointment);
+    setRefreshKey((key) => key + 1);
   };
 
   const acknowledgeSelectedAlert = async () => {
@@ -402,22 +410,103 @@ export default function CareEpisodeRecoveryPage() {
             <ActionButton icon={<CalendarPlus className="h-4 w-4" />} title="Schedule Follow-up" detail="Open appointment modal" onClick={openScheduleFollowUp} />
             <ActionButton icon={<Send className="h-4 w-4" />} title="Send Patient Instruction" detail="Open messaging module" onClick={() => openAction("send_instruction", `/dashboard/messages?${new URLSearchParams({ episodeId, patientId: episode.patientId, patientName: patient?.name || "Patient" })}`)} />
           </div></CardContent></Card>
-
+          {scheduledFollowUp ? (
+            <Card className="rounded-xl border-emerald-200 bg-emerald-50/70 shadow-sm">
+              <CardContent className="p-4 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-bold text-foreground">Follow-up scheduled</h2>
+                    <p className="mt-1 text-sm font-medium text-muted-foreground">
+                      {appointmentTypeLabel(scheduledFollowUp.type)} on {formatLongDate(scheduledFollowUp.date)} at {scheduledFollowUp.time}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => router.push(scheduledFollowUp.id ? `/dashboard/appointments/${encodeURIComponent(scheduledFollowUp.id)}` : "/dashboard/appointments")}
+                      className="mt-4 h-9 border-emerald-200 bg-white text-xs font-bold text-emerald-700 hover:bg-emerald-50"
+                    >
+                      Open in Appointments
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} - Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
             <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{displayedCompletedCount} / {displayedTaskCount} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${taskCompletionPercent}%` }} /></div>
             <div className="mt-4 space-y-3">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-center gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className="block text-xs font-medium text-muted-foreground">{task.sub || "No schedule supplied"}</span></span></div>)}</div>
             <p className="mt-4 flex items-center gap-1.5 text-xs font-medium text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Last synced {formatRelativeTime(episode.updatedAt)}</p>
           </CardContent></Card>
 
-          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><h2 className="flex items-center gap-1.5 text-base font-bold text-foreground"><AlertTriangle className="h-4 w-4 text-destructive" />Open Alerts</h2><span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span></div><div className="mt-4 space-y-3">{alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}{alerts.map((alert) => <div key={alert.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4"><div className="flex items-center justify-between"><span className="text-xs font-bold uppercase text-muted-foreground">{alert.severity}</span><span className="rounded-full bg-destructive px-2.5 py-0.5 text-[10px] font-bold text-destructive-foreground">OPEN</span></div><p className="mt-1.5 text-sm font-bold text-foreground">{alert.title}</p><p className="mt-1 text-xs font-medium text-muted-foreground">{alert.description}</p><p className="mt-2 text-xs font-medium text-muted-foreground">{alert.meta}</p><Button type="button" variant="outline" onClick={() => { setReviewAlertId(alert.id); capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id }); }} className="mt-3 h-9 w-full border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10">Review Impact</Button></div>)}</div></CardContent></Card>
+          <Card className="rounded-xl border-border bg-card shadow-sm">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="flex items-center gap-1.5 text-base font-bold text-foreground">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  Open Alerts
+                </h2>
+                <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : null}
+                {!alertsError && alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}
+                {alerts.map((alert) => (
+                  <div key={alert.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase text-muted-foreground">{alert.severity}</span>
+                      <span className="rounded-full bg-destructive px-2.5 py-0.5 text-[10px] font-bold text-destructive-foreground">OPEN</span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-bold text-foreground">{alert.title}</p>
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">{alert.description}</p>
+                    <p className="mt-2 text-xs font-medium text-muted-foreground">{alert.meta}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setReviewAlertId(alert.id);
+                        capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id });
+                      }}
+                      className="mt-3 h-9 w-full border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10"
+                    >
+                      Review Impact
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {savedWarningSigns.length > 0 ? (
+                <div className="mt-5 border-t border-border pt-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Patient guidance</p>
+                  <div className="mt-3 space-y-3">
+                    {savedWarningSigns.map((warning) => (
+                      <div key={warning.id} className="rounded-lg bg-destructive/5 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-foreground">{warning.title}</p>
+                          <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-destructive">{warning.severity}</span>
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">{warning.detail} - {warning.threshold}</p>
+                        {warning.response ? <p className="mt-2 text-xs font-semibold text-foreground/80">{warning.response}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       <ScheduleAppointmentModal
         open={isScheduleFollowUpOpen}
         onOpenChange={setIsScheduleFollowUpOpen}
-        onAppointmentCreated={() => setRefreshKey((key) => key + 1)}
+        onAppointmentCreated={handleFollowUpCreated}
         initialPatient={{ id: episode.patientId, name: patient?.name || "Patient" }}
+        initialAppointmentType="teleconsultation"
+        initialCareEpisodeId={episodeId}
         initialCareEpisodeLabel={`Care episode ${episode.id}`}
         initialReason="Recovery follow-up review"
         autoConfirm

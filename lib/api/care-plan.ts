@@ -46,6 +46,10 @@ function stringValue(record: JsonRecord, key: string, fallback = "") {
   return typeof record[key] === "string" ? record[key] : fallback;
 }
 
+function optionalNumber(record: JsonRecord, key: string) {
+  return typeof record[key] === "number" ? record[key] : undefined;
+}
+
 function normalizeCarePlan(value: unknown): CarePlan {
   if (!isRecord(value) || !stringValue(value, "id")) {
     throw new Error("The care plan response was invalid.");
@@ -81,6 +85,35 @@ function normalizeCarePlan(value: unknown): CarePlan {
     }
   }
 
+  const monitoringRules: CarePlan["monitoringRules"] = Array.isArray(value.monitoringRules)
+    ? value.monitoringRules.filter(isRecord).map((rule) => ({
+        type: stringValue(rule, "type") || undefined,
+        metric: stringValue(rule, "metric") || undefined,
+        min: typeof rule.min === "number" ? rule.min : null,
+        max: typeof rule.max === "number" ? rule.max : null,
+        severity: stringValue(rule, "severity") || undefined,
+        warningMessage: stringValue(rule, "warningMessage") || undefined,
+        responseInstruction: stringValue(rule, "responseInstruction") || null,
+        frequency: stringValue(rule, "frequency") || undefined,
+        cadence: stringValue(rule, "cadence") || undefined,
+        id: stringValue(rule, "id") || undefined,
+        taskId: stringValue(rule, "taskId") || null,
+      }))
+    : undefined;
+  const warningSigns: CarePlan["warningSigns"] = Array.isArray(value.warningSigns)
+    ? value.warningSigns.filter(isRecord).map((warning) => ({
+        type: stringValue(warning, "type", "warning"),
+        metric: stringValue(warning, "metric", "warning"),
+        severity: stringValue(warning, "severity", "warning"),
+        warningMessage: stringValue(warning, "warningMessage", "Warning sign"),
+        responseInstruction: stringValue(warning, "responseInstruction") || undefined,
+        min: optionalNumber(warning, "min"),
+        max: optionalNumber(warning, "max"),
+        carePlanRuleId: stringValue(warning, "carePlanRuleId") || undefined,
+        taskId: stringValue(warning, "taskId") || undefined,
+      }))
+    : undefined;
+
   return {
     id: stringValue(value, "id"),
     episodeId: stringValue(value, "episodeId"),
@@ -89,6 +122,8 @@ function normalizeCarePlan(value: unknown): CarePlan {
     medications,
     lifestyleRecommendations,
     monitoringFrequency: stringValue(value, "monitoringFrequency"),
+    monitoringRules,
+    warningSigns,
     episodeDuration: stringValue(value, "episodeDuration"),
     changeReason: stringValue(value, "changeReason"),
     isActive: value.isActive !== false,

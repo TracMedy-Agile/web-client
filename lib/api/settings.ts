@@ -10,10 +10,13 @@ export type HospitalProfileSettings = {
   facilityId: string;
   name: string;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
   contactEmail: string;
   contactPhone: string;
   timezone: string;
   logoUrl: string;
+  coverPhotoUrl: string;
 };
 
 export type NotificationPreferences = {
@@ -41,10 +44,13 @@ const defaultHospitalProfile: HospitalProfileSettings = {
   facilityId: "",
   name: "Lagos General Hospital",
   address: "12 Marina Road, Lagos Island, Lagos",
+  latitude: null,
+  longitude: null,
   contactEmail: "admin@lagosgeneral.ng",
   contactPhone: "+234 801 000 0001",
   timezone: "Africa/Lagos",
   logoUrl: "",
+  coverPhotoUrl: "",
 };
 
 export const defaultNotificationPreferences: NotificationPreferences = {
@@ -95,6 +101,16 @@ function nullableString(record: Record<string, unknown> | null, keys: string[], 
   return fallback;
 }
 
+function nullableNumber(record: Record<string, unknown> | null, keys: string[], fallback: number | null = null) {
+  if (!record) return fallback;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (value === null) return null;
+  }
+  return fallback;
+}
+
 function booleanFrom(record: Record<string, unknown>, keys: string[], fallback: boolean) {
   for (const key of keys) {
     const value = record[key];
@@ -123,23 +139,40 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
 }
 
 function normalizeHospitalProfile(payload: unknown): HospitalProfileSettings {
-  const record = asRecord(payload);
+  const root = asRecord(payload);
+  const record = asRecord(root?.data) ?? root;
   if (!record) return defaultHospitalProfile;
-  const contact = asRecord(record.contact) ?? record;
+  const facility = asRecord(record.facility) ?? asRecord(record.hospital) ?? record;
+  const contact = asRecord(facility.contact) ?? asRecord(record.contact) ?? facility;
 
   return {
-    facilityId: firstString(record, ["id", "facilityId", "hospitalId"], defaultHospitalProfile.facilityId),
-    name: firstString(record, ["name", "facilityName", "hospitalName"], defaultHospitalProfile.name),
-    address: nullableString(record, ["address", "location", "streetAddress"], defaultHospitalProfile.address),
+    facilityId: firstString(facility, ["id", "facilityId", "hospitalId"], defaultHospitalProfile.facilityId),
+    name: firstString(facility, ["name", "facilityName", "hospitalName"], defaultHospitalProfile.name),
+    address: nullableString(facility, ["address", "location", "streetAddress"], defaultHospitalProfile.address),
+    latitude: nullableNumber(facility, ["latitude"], defaultHospitalProfile.latitude),
+    longitude: nullableNumber(facility, ["longitude"], defaultHospitalProfile.longitude),
     contactEmail: nullableString(contact, ["contactEmail", "email", "adminEmail"], defaultHospitalProfile.contactEmail),
     contactPhone: nullableString(contact, ["contactPhone", "phone", "phoneNumber"], defaultHospitalProfile.contactPhone),
-    timezone: nullableString(record, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
-    logoUrl: nullableString(record, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
+    timezone: nullableString(facility, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
+    logoUrl: nullableString(facility, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
+    coverPhotoUrl: nullableString(facility, ["coverPhotoUrl", "coverPhoto", "coverUrl", "bannerUrl"], defaultHospitalProfile.coverPhotoUrl),
   };
 }
 
 export async function getHospitalProfileSettings(): Promise<HospitalProfileSettings> {
-  return normalizeHospitalProfile(await request("/auth/hospital"));
+  const profile = normalizeHospitalProfile(await request("/auth/hospital"));
+  if (!profile.facilityId) return profile;
+
+  try {
+    const facilityProfile = normalizeHospitalProfile(await request(`/facilities/${encodeURIComponent(profile.facilityId)}`));
+    return {
+      ...profile,
+      ...facilityProfile,
+      facilityId: profile.facilityId,
+    };
+  } catch {
+    return profile;
+  }
 }
 
 export async function updateHospitalProfileSettings(profile: HospitalProfileSettings): Promise<HospitalProfileSettings> {
@@ -152,6 +185,7 @@ export async function updateHospitalProfileSettings(profile: HospitalProfileSett
     contactPhone: profile.contactPhone.trim() || null,
     timezone: profile.timezone.trim() || null,
     logoUrl: profile.logoUrl.trim() || null,
+    coverPhotoUrl: profile.coverPhotoUrl.trim() || null,
   };
 
   return normalizeHospitalProfile(await request(`/facilities/${encodeURIComponent(profile.facilityId)}`, {
@@ -177,20 +211,30 @@ export async function updateHospitalLocation(facilityId: string, location: Facil
   };
 }
 
-export async function uploadHospitalLogo(facilityId: string, file: File): Promise<string> {
-  if (!facilityId) throw new Error("Unable to upload hospital logo because the facility ID is missing.");
+type FacilityUploadType = "logo" | "cover";
+
+async function uploadHospitalMedia(facilityId: string, file: File, type: FacilityUploadType): Promise<string> {
+  if (!facilityId) throw new Error(`Unable to upload hospital ${type === "logo" ? "logo" : "cover photo"} because the facility ID is missing.`);
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("type", "logo");
+  formData.append("type", type);
 
   const payload = asRecord(await request(`/facilities/${encodeURIComponent(facilityId)}/uploads`, {
     method: "POST",
     body: formData,
   })) as FacilityUploadResponseDto | null;
 
-  if (!payload?.url) throw new Error("The logo upload response did not include a URL.");
+  if (!payload?.url) throw new Error(`The ${type === "logo" ? "logo" : "cover photo"} upload response did not include a URL.`);
   return payload.url;
+}
+
+export async function uploadHospitalLogo(facilityId: string, file: File): Promise<string> {
+  return uploadHospitalMedia(facilityId, file, "logo");
+}
+
+export async function uploadHospitalCoverPhoto(facilityId: string, file: File): Promise<string> {
+  return uploadHospitalMedia(facilityId, file, "cover");
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

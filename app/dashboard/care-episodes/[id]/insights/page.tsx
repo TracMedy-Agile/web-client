@@ -39,6 +39,7 @@ import {
   getCareEpisodeById,
   getCareEpisodeCheckins,
   getCareEpisodeDailyVitals,
+  getCareEpisodeLabResults,
   getCareEpisodeMedia,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeMedicationLogs,
@@ -49,6 +50,7 @@ import {
   type CareEpisodeDetail,
   type CheckInHistoryRecord,
   type DailyVitalsRecord,
+  type EpisodeLabResult,
   type EpisodeMediaItem,
   type MedicationAdherenceRecord,
   type MedicationLogHistory,
@@ -302,12 +304,29 @@ const MEDIA_STATUS_BADGE: Record<ClinicalMediaItem["status"], string> = {
   "Pending review": "bg-amber-50 text-amber-500",
 };
 
+const LAB_RESULT_STATUS_BADGE: Record<EpisodeLabResult["status"], string> = {
+  pending: "bg-amber-50 text-amber-600",
+  received: "bg-blue-50 text-primary",
+  reviewed: "bg-emerald-50 text-emerald-600",
+  flagged: "bg-red-50 text-red-500",
+};
+
 function formatDateTimeLabel(value: string) {
   const parsed = value ? Date.parse(value) : NaN;
   if (!Number.isFinite(parsed)) return "--";
   const date = new Date(parsed);
   const datePart = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
   return `${datePart} - ${formatTime(value)}`;
+}
+
+function formatLabResultTitle(result: EpisodeLabResult) {
+  return result.testName || result.labName || "Uploaded lab result";
+}
+
+function formatLabResultMeta(result: EpisodeLabResult) {
+  const labName = result.labName && result.labName !== result.testName ? result.labName : "";
+  const observedAt = formatDateTimeLabel(result.observedAt);
+  return [labName, observedAt !== "--" ? `Observed ${observedAt}` : ""].filter(Boolean).join(" - ");
 }
 
 // The care-episode API only exposes images attached to the patient's latest check-in
@@ -462,6 +481,20 @@ function getMedicationStatus(medication: MedicationAdherenceRecord) {
   return { label: "Taken", className: "bg-emerald-50 text-emerald-500", barColor: "var(--color-emerald-500)" };
 }
 
+function formatMedicationSourceLabel(source?: string) {
+  const normalized = source?.trim();
+  if (!normalized) return "";
+  const key = normalized.toLowerCase().replace(/[\s-]+/g, "_");
+  const labels: Record<string, string> = {
+    care_plan: "Care Plan",
+    patient: "Patient-entered",
+    patient_entered: "Patient-entered",
+    manual: "Manual",
+    clinician: "Clinician",
+    medication_module: "Medication Module",
+  };
+  return labels[key] ?? normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 function formatAiTimestamp(value?: string) {
   if (!value) return "Not generated yet";
@@ -514,6 +547,8 @@ export default function CareEpisodeInsightsPage() {
   const [vitalsLoading, setVitalsLoading] = useState(true);
   const [checkins, setCheckins] = useState<CheckInHistoryRecord[]>([]);
   const [mediaHistory, setMediaHistory] = useState<EpisodeMediaItem[]>([]);
+  const [labResults, setLabResults] = useState<EpisodeLabResult[]>([]);
+  const [labResultsLoading, setLabResultsLoading] = useState(true);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEventRecord[]>([]);
 
   const [biometricMetric, setBiometricMetric] = useState<BiometricMetric>("Blood Pressure");
@@ -669,21 +704,27 @@ export default function CareEpisodeInsightsPage() {
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
-    Promise.allSettled([
-      getCareEpisodeCheckins(episodeId),
-      getCareEpisodeMedia(episodeId),
-      getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
-    ]).then(([checkinResult, mediaResult, timelineResult]) => {
+
+    (async () => {
+      setLabResultsLoading(true);
+      const [checkinResult, mediaResult, labResultsResult, timelineResult] = await Promise.allSettled([
+        getCareEpisodeCheckins(episodeId),
+        getCareEpisodeMedia(episodeId),
+        getCareEpisodeLabResults(episodeId),
+        getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
+      ]);
       if (ignore) return;
       setCheckins(checkinResult.status === "fulfilled" ? checkinResult.value : []);
       setMediaHistory(mediaResult.status === "fulfilled" ? mediaResult.value : []);
+      setLabResults(labResultsResult.status === "fulfilled" ? labResultsResult.value : []);
       setTimelineEvents(timelineResult.status === "fulfilled" ? timelineResult.value.data : []);
-    });
+      setLabResultsLoading(false);
+    })();
+
     return () => {
       ignore = true;
     };
   }, [episodeId, refreshKey]);
-
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
@@ -765,6 +806,7 @@ export default function CareEpisodeInsightsPage() {
     vitalCards.some((vital) => vital.display !== "--") ? "Vitals" : null,
     medications.length > 0 ? "Medication" : null,
     clinicalMedia.length > 0 ? "Clinical Media" : null,
+    labResults.length > 0 ? "Lab Results" : null,
     symptoms.length > 0 ? "Symptoms" : null,
     patientNotes.length > 0 ? "Patient Notes" : null,
   ].filter((source): source is string => Boolean(source));
@@ -1089,9 +1131,16 @@ export default function CareEpisodeInsightsPage() {
                               <span className="ml-2 text-xs font-medium text-slate-500">{medication.dosageStrength}</span>
                             ) : null}
                           </p>
-                          <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", status.className)}>
-                            {status.label}
-                          </span>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {medication.source ? (
+                              <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+                                {formatMedicationSourceLabel(medication.source)}
+                              </span>
+                            ) : null}
+                            <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", status.className)}>
+                              {status.label}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
@@ -1216,6 +1265,55 @@ export default function CareEpisodeInsightsPage() {
         </Card>
       </div>
 
+      <Card className="rounded-xl border-border bg-white shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <h2 className="text-base font-bold text-slate-900">Laboratory Results</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">Patient-uploaded results linked to this care episode</p>
+          <div className="mt-4 space-y-3">
+            {labResultsLoading ? (
+              Array.from({ length: 2 }).map((_, index) => (
+                <div key={index} className="h-20 animate-pulse rounded-lg bg-slate-100" />
+              ))
+            ) : labResults.length === 0 ? (
+              <p className="py-8 text-center text-sm font-medium text-slate-500">No lab results uploaded yet.</p>
+            ) : (
+              labResults.map((result) => (
+                <div key={result.id} className="rounded-lg border border-slate-200 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-primary">
+                        <FlaskConical className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{formatLabResultTitle(result)}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">{formatLabResultMeta(result) || "Date not provided"}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">Uploaded {formatDateTimeLabel(result.createdAt)}</p>
+                        {result.notes ? <p className="mt-2 text-sm font-medium italic text-slate-600">{result.notes}</p> : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold uppercase", LAB_RESULT_STATUS_BADGE[result.status])}>
+                        {result.status.replaceAll("_", " ")}
+                      </span>
+                      {result.fileUrl ? (
+                        <a
+                          href={result.fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`Open ${formatLabResultTitle(result)}`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-slate-500 hover:bg-slate-50"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <h2 className="text-base font-bold text-slate-900">Clinical Media</h2>

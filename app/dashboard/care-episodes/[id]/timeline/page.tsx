@@ -21,13 +21,21 @@ import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   getCareEpisodeById,
+  getCareEpisodeMedicationAdherence,
+  getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
   getString,
   type CareEpisodeDetail,
+  type MedicationAdherenceRecord,
+  type TaskCompletionLog,
   type TimelineEventRecord,
 } from "@/lib/api/care-episodes";
 import { CareEpisodeSubHeader, SubHeaderSkeleton } from "../_shared/SubHeader";
 import { formatTime, humanizeSlug } from "../_shared/utils";
+import {
+  buildMedicationCompletionTimelineEvents,
+  mergeTimelineWithMedicationCompletionEvents,
+} from "../_shared/taskCompletion";
 
 type EventCategory = "critical" | "completed" | "clinician" | "missed" | "pending";
 
@@ -90,6 +98,13 @@ function getEventDescription(event: TimelineEventRecord) {
   return getString(event.payload, ["details", "description", "note", "summary"]);
 }
 
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getGroupLabel(timestamp: string) {
   const parsed = Date.parse(timestamp);
   if (!Number.isFinite(parsed)) return "Earlier";
@@ -113,6 +128,8 @@ export default function CareEpisodeTimelinePage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [events, setEvents] = useState<TimelineEventRecord[]>([]);
+  const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
+  const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [totalEvents, setTotalEvents] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -167,6 +184,36 @@ export default function CareEpisodeTimelinePage() {
       ignore = true;
     };
   }, [episodeId, refreshKey]);
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    getCareEpisodeMedicationAdherence(episodeId)
+      .then((records) => {
+        if (!ignore) setMedicationRecords(records);
+      })
+      .catch(() => {
+        if (!ignore) setMedicationRecords([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [episodeId, refreshKey]);
+
+  useEffect(() => {
+    if (!episodeId) return;
+    let ignore = false;
+    const selectedDate = dateFilter || localDateKey(new Date());
+    getCareEpisodeTaskCompletionLog(episodeId, selectedDate)
+      .then((log) => {
+        if (!ignore) setTaskCompletionLog(log);
+      })
+      .catch(() => {
+        if (!ignore) setTaskCompletionLog(null);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [dateFilter, episodeId, refreshKey]);
 
   useEffect(() => {
     if (!episodeId) return;
@@ -222,31 +269,50 @@ export default function CareEpisodeTimelinePage() {
     };
   }, [episodeId, page, statusFilter, eventTypeFilter, sourceFilter, dateFilter, refreshKey]);
 
+  const timelineDate = dateFilter || localDateKey(new Date());
+  const medicationCompletionEvents = useMemo(() => {
+    if (!episode) return [];
+    return buildMedicationCompletionTimelineEvents(episode.id || episodeId, episode.currentCarePlan, taskCompletionLog, medicationRecords, timelineDate);
+  }, [episode, episodeId, medicationRecords, taskCompletionLog, timelineDate]);
+  const filterOptionEventsWithMedication = useMemo(
+    () => mergeTimelineWithMedicationCompletionEvents(filterOptionEvents, medicationCompletionEvents),
+    [filterOptionEvents, medicationCompletionEvents],
+  );
+  const eventsWithMedicationCompletion = useMemo(() => {
+    const filteredMedicationEvents = medicationCompletionEvents.filter((event) => {
+      if (statusFilter !== "All Status" && event.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+      if (eventTypeFilter !== "Event Types" && event.eventType !== eventTypeFilter) return false;
+      if (sourceFilter !== "Source" && event.source !== sourceFilter) return false;
+      return true;
+    });
+    return mergeTimelineWithMedicationCompletionEvents(events, filteredMedicationEvents);
+  }, [events, eventTypeFilter, medicationCompletionEvents, sourceFilter, statusFilter]);
+
   const statusOptions = useMemo(() => {
-    const values = new Set(filterOptionEvents.map((event) => event.status));
+    const values = new Set(filterOptionEventsWithMedication.map((event) => event.status));
     return Array.from(values).filter(Boolean);
-  }, [filterOptionEvents]);
+  }, [filterOptionEventsWithMedication]);
 
   const eventTypeOptions = useMemo(() => {
-    const values = new Set(filterOptionEvents.map((event) => event.eventType));
+    const values = new Set(filterOptionEventsWithMedication.map((event) => event.eventType));
     return Array.from(values).filter(Boolean);
-  }, [filterOptionEvents]);
+  }, [filterOptionEventsWithMedication]);
 
   const sourceOptions = useMemo(() => {
-    const values = new Set(filterOptionEvents.map((event) => event.source));
+    const values = new Set(filterOptionEventsWithMedication.map((event) => event.source));
     return Array.from(values).filter(Boolean);
-  }, [filterOptionEvents]);
+  }, [filterOptionEventsWithMedication]);
 
   // Structured filters (status/eventType/source/date) and pagination are applied server-side
   // via query params. Free-text search has no API equivalent, so it narrows the current page only.
   const filteredEvents = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return events;
-    return events.filter((event) => {
+    if (!query) return eventsWithMedicationCompletion;
+    return eventsWithMedicationCompletion.filter((event) => {
       const haystack = `${getEventTitle(event)} ${getEventDescription(event)}`.toLowerCase();
       return haystack.includes(query);
     });
-  }, [events, search]);
+  }, [eventsWithMedicationCompletion, search]);
 
   const currentPage = Math.min(page, totalPages);
 

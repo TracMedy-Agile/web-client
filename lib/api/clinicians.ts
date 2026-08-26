@@ -57,6 +57,7 @@ export type ClinicianSearchResult = {
   id: string;
   name: string;
   department: string;
+  avatarUrl: string;
 };
 
 export type ClinicianDirectoryEntry = ApiClinicianListItem;
@@ -99,6 +100,7 @@ export async function getFacilityClinicians(params?: {
     assignedAppointments: numberValue(item, "assignedAppointments"),
     capacityUtilization: numberValue(item, "capacityUtilization"),
     status: (value(item, ["status"], "available") as ApiClinicianListItem["status"]),
+    avatarUrl: value(item, ["avatarUrl", "photoUrl", "imageUrl"]),
   })).filter((item) => item.id);
 }
 
@@ -181,6 +183,7 @@ export async function searchClinicians(query: string): Promise<ClinicianSearchRe
     id: value(item, ["id"]),
     name: value(item, ["name"], "Unnamed clinician"),
     department: value(item, ["department"]),
+    avatarUrl: value(item, ["avatarUrl", "photoUrl", "imageUrl"]),
   })).filter((item) => item.id);
 }
 
@@ -197,12 +200,13 @@ export async function getClinicianDirectory(limit = 100): Promise<Record<string,
       id,
       name: value(item, ["name"], "Unnamed clinician"),
       department: value(item, ["department"]),
+      avatarUrl: value(item, ["avatarUrl", "photoUrl", "imageUrl"]),
     };
   }
 
   return directory;
 }
-export type TeamMember = components["schemas"]["TeamMemberRowDto"];
+export type TeamMember = components["schemas"]["TeamMemberRowDto"] & { avatarUrl?: string | null };
 export type InviteTeamMemberInput = components["schemas"]["InviteTeamMemberDto"];
 export type InviteTeamMemberResult = components["schemas"]["InviteResultDto"];
 export type UpdateTeamMemberInput = components["schemas"]["UpdateTeamMemberDto"];
@@ -250,7 +254,15 @@ function teamRowsFromPayload(payload: unknown): TeamMember[] {
 }
 
 export async function getTeamMembers(): Promise<TeamMember[]> {
-  return teamRowsFromPayload(await teamRequest("/team/members"));
+  const members = teamRowsFromPayload(await teamRequest("/team/members"));
+  const directory: Record<string, ClinicianSearchResult> = await getClinicianDirectory().catch(() => ({}));
+
+  return members.map((member) => {
+    const record = member as unknown as UnknownRecord;
+    const clinician = directory[member.userId] ?? directory[member.id] ?? directory[getTeamMemberRequestId(member)];
+    const avatarUrl = value(record, ["avatarUrl", "photoUrl", "imageUrl"]) || clinician?.avatarUrl || null;
+    return avatarUrl ? { ...member, avatarUrl } : member;
+  });
 }
 
 export async function getTeamMember(id: string): Promise<TeamMember> {

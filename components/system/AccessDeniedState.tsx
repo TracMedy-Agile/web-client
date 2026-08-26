@@ -36,7 +36,7 @@ export default function AccessDeniedState({
         </div>
 
         <h2 id="access-denied-title" className="text-2xl font-bold text-foreground md:text-[28px]">
-          Access Denied
+          Access Restricted
         </h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground md:text-lg">
           You do not have permission to access this page.

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AccessDeniedState from "@/components/system/AccessDeniedState";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
@@ -128,15 +129,12 @@ const PERMISSION_GROUPS = [
     icon: Stethoscope,
     bgColor: "bg-blue-50",
     permissions: [
-      { label: "View patients", key: "care_episode" },
-      { label: "View care episodes", key: "care_episode" },
-      { label: "Manage care episodes", key: "care_episode" },
+      { label: "Connected patients", key: "connected_patients" },
+      { label: "Care episodes", key: "care_episode" },
       { label: "View appointments", key: "appointments" },
       { label: "Manage appointments", key: "appointments" },
-      { label: "View alerts", key: "care_episode" },
-      { label: "Acknowledge alerts", key: "care_episode" },
-      { label: "View messages", key: "care_episode" },
-      { label: "Send messages", key: "care_episode" },
+      { label: "Alerts", key: "alerts" },
+      { label: "Messages", key: "messages" },
     ],
   },
   {
@@ -162,7 +160,7 @@ const PERMISSION_GROUPS = [
 ] as const;
 
 function hasPermission(member: TeamMember, permission: string) {
-  return member.permissions.includes("full_system_access") || member.permissions.includes(permission);
+  return member.accessProfile === "full_access" || member.permissions.includes("full_system_access") || member.permissions.includes(permission);
 }
 
 function channelsFromPreference(preference: EscalationPreference | null, member: TeamMember | null): EscalationChannel[] {
@@ -214,6 +212,8 @@ export default function TeamMemberPage() {
   const [error, setError] = useState<unknown | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [escalationError, setEscalationError] = useState<string | null>(null);
+  const [editAccessDenied, setEditAccessDenied] = useState(false);
+  const { hasPermission: hasCurrentUserPermission } = useDashboardUser();
 
   const loadActivity = useCallback(async (targetMember: TeamMember, pageNum = 1, append = false) => {
     const requestMemberId = getTeamMemberRequestId(targetMember);
@@ -296,6 +296,10 @@ export default function TeamMemberPage() {
     }
   }
 
+  if (editAccessDenied) {
+    return <AccessDeniedState description="Hospital settings permission is required to edit team member profiles and permissions." />;
+  }
+
   if (isLoading) return <MemberSkeleton />;
   if (isAccessDeniedError(error)) {
     return <AccessDeniedState description="This team member profile is available to users granted team-management access by the hospital." />;
@@ -363,6 +367,8 @@ export default function TeamMemberPage() {
             status={member.status}
             accessProfile={member.accessProfile}
             permissions={member.permissions}
+            canEditMember={hasCurrentUserPermission("configure_settings")}
+            onAccessDenied={() => setEditAccessDenied(true)}
             onChanged={loadProfile}
           />
         </div>

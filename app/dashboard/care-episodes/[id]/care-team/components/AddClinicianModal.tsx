@@ -147,8 +147,11 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
                   return (
                     <article key={clinician.id} className="flex flex-col gap-4 rounded-xl border border-border bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex min-w-0 items-center gap-4">
-                        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm" style={{ backgroundColor: getAvatarColor(clinician.name || "Clinician") }}>
-                          {getInitials(clinician.name || "Clinician")}
+                        <span
+                          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-cover bg-center text-base font-bold text-white shadow-sm"
+                          style={clinician.avatarUrl ? { backgroundImage: `url(${clinician.avatarUrl})` } : { backgroundColor: getAvatarColor(clinician.name || "Clinician") }}
+                        >
+                          {clinician.avatarUrl ? null : getInitials(clinician.name || "Clinician")}
                         </span>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
