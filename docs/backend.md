@@ -1,6 +1,6 @@
 # Backend Gaps Blocking Web-Client Screens
 
-Re-audited 2026-08-19. This tracks backend contract gaps and bugs that affect *built* hospital web-client screens — written for whoever is working on web-client, not the backend team. Each entry leads with what you'll actually see on the screen, then the backend reason, then what (if anything) to do about it. Re-check an entry against current backend code before assuming it's still open — several already got fixed mid-session (see "Resolved" at the bottom).
+Re-audited 2026-08-19, with a further pass removing entries confirmed fixed since. This tracks backend contract gaps and bugs that affect *built* hospital web-client screens — written for whoever is working on web-client, not the backend team. Each entry leads with what you'll actually see on the screen, then the backend reason, then what (if anything) to do about it. Re-check an entry against current backend code before assuming it's still open — this list only reflects what was verified still-broken as of the last edit; fixes can land at any time. Fixed entries are removed outright rather than kept as a changelog.
 
 ---
 
@@ -40,39 +40,27 @@ Re-audited 2026-08-19. This tracks backend contract gaps and bugs that affect *b
 
 ---
 
-## Appointment Details: Patient Information card
-
-**What you'll see:** the "Age / Gender" field always renders `--`, even though Name/Email/Phone show correctly for the same patient.
-
-**Why:** `GET /appointments/{id}` (`appointment.service.ts:368`, `findOne`) selects only `{ id, name, email, phone }` on the patient relation — `dateOfBirth`/`gender` are never fetched, so the API response genuinely has no value to render. Confirmed this against the live Prisma query, not just the (stale) published OpenAPI spec, which doesn't even document a `patient` object on this endpoint at all.
-
-**Frontend status:** nothing to fix — this is a missing field in the API response.
-
-**Blocked on:** adding `dateOfBirth`/`gender` to that `select` (both fields already exist on the user model and are used elsewhere, e.g. `PatientIdentityDto`).
-
----
-
 ## Team → Permissions (Invite/Edit member, member profile tab)
 
-**What you'll see:** unchecking "Manage Patients," "View Care Episodes," "Acknowledge alerts," etc. for a staff member has no effect — they can still access Connected Patients, Care Episodes, Appointments, Alerts, Messages, and Reports/Analytics regardless of what's unchecked. Only removing Team Management or Audit Log access actually produces Access Denied.
+**What you'll see:** unchecking "Manage Patients," "View Care Episodes," "Acknowledge alerts," etc. for a staff member has no effect on the backend — they can still hit every API route regardless of what's unchecked. Only removing Team Management or Audit Log access actually produces a backend 403. As of this fix, unchecking them also no longer blocks the *page* client-side either (see Frontend status) — previously it did, and worse.
 
-**Why:** the enforcement mechanism (`TeamPermissionGuard`) works correctly, but `@TeamPermissionRequired(...)` is only wired onto two controllers — `team.controller.ts` and `audit.controller.ts`. The other three grantable permissions (`care_episode`, `appointments`, `view_all_reports`) are stored on the staff record but never checked by any route.
+**Why:** the enforcement mechanism (`TeamPermissionGuard`) works correctly, but `@TeamPermissionRequired(...)` is only wired onto two controllers — `team.controller.ts` and `audit.controller.ts`. The other permissions (`care_episode`, `appointments`, `view_all_reports`, `configure_settings`) are stored on the staff record but never checked by any route.
 
-**Frontend status:** nothing to fix on our end — the checkboxes correctly send the right values, the backend just doesn't act on most of them yet. Separately (not backend's problem, just worth knowing): the "Clinical Care" group shows 9 checkboxes that all collapse onto the single `care_episode` value — there's no way to make "Acknowledge alerts" independent of "View alerts" until the permission model itself gets more granular, which isn't currently planned.
+**Frontend status:** `DashboardPermissionGuard.tsx`'s `GUARDED_ROUTES` previously blocked whole pages (Connected Patients, Care Episodes, Appointments, Alerts, Messages, Reports, Settings) based on these same unenforced permissions — and three of them (`connected_patients`, `alerts`, `messages`) could *never* be satisfied at all, because the Team edit UI collapses those specific checkboxes into the single `care_episode` value on save (`TeamMemberActions.tsx`), so the backend never stores those literal strings. Any clinician without full access was permanently locked out of those three pages, with no checkbox able to restore it. Fixed by narrowing `GUARDED_ROUTES` to only the two permissions the backend actually enforces (`manage_team_members`, `audit_log`) — everything else is intentionally left open client-side until the backend adds real checks, to match actual (unenforced) reality instead of being stricter than the backend for no security benefit. Separately (not backend's problem, just worth knowing): the "Clinical Care" group shows 9 checkboxes that all collapse onto the single `care_episode` value — there's no way to make "Acknowledge alerts" independent of "View alerts" until the permission model itself gets more granular, which isn't currently planned.
 
 **Blocked on:** backend adding `@TeamPermissionRequired(TeamPermission.CARE_EPISODE)` / `.APPOINTMENTS` / `.VIEW_ALL_REPORTS` to the relevant controllers.
 
 ---
 
-## Anywhere a clinician's photo/initials show (Team, Care Team, Reports, appointment scheduling)
+## Settings -> Hospital Profile: address saves, but facility coordinates stay null
 
-**What you'll see:** only the *logged-in* user's own avatar (top-right Navbar) can ever show a real photo. Every other clinician — Team list, Care Team member cards, Clinician Workload/Reports, appointment scheduling pickers — always shows initials, even for clinicians who've uploaded a profile photo.
+**What you'll see:** saving the Hospital Profile persists the typed address, logo, and cover photo, but `GET /facilities/{id}` still returns `latitude: null` and `longitude: null`.
 
-**Why:** `User.avatarUrl` exists and is populated (confirmed in `schema.prisma`, returned by `/auth/me` and `/profile/me`), but every endpoint that lists *other* clinicians drops it in mapping — `ClinicianListItemDto`/`ClinicianProfileResponseDto` (`clinicians.service.ts`, `mapClinicianListItem`) and `CareTeamMemberDto` have no `avatarUrl` field at all, even though the underlying query already fetches the full user row.
+**Why:** the backend location endpoint exists and accepts coordinates (`PATCH /facilities/{id}/location`), but the current Settings screen only has a plain address text input. A typed address does not produce latitude/longitude, so the web client has no real coordinates to send. After verification returned null coordinates, the frontend was guarded so manual address saves do not PATCH `null` and accidentally clear facility location.
 
-**Frontend status:** the Navbar fix (own avatar) is done and live. No further frontend work possible until the other DTOs carry the field.
+**Frontend status:** partial wiring exists. The Settings page can store coordinates and call `PATCH /facilities/{id}/location` when an in-app address picker provides a `{ address, latitude, longitude }` selection event. The task is not complete until a real address picker/geocoder source is available and `GET /facilities/{id}` returns numeric latitude/longitude after save.
 
-**Blocked on:** backend adding `avatarUrl` to those three DTOs — this is a mapping-layer omission, not a new query, so should be a quick fix.
+**Blocked on:** adding or approving a coordinate source for the address picker. This can be either an in-app picker component that emits coordinates, or a backend/geocoding contract that converts selected addresses to coordinates. Expected verified state: `latitude` and `longitude` are numbers, not `null`.
 
 ---
 

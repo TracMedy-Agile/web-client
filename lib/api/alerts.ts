@@ -29,8 +29,17 @@ import { generateAlertInsight } from "@/lib/api/ai";
 export type AlertSeverity = "critical" | "moderate" | "low";
 export type AlertStatus = "active" | "resolved";
 
-export type ClinicalAlert = {
-  id: string;
+export type ThresholdAlertDetail = {
+  label: string;
+  value: string;
+  threshold: string;
+  warningMessage: string;
+  responseInstruction: string;
+  ruleSource: string;
+  severity: string;
+};
+
+export type ClinicalAlert = {  id: string;
   episodeId: string;
   patientId: string;
   patientName: string;
@@ -46,6 +55,7 @@ export type ClinicalAlert = {
   riskScore: number | null;
   riskCategory: string | null;
   riskTrend: string | null;
+  thresholdDetails: ThresholdAlertDetail[];
 };
 
 export type AlertsSnapshot = {
@@ -70,6 +80,7 @@ export type AlertReviewImpact = {
   riskCategory: string | null;
   trend: string;
   evidence: AlertReviewEvidence[];
+  thresholdDetails: ThresholdAlertDetail[];
   analysisSummary: string;
   generatedAt: string;
   suggestedReview: string[];
@@ -237,6 +248,146 @@ function humanize(value: string) {
     .replaceAll("-", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
+function humanizeClinicalKey(value: string) {
+  return humanize(value)
+    .replace(/\bBp\b/g, "BP")
+    .replace(/\bSpo2\b/g, "SpO2")
+    .replace(/\bHr\b/g, "HR");
+}
+
+function hasPresentField(record: ApiRecord, keys: string[]) {
+  return keys.some((key) => {
+    const value = record[key];
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== "";
+  });
+}
+
+function getSymptomLabels(triggerData: ApiRecord) {
+  const symptoms = Array.isArray(triggerData.symptoms) ? triggerData.symptoms : [];
+  return symptoms
+    .map(asRecord)
+    .filter((record): record is ApiRecord => Boolean(record))
+    .map((record) => getString(record, ["type", "name", "label", "symptom"]))
+    .filter(Boolean)
+    .map(humanizeClinicalKey);
+}
+
+function formatTriggerSource(alert: AlertApiRecord) {
+  const triggerData = alert.triggerData;
+  const source = alert.triggerSource.toLowerCase();
+  const type = alert.type.toLowerCase();
+  const triggerText = `${source} ${type}`;
+
+  if (
+    triggerText.includes("medication") ||
+    hasPresentField(triggerData, ["medicationId", "medicationName", "consecutiveMissed"])
+  ) {
+    const medicationName = getString(triggerData, ["medicationName"]);
+    return medicationName ? `Medication: ${medicationName}` : "Medication";
+  }
+
+  if (
+    triggerText.includes("symptom") ||
+    hasPresentField(triggerData, ["symptoms", "highestSeverity", "breaches"])
+  ) {
+    const symptomLabels = getSymptomLabels(triggerData);
+    return symptomLabels.length > 0
+      ? `Symptoms: ${symptomLabels.slice(0, 2).join(", ")}`
+      : "Symptoms";
+  }
+
+  if (triggerText.includes("checkin") || triggerText.includes("check in") || hasPresentField(triggerData, ["consecutiveMisses"])) {
+    return "Patient Check-in";
+  }
+
+  if (triggerText.includes("task") || hasPresentField(triggerData, ["taskId", "carePlanTaskKey"])) {
+    return "Care Plan";
+  }
+
+  if (triggerText.includes("gap") || hasPresentField(triggerData, ["lastActivity", "gapHours"])) {
+    return "Patient Activity";
+  }
+
+  if (
+    triggerText.includes("vital") ||
+    triggerText.includes("biometric") ||
+    hasPresentField(triggerData, ["metric", "vital", "value", "min", "max", "threshold"])
+  ) {
+    return "Vitals";
+  }
+
+  const fallback = humanizeClinicalKey(alert.triggerSource || alert.type || "Patient Data");
+  return fallback === "Clinical Monitoring" ? "Patient Data" : fallback;
+}
+
+
+function getTriggerValue(record: ApiRecord): string {
+  const direct = record.value;
+  if (typeof direct === "number" && Number.isFinite(direct)) return String(direct);
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const highestSeverity = getNumber(record, ["highestSeverity"]);
+  if (highestSeverity !== null) return String(highestSeverity);
+  const consecutiveMissed = getNumber(record, ["consecutiveMissed", "consecutiveMisses"]);
+  if (consecutiveMissed !== null) return String(consecutiveMissed);
+  return "Not supplied";
+}
+
+function getThresholdLabel(record: ApiRecord): string {
+  const threshold = record.threshold;
+  if (typeof threshold === "number" && Number.isFinite(threshold)) return String(threshold);
+  if (typeof threshold === "string" && threshold.trim()) return threshold.trim();
+  const min = getNumber(record, ["min"]);
+  const max = getNumber(record, ["max"]);
+  if (min !== null && max !== null) return `${min} - ${max}`;
+  if (min !== null) return `Minimum ${min}`;
+  if (max !== null) return `Maximum ${max}`;
+  return "Not supplied";
+}
+
+function hasThresholdContext(record: ApiRecord): boolean {
+  return hasPresentField(record, ["value", "min", "max", "threshold", "warningMessage", "responseInstruction", "highestSeverity", "consecutiveMissed", "consecutiveMisses"]);
+}
+
+function buildThresholdAlertDetails(triggerData: ApiRecord): ThresholdAlertDetail[] {
+  const breaches = Array.isArray(triggerData.breaches)
+    ? triggerData.breaches.map(asRecord).filter((record): record is ApiRecord => Boolean(record))
+    : [];
+  const source = [triggerData, ...breaches].filter(hasThresholdContext);
+  const unique = new Map<string, ThresholdAlertDetail>();
+
+  source.forEach((record, index) => {
+    const metric = getString(record, ["vital", "metric", "type"], index === 0 ? "Alert trigger" : `Breach ${index}`);
+    const label = humanizeClinicalKey(metric || "Alert trigger");
+    const detail: ThresholdAlertDetail = {
+      label,
+      value: getTriggerValue(record),
+      threshold: getThresholdLabel(record),
+      warningMessage: getString(record, ["warningMessage"]),
+      responseInstruction: getString(record, ["responseInstruction"]),
+      ruleSource: getString(record, ["ruleSource"], "default"),
+      severity: getString(record, ["severity"], "threshold").toUpperCase(),
+    };
+    const key = `${detail.label}-${detail.value}-${detail.threshold}-${detail.warningMessage}`;
+    unique.set(key, detail);
+  });
+
+  return Array.from(unique.values());
+}
+
+function buildThresholdEvidence(details: ThresholdAlertDetail[]): AlertReviewEvidence[] {
+  return details.flatMap((detail) => {
+    const rows: AlertReviewEvidence[] = [{
+      label: `${detail.label} breach`,
+      value: `${detail.value} against ${detail.threshold}`,
+      status: detail.severity || "THRESHOLD",
+    }];
+    if (detail.warningMessage) {
+      rows.push({ label: "Clinician warning", value: detail.warningMessage, status: "RECORDED" });
+    }
+    return rows;
+  });
+}
 function getPatientLabel(patientId: string, directory: Record<string, ConnectedPatientRecord>) {
   const patient = directory[patientId];
   if (patient) {
@@ -277,7 +428,7 @@ function toAlert(
     patientName: patientDirectory[alert.patientId] ? patient.name : alert.patientName,
     patientCode: patient.code,
     reason,
-    triggerSource: humanize(alert.triggerSource),
+    triggerSource: formatTriggerSource(alert),
     severity: normalizeSeverity(alert.severity),
     assignedClinician: clinician,
     timestamp: alert.status === "open" ? alert.createdAt : alert.acknowledgedAt || alert.createdAt,
@@ -287,6 +438,7 @@ function toAlert(
     riskScore: episode?.riskScore ?? null,
     riskCategory: episode?.riskCategory ?? null,
     riskTrend: episode?.riskTrend ?? null,
+    thresholdDetails: buildThresholdAlertDetails(alert.triggerData),
   };
 }
 export async function getAlertsSnapshot(): Promise<AlertsSnapshot> {
@@ -493,6 +645,7 @@ export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertR
   const patientCode = detail?.patient?.hospitalId ? `ID: ${detail.patient.hospitalId}` : alert.patientCode;
   const events = [...(sync?.events ?? []), ...(timeline?.data ?? [])];
   const severity = alert.severity.toUpperCase();
+  const thresholdEvidence = buildThresholdEvidence(alert.thresholdDetails);
   const endpointEvidence = buildEndpointEvidence(backendImpact);
   const aiEvidence = getStringList(backendImpact, "supportingEvidence")
     .map((value) => ({ label: "AI supporting evidence", value, status: "RECORDED" }));
@@ -501,6 +654,7 @@ export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertR
   const backendSignals = getStringList(backendImpact, "trends")
     .map((value) => ({ label: "Impact trend", value, status: "RECORDED" }));
   const evidence = [
+    ...thresholdEvidence,
     ...endpointEvidence,
     ...aiEvidence,
     ...aiSignals,
@@ -531,6 +685,7 @@ export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertR
     analysisSummary: getString(backendImpact, ["contextSummary", "trendInterpretation", "priorityRationale", "ai_summary", "aiSummary", "summary"]),
     generatedAt: getString(backendImpact, ["generatedAt", "generated_at", "computedAt"]) || new Date().toISOString(),
     suggestedReview,
+    thresholdDetails: alert.thresholdDetails,
     analysisSource: aiInsight ? "ai alert insight" : hasStructuredEndpointImpact ? "alert-impact endpoint" : "episode evidence fallback",
     evidence: evidence.length > 0
       ? evidence

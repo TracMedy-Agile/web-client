@@ -773,6 +773,46 @@ export interface paths {
         patch: operations["MedicationController_addInventory"];
         trace?: never;
     };
+    "/medications/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get medication counts (active, stopped, total)
+         * @description Returns counts of active, stopped, and total medications for the authenticated user. Used by mobile to distinguish "never had medications" from "has stopped medications".
+         */
+        get: operations["MedicationController_getStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/medications/patient/insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get AI-powered medication behavioral insights
+         * @description Returns AI-generated behavioral insights, recommendations, and timing conflict warnings based on medication log data. Returns empty state for users with fewer than 7 logs.
+         */
+        get: operations["MedicationController_getPatientInsights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/care-episodes": {
         parameters: {
             query?: never;
@@ -4197,6 +4237,230 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/drugs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search for drugs
+         * @description Searches RxNorm and local DrugReference cache for matching drugs. Returns merged results with local references prioritized.
+         */
+        get: operations["DrugsController_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get drug detail
+         * @description Returns full drug data from local cache or fresh fetch from RxNorm.
+         */
+        get: operations["DrugsController_getDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/{id}/education": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get drug education content
+         * @description Returns patient-friendly education content generated from DailyMed/openFDA data, summarized by AI. Cached for 24 hours.
+         */
+        get: operations["DrugsController_getEducation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/interactions/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check drug interactions
+         * @description Checks pairwise interactions between specified drugs using DDInter 2.0 dataset with openFDA fallback.
+         */
+        post: operations["DrugsController_checkInteractions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/bookmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get user drug bookmarks
+         * @description Returns all bookmarked drugs for the authenticated user.
+         */
+        get: operations["DrugsController_getBookmarks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/bookmarks/{drugRefId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add drug bookmark
+         * @description Bookmark a drug for quick access. Creates DrugReference record if needed.
+         */
+        post: operations["DrugsController_addBookmark"];
+        /**
+         * Remove drug bookmark
+         * @description Remove a bookmarked drug.
+         */
+        delete: operations["DrugsController_removeBookmark"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Stream call token
+         * @description Generates a short-lived Stream user token for the authenticated user to join the teleconsultation call.
+         */
+        post: operations["TelemedicineController_getToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start teleconsultation call (clinician only)
+         * @description Creates the Stream call and notifies the patient. Sets callStatus to "waiting".
+         */
+        post: operations["TelemedicineController_startCall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join teleconsultation call
+         * @description Called by each party after joining the Stream call. When the 2nd party joins, transitions callStatus to "active" and sets callStartedAt.
+         */
+        post: operations["TelemedicineController_joinCall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End teleconsultation call
+         * @description Ends the call, writes CareTimeline events, and cleans up the Stream call.
+         */
+        post: operations["TelemedicineController_endCall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/nudge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nudge patient to join call (clinician only)
+         * @description Re-triggers ringing push notification to the patient. Call must be in "waiting" status.
+         */
+        post: operations["TelemedicineController_nudgePatient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dev/test-push": {
         parameters: {
             query?: never;
@@ -4463,6 +4727,10 @@ export interface components {
              * @example ACTIVE
              */
             status: string;
+            /** @description Drug reference ID linking to standardized drug data */
+            drugReferenceId: string | null;
+            /** @description RxNorm CUI for the drug */
+            rxcui: string | null;
             /** @description Stop reason */
             stopReason: string | null;
             /**
@@ -4491,9 +4759,14 @@ export interface components {
              * @description Status
              * @enum {string}
              */
-            status: "taken" | "missed" | "upcoming";
+            status: "taken" | "missed" | "upcoming" | "due";
             /** @description Log ID if logged */
             logId: string | null;
+            /**
+             * @description Whether the dose can be logged now (within 60 min before or during grace period)
+             * @example true
+             */
+            isLoggable: boolean;
         };
         TodayMedicationDto: {
             /** @description Medication ID */
@@ -4528,9 +4801,14 @@ export interface components {
              * @description Status
              * @enum {string}
              */
-            status: "taken" | "missed" | "upcoming";
+            status: "taken" | "missed" | "upcoming" | "due";
             /** @description Log ID if logged */
             logId: string | null;
+            /**
+             * @description Whether the dose can be logged now
+             * @example false
+             */
+            isLoggable: boolean;
         };
         CalendarMedicationDto: {
             /** @description Medication ID */
@@ -4612,6 +4890,10 @@ export interface components {
              * @example 7
              */
             refillThreshold: number;
+            /** @description Drug reference ID from DrugsModule (links to standardized drug data) */
+            drugReferenceId?: string | null;
+            /** @description RxNorm CUI for the drug (auto-populated when drugReferenceId is provided) */
+            rxcui?: string | null;
         };
         UpdateMedicationDto: {
             /**
@@ -4669,6 +4951,10 @@ export interface components {
              * @example Increased dosage as per doctor prescription
              */
             reason: string;
+            /** @description Drug reference ID from DrugsModule */
+            drugReferenceId?: string | null;
+            /** @description RxNorm CUI for the drug */
+            rxcui?: string | null;
         };
         StopMedicationDto: {
             /**
@@ -4809,6 +5095,42 @@ export interface components {
              * @example 30
              */
             unitsToAdd: number;
+        };
+        BehavioralInsightDto: {
+            /**
+             * @description Insight title
+             * @example Timing Pattern
+             */
+            title: string;
+            /** @description Insight body text */
+            body: string;
+            /** @description Suggested action */
+            action: string;
+            /**
+             * @description Icon identifier
+             * @example clock
+             */
+            icon: string;
+        };
+        RecommendationDto: {
+            /** @description Recommendation title */
+            title: string;
+            /** @description Recommendation body text */
+            body: string;
+            /** @description Suggested action */
+            action: string;
+        };
+        TimingConflictDto: {
+            /** @description Timing conflict description */
+            body: string;
+        };
+        PatientInsightsResponseDto: {
+            /** @description Behavioral insights */
+            behavioralInsights: components["schemas"]["BehavioralInsightDto"][];
+            /** @description Recommendations */
+            recommendations: components["schemas"]["RecommendationDto"][];
+            /** @description Timing conflict warning */
+            timingConflict: components["schemas"]["TimingConflictDto"] | null;
         };
         FollowUpInputDto: {
             /**
@@ -5131,6 +5453,8 @@ export interface components {
             id: string;
             /** @description Clinician ID */
             clinicianId: string;
+            /** @description Clinician profile photo URL */
+            avatarUrl: string | null;
             /** @description Role */
             role: string;
             /**
@@ -6798,6 +7122,23 @@ export interface components {
              */
             episodeId?: string;
         };
+        AppointmentPatientDto: {
+            /** @description Patient user ID */
+            id: string;
+            /** @description Patient full name */
+            name: string;
+            /** @description Patient email */
+            email: string | null;
+            /** @description Patient phone */
+            phone: string | null;
+            /**
+             * Format: date
+             * @description Patient date of birth
+             */
+            dateOfBirth: string | null;
+            /** @description Patient gender */
+            gender: string | null;
+        };
         CreateAppointmentResponseDto: {
             /** @description Appointment ID */
             id: string;
@@ -6887,6 +7228,22 @@ export interface components {
              * @description Updated at
              */
             updatedAt: string;
+            /** @description Stream call CID (teleconsultation only) */
+            streamCallCid: string | null;
+            /** @description Call status: not_started | waiting | active | ended | missed */
+            callStatus: string | null;
+            /**
+             * Format: date-time
+             * @description When the 2nd party joined (call became active)
+             */
+            callStartedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the call ended
+             */
+            callEndedAt: string | null;
+            /** @description Patient details (included when patient relation is selected) */
+            patient: components["schemas"]["AppointmentPatientDto"] | null;
         };
         AppointmentResponseDto: {
             /** @description Appointment ID */
@@ -6977,6 +7334,22 @@ export interface components {
              * @description Updated at
              */
             updatedAt: string;
+            /** @description Stream call CID (teleconsultation only) */
+            streamCallCid: string | null;
+            /** @description Call status: not_started | waiting | active | ended | missed */
+            callStatus: string | null;
+            /**
+             * Format: date-time
+             * @description When the 2nd party joined (call became active)
+             */
+            callStartedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the call ended
+             */
+            callEndedAt: string | null;
+            /** @description Patient details (included when patient relation is selected) */
+            patient: components["schemas"]["AppointmentPatientDto"] | null;
         };
         AppointmentListResponseDto: {
             /** @description Array of appointment records */
@@ -7089,6 +7462,8 @@ export interface components {
             name: string | null;
             /** @description Clinician email */
             email: string;
+            /** @description Profile photo URL */
+            avatarUrl: string | null;
             /** @description Department or specialty */
             department: string | null;
             /**
@@ -7241,6 +7616,8 @@ export interface components {
             name: string | null;
             /** @description Clinician email */
             email: string;
+            /** @description Profile photo URL */
+            avatarUrl: string | null;
             /** @description Department or specialty */
             department: string | null;
             /**
@@ -9739,6 +10116,183 @@ export interface components {
              */
             whatsappSeverityThreshold?: "info" | "low" | "moderate" | "high" | "critical";
         };
+        DrugSearchResultDto: {
+            /** @description Drug reference ID */
+            id: string;
+            /** @description Drug name */
+            name: string;
+            /** @description Generic name */
+            genericName: string | null;
+            /** @description RxNorm CUI */
+            rxcui: string | null;
+            /** @description Dosage form */
+            dosageForm: string | null;
+            /** @description Drug category */
+            category: string | null;
+            /** @description Brief summary */
+            summary: string | null;
+            /**
+             * @description Data source
+             * @example rxnorm
+             */
+            source: string;
+            /**
+             * @description User-entered custom drug
+             * @default false
+             */
+            isCustom: boolean;
+        };
+        DrugDetailResponseDto: {
+            /** @description Drug reference ID */
+            id: string;
+            /** @description Drug name */
+            name: string;
+            /** @description Generic name */
+            genericName: string | null;
+            /** @description RxNorm CUI */
+            rxcui: string | null;
+            /** @description Dosage form */
+            dosageForm: string | null;
+            /** @description Drug category */
+            category: string | null;
+            /** @description Brief summary */
+            summary: string | null;
+            /**
+             * @description Data source
+             * @example rxnorm
+             */
+            source: string;
+            /**
+             * @description User-entered custom drug
+             * @default false
+             */
+            isCustom: boolean;
+            /** @description Cached education data (JSON) */
+            cachedData: Record<string, never> | null;
+            /**
+             * @description Number of times searched
+             * @default 0
+             */
+            searchCount: number;
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description Updated at
+             */
+            updatedAt: string;
+        };
+        EducationHowToTakeDto: {
+            /** @description Dosage guidance */
+            dosage: string;
+            /** @description Timing guidance */
+            timing: string;
+            /** @description Food-related guidance */
+            food: string;
+        };
+        EducationWarningDto: {
+            /** @description Warning topic */
+            topic: string;
+            /** @description Explanation */
+            explanation: string;
+        };
+        DrugEducationResponseDto: {
+            /** @description What the drug is used for */
+            whatItIsUsedFor: string;
+            /** @description How to take the drug */
+            howToTake: components["schemas"]["EducationHowToTakeDto"];
+            /** @description Common side effects */
+            sideEffectsCommon: string[];
+            /** @description Serious side effects */
+            sideEffectsSerious: string[];
+            /** @description Known drug interactions */
+            interactions: string[];
+            /** @description Warnings */
+            warnings: components["schemas"]["EducationWarningDto"][];
+            /** @description Storage instructions */
+            storage: string[];
+        };
+        InteractionCheckDto: {
+            /**
+             * @description Array of drug reference IDs to check for interactions
+             * @example [
+             *       "drug-id-1",
+             *       "drug-id-2"
+             *     ]
+             */
+            drugIds: string[];
+        };
+        InteractionResultDto: {
+            /** @description First drug name */
+            drugA: string;
+            /** @description Second drug name */
+            drugB: string;
+            /**
+             * @description Interaction severity
+             * @enum {string}
+             */
+            severity: "major" | "moderate" | "minor" | "unknown";
+            /** @description Interaction description */
+            description: string;
+        };
+        DrugBookmarkResponseDto: {
+            /** @description Bookmark ID */
+            id: string;
+            /** @description Drug reference details */
+            drugReference: components["schemas"]["DrugSearchResultDto"];
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+        };
+        CallTokenResponseDto: {
+            /** @description Short-lived Stream user token */
+            token: string;
+        };
+        CallStartResponseDto: {
+            /**
+             * @description Stream call CID
+             * @example appointment:abc123
+             */
+            callCid: string;
+            /**
+             * @description Call status
+             * @example waiting
+             */
+            callStatus: string;
+        };
+        CallJoinResponseDto: {
+            /**
+             * @description Call status after join
+             * @example active
+             */
+            callStatus: string;
+            /** @description When the 2nd party joined (call became active) */
+            callStartedAt: string | null;
+        };
+        CallEndResponseDto: {
+            /**
+             * @description Call status
+             * @example ended
+             */
+            callStatus: string;
+            /**
+             * @description Call duration in seconds
+             * @example 120
+             */
+            durationSeconds: number;
+        };
+        CallNudgeResponseDto: {
+            /**
+             * @description Whether nudge was sent
+             * @example true
+             */
+            success: boolean;
+        };
         TestPushDto: {
             /**
              * @description Push notification title
@@ -11405,6 +11959,72 @@ export interface operations {
             };
             /** @description Medication not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MedicationController_getStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Medication counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MedicationController_getPatientInsights: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Patient medication insights */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatientInsightsResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19728,6 +20348,491 @@ export interface operations {
                 content?: never;
             };
             /** @description Team member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_search: {
+        parameters: {
+            query: {
+                /** @description Drug search query */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugSearchResultDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_getDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drug detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugDetailResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_getEducation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drug education content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugEducationResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_checkInteractions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InteractionCheckDto"];
+            };
+        };
+        responses: {
+            /** @description Interaction results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteractionResultDto"][];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_getBookmarks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User bookmarks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugBookmarkResponseDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_addBookmark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                drugRefId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bookmark created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug reference not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_removeBookmark: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                drugRefId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bookmark removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug reference not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_getToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream user token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallTokenResponseDto"];
+                };
+            };
+            /** @description Not a teleconsultation or unconfirmed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not assigned to this appointment */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_startCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Call started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallStartResponseDto"];
+                };
+            };
+            /** @description Not a teleconsultation or unconfirmed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Only assigned clinician can start */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_joinCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Call status after join */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallJoinResponseDto"];
+                };
+            };
+            /** @description Call not in progress */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not assigned to this appointment */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_endCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Call ended with duration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallEndResponseDto"];
+                };
+            };
+            /** @description Call not in progress */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not assigned to this appointment */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_nudgePatient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nudge sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallNudgeResponseDto"];
+                };
+            };
+            /** @description Call not in waiting state */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Only assigned clinician can nudge */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 export function SettingsHeader({ title, description }: { title: string; description: string }) {
   return (
     <header className="mb-8">
-      <h1 className="text-xl font-bold text-foreground">{title}</h1>
-      <p className="mt-2 max-w-4xl text-base leading-6 text-muted-foreground">{description}</p>
+      <h1 className="text-lg font-bold text-foreground">{title}</h1>
+      <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">{description}</p>
     </header>
   );
 }
@@ -43,8 +43,8 @@ export function SettingsPanel({ title, description, children, footer, hideHeader
     <section className={cn("space-y-6", className)}>
       {!hideHeader ? (
         <div>
-          <h2 className="text-xl font-bold text-foreground">{title}</h2>
-          {description ? <p className="mt-1 text-base leading-6 text-muted-foreground">{description}</p> : null}
+          <h2 className="text-lg font-bold text-foreground">{title}</h2>
+          {description ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p> : null}
         </div>
       ) : null}
       <div className={cn("space-y-6", contentClassName)}>{children}</div>
@@ -56,9 +56,9 @@ export function SettingsPanel({ title, description, children, footer, hideHeader
 export function Field({ label, hint, children, className }: { label: string; hint?: string; children: ReactNode; className?: string }) {
   return (
     <label className={cn("block space-y-2", className)}>
-      <span className="text-base font-bold text-foreground">{label}</span>
+      <span className="text-sm font-bold text-foreground">{label}</span>
       {children}
-      {hint ? <span className="block text-sm leading-5 text-muted-foreground">{hint}</span> : null}
+      {hint ? <span className="block text-xs leading-5 text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
@@ -87,6 +87,6 @@ export function SaveNotice({ children, tone = "info" }: { children: ReactNode; t
   );
 }
 
-export const inputClassName = "h-12 rounded-xl border-border bg-card text-base font-medium text-foreground shadow-none focus-visible:ring-primary/20";
+export const inputClassName = "h-12 rounded-xl border-border bg-card text-sm font-medium text-foreground shadow-none focus-visible:ring-primary/20";
 
-export const selectClassName = "h-12 rounded-xl border-border bg-card text-base font-medium text-foreground shadow-none focus:ring-primary/20";
+export const selectClassName = "h-12 rounded-xl border-border bg-card text-sm font-medium text-foreground shadow-none focus:ring-primary/20";

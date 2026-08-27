@@ -10,6 +10,7 @@ import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import type {
   CarePlan,
   CarePlanForm,
+  CarePlanMonitoringRule,
   CarePlanPayload,
   Clinician,
   HomeCareOrder,
@@ -143,6 +144,127 @@ function serializeMonitoringInstructions(item: MonitoringItem) {
   ].filter(Boolean).join("\n");
 }
 
+const VITAL_METRICS: Record<string, string> = {
+  "blood pressure": "bp_systolic",
+  "heart rate": "heart_rate",
+  temperature: "temperature",
+  "blood sugar": "glucose",
+  weight: "weight",
+  "oxygen saturation": "spo2",
+};
+
+function metricKey(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function parseNumber(value: string) {
+  const match = value.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseNumberAt(value: string, index: number) {
+  const matches = value.match(/-?\d+(?:\.\d+)?/g) ?? [];
+  const parsed = Number(matches[index]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function prioritySeverity(priority: string): string {
+  const normalized = priority.toLowerCase();
+  if (normalized.includes("urgent")) return "critical";
+  if (normalized.includes("high")) return "high";
+  return "moderate";
+}
+
+function symptomSeverityThreshold(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("severe")) return { max: 7, severity: "critical" };
+  if (normalized.includes("moderate")) return { max: 4, severity: "high" };
+  return { max: 2, severity: "moderate" };
+}
+
+function warningForItem(item: MonitoringItem, warningSigns: WarningSign[]) {
+  const normalizedName = item.name.trim().toLowerCase();
+  return warningSigns.find((warning) => {
+    const title = warning.title.trim().toLowerCase();
+    const detail = warning.detail.trim().toLowerCase();
+    return (title ? title.includes(normalizedName) || normalizedName.includes(title) : false) || (detail ? detail.includes(normalizedName) : false);
+  });
+}
+
+function warningMessage(item: MonitoringItem, warningSigns: WarningSign[]) {
+  const warning = warningForItem(item, warningSigns);
+  return warning?.title.trim() || `${item.name} outside target range`;
+}
+
+function responseInstruction(item: MonitoringItem, warningSigns: WarningSign[]) {
+  const warning = warningForItem(item, warningSigns);
+  const response = [warning?.detail, warning?.response].filter(Boolean).join(" ").trim();
+  return response || item.missingDataRule || null;
+}
+
+function monitoringRule(
+  item: MonitoringItem,
+  metric: string,
+  min: number | null,
+  max: number | null,
+  warningSigns: WarningSign[],
+  suffix: string,
+): CarePlanMonitoringRule | null {
+  if (min === null && max === null) return null;
+  return {
+    id: `${item.id}-${suffix}`,
+    type: item.type === "Vital Sign" ? "vital" : item.type.toLowerCase(),
+    metric,
+    min,
+    max,
+    severity: prioritySeverity(item.priority),
+    warningMessage: warningMessage(item, warningSigns),
+    responseInstruction: responseInstruction(item, warningSigns),
+    frequency: item.frequency,
+    cadence: item.cadence,
+    taskId: item.id,
+  };
+}
+
+function buildMonitoringRules(items: MonitoringItem[], warningSigns: WarningSign[]): CarePlanMonitoringRule[] {
+  return items.flatMap((item) => {
+    if (item.type === "Vital Sign") {
+      if (item.name === "Blood Pressure") {
+        return [
+          monitoringRule(item, "bp_systolic", parseNumberAt(item.criticalLow, 0), parseNumberAt(item.criticalHigh, 0), warningSigns, "bp-systolic"),
+          monitoringRule(item, "bp_diastolic", parseNumberAt(item.criticalLow, 1), parseNumberAt(item.criticalHigh, 1), warningSigns, "bp-diastolic"),
+        ].filter((rule): rule is CarePlanMonitoringRule => rule !== null);
+      }
+
+      const metric = VITAL_METRICS[item.name] ?? metricKey(item.name);
+      return [monitoringRule(item, metric, parseNumber(item.criticalLow), parseNumber(item.criticalHigh), warningSigns, metric)]
+        .filter((rule): rule is CarePlanMonitoringRule => rule !== null);
+    }
+
+    if (item.type === "Symptom") {
+      const threshold = symptomSeverityThreshold(item.severityThreshold);
+      return [{
+        id: `${item.id}-symptom-severity`,
+        type: "symptom",
+        metric: metricKey(item.name),
+        min: null,
+        max: threshold.max,
+        severity: threshold.severity,
+        warningMessage: warningMessage(item, warningSigns),
+        responseInstruction: responseInstruction(item, warningSigns),
+        frequency: item.frequency,
+        cadence: item.persistenceReports ? `${item.persistenceReports} consecutive reports` : item.cadence,
+        taskId: item.id,
+      }];
+    }
+
+    return [monitoringRule(item, metricKey(item.name), parseNumber(item.minimumCompletion), null, warningSigns, "task-completion")]
+      .filter((rule): rule is CarePlanMonitoringRule => rule !== null);
+  });
+}
+
 function parseHomeCareInstructions(value = "") {
   const lines = value.split("\n");
   const detailsLine = lines.find((line) => line.startsWith(HOME_CARE_DETAILS_PREFIX));
@@ -272,6 +394,7 @@ function toPayload(form: CarePlanForm, reason: string): CarePlanPayload {
       ...form.warningSigns.map((warning) => ({ title: warning.title, dueDate: "", status: "active", type: "warning", priority: "Urgent", instructions: [warning.detail, warning.response].filter(Boolean).join(" | ") })),
     ],
     lifestyleRecommendations: form.lifestyle.map((item) => [item.title, item.description].filter(Boolean).join(": ")),
+    monitoringRules: buildMonitoringRules(form.monitoring, form.warningSigns),
     monitoringFrequency: form.monitoringFrequency,
     episodeDuration: String(form.episodeDuration),
     changeReason: reason,

@@ -128,16 +128,16 @@ export default function ConfigurationPage() {
 
         <div className="flex flex-col gap-4 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-base font-bold text-foreground">Require Clinician Approval to Close</p>
+            <p className="text-sm font-semibold text-foreground">Require Clinician Approval to Close</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">Episodes can only be closed after explicit clinician sign-off, even when auto-close triggers.</p>
           </div>
           <Switch checked={configuration.requireClinicianApproval} onCheckedChange={(requireClinicianApproval) => updateConfiguration({ requireClinicianApproval })} aria-label="Require clinician approval to close" />
         </div>
 
         <div className="pt-4">
-          <h3 className="text-xl font-bold text-foreground">Critical Alert Escalation Roles</h3>
-          <p className="mt-3 max-w-4xl text-base leading-6 text-muted-foreground">Configure which team roles are eligible to receive WhatsApp notifications for critical patient-alert escalations.</p>
-          <p className="text-base leading-6 text-muted-foreground">These settings automatically determine onboarding requirements for newly invited team members.</p>
+          <h3 className="text-lg font-bold text-foreground">Critical Alert Escalation Roles</h3>
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-muted-foreground">Configure which team roles are eligible to receive WhatsApp notifications for critical patient-alert escalations.</p>
+          <p className="text-sm leading-6 text-muted-foreground">These settings automatically determine onboarding requirements for newly invited team members.</p>
           <div className="mt-6 divide-y divide-border rounded-xl border border-border bg-card">
             {roleRows.map((role) => {
               const Icon = roleIcons[role.key];
@@ -146,8 +146,8 @@ export default function ConfigurationPage() {
                   <div className="flex gap-4">
                     <Icon className="mt-1 h-5 w-5 text-primary" aria-hidden />
                     <div>
-                      <p className="text-xl font-bold text-foreground">{role.label}</p>
-                      <p className="mt-1 text-base leading-6 text-muted-foreground">{role.description}</p>
+                      <p className="text-sm font-semibold text-foreground">{role.label}</p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{role.description}</p>
                     </div>
                   </div>
                   <Switch checked={configuration.escalationRoles[role.key]} onCheckedChange={(checked) => updateRole(role.key, checked)} aria-label={`Toggle ${role.label} escalation`} />

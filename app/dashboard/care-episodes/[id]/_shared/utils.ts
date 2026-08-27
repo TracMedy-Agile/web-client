@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
-import type { CareEpisodeDetail, DailyVitalsRecord } from "@/lib/api/care-episodes";
+import { getRecordArray, getString, type ApiRecord, type CareEpisodeDetail, type DailyVitalsRecord } from "@/lib/api/care-episodes";
 
 export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
   return {
@@ -32,6 +32,45 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     facility: null,
     closure: null,
   };
+}
+
+
+export type SavedWarningSign = {
+  id: string;
+  title: string;
+  detail: string;
+  response: string;
+  severity: string;
+  threshold: string;
+};
+
+function thresholdLabel(record: ApiRecord) {
+  const min = typeof record.min === "number" ? record.min : null;
+  const max = typeof record.max === "number" ? record.max : null;
+  if (min !== null && max !== null) return `${min} - ${max}`;
+  if (min !== null) return `Below ${min}`;
+  if (max !== null) return `Above ${max}`;
+  return "No threshold supplied";
+}
+
+export function getSavedWarningSignsFromPlan(carePlan: ApiRecord | null): SavedWarningSign[] {
+  const warningSigns = getRecordArray(carePlan, ["warningSigns"]);
+  const source = warningSigns.length > 0
+    ? warningSigns
+    : getRecordArray(carePlan, ["monitoringRules"]).filter((rule) => getString(rule, ["warningMessage"]));
+
+  return source.map((warning, index) => {
+    const metric = getString(warning, ["metric", "type"], "warning sign");
+    const message = getString(warning, ["warningMessage", "message", "title"]);
+    return {
+      id: getString(warning, ["carePlanRuleId", "id", "taskId"], `warning-${index}`),
+      title: message || `${humanizeSlug(metric)} warning`,
+      detail: humanizeSlug(metric),
+      response: getString(warning, ["responseInstruction", "response", "instructions"]),
+      severity: getString(warning, ["severity"], "warning"),
+      threshold: thresholdLabel(warning),
+    };
+  });
 }
 
 export function clamp(value: number, min = 0, max = 100) {

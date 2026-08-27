@@ -52,7 +52,8 @@ import {
 type PendingAction = "suspend" | "reactivate" | "remove" | null;
 type EditableRole = NonNullable<UpdateTeamMemberInput["role"]>;
 type AccessProfile = NonNullable<UpdateTeamMemberInput["accessProfile"]>;
-type TeamPermission = NonNullable<UpdateTeamMemberInput["permissions"]>[number];
+type BackendTeamPermission = NonNullable<UpdateTeamMemberInput["permissions"]>[number];
+type TeamPermission = BackendTeamPermission | "connected_patients" | "alerts" | "messages";
 
 type TeamMemberActionsProps = {
   memberId: string;
@@ -64,6 +65,8 @@ type TeamMemberActionsProps = {
   status?: string;
   accessProfile?: string;
   permissions?: string[];
+  canEditMember?: boolean;
+  onAccessDenied?: () => void;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -88,15 +91,37 @@ const ACTION_COPY = {
   },
 } as const;
 
-const PERMISSIONS: Array<{ value: TeamPermission; label: string }> = [
-  { value: "care_episode", label: "Care episodes and connected patients" },
-  { value: "appointments", label: "Appointments" },
-  { value: "manage_team_members", label: "Manage team members" },
-  { value: "audit_log", label: "Audit log" },
-  { value: "view_all_reports", label: "Reports and analytics" },
-  { value: "configure_settings", label: "Hospital settings" },
-  { value: "full_system_access", label: "Full system access" },
+type PermissionOption = { id: string; value: TeamPermission; label: string };
+
+const PERMISSIONS: PermissionOption[] = [
+  { id: "connected_patients", value: "connected_patients", label: "Connected patients" },
+  { id: "care_episode", value: "care_episode", label: "Care episodes" },
+  { id: "appointments", value: "appointments", label: "Appointments" },
+  { id: "alerts", value: "alerts", label: "Alerts" },
+  { id: "messages", value: "messages", label: "Messages" },
+  { id: "manage_team_members", value: "manage_team_members", label: "Manage team members" },
+  { id: "audit_log", value: "audit_log", label: "Audit log" },
+  { id: "view_all_reports", value: "view_all_reports", label: "Reports and analytics" },
+  { id: "configure_settings", value: "configure_settings", label: "Hospital settings" },
+  { id: "full_system_access", value: "full_system_access", label: "Full system access" },
 ];
+
+const PERMISSION_TO_BACKEND: Record<TeamPermission, BackendTeamPermission> = {
+  connected_patients: "care_episode",
+  care_episode: "care_episode",
+  appointments: "appointments",
+  alerts: "care_episode",
+  messages: "care_episode",
+  manage_team_members: "manage_team_members",
+  audit_log: "audit_log",
+  view_all_reports: "view_all_reports",
+  configure_settings: "configure_settings",
+  full_system_access: "full_system_access",
+};
+
+function toBackendPermissions(values: TeamPermission[]): BackendTeamPermission[] {
+  return Array.from(new Set(values.map((permission) => PERMISSION_TO_BACKEND[permission])));
+}
 
 function normalizeRole(value?: string): EditableRole {
   if (value === "admin" || value === "doctor" || value === "nurse") return value;
@@ -108,10 +133,25 @@ function normalizeAccessProfile(value?: string): AccessProfile {
   return value === "full_access" ? "full_access" : "limited";
 }
 
+function normalizeTeamPermission(value: string): TeamPermission | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "view_connected_patients" || normalized === "manage_patients") return "connected_patients";
+  if (normalized === "view_care_episodes" || normalized === "manage_care_episodes") return "care_episode";
+  if (normalized === "view_alerts" || normalized === "acknowledge" || normalized === "acknowledge_alerts") return "alerts";
+  if (normalized === "view_messages" || normalized === "send_messages") return "messages";
+  return PERMISSIONS.some((permission) => permission.value === normalized) ? normalized as TeamPermission : null;
+}
+
+function allPermissions(): TeamPermission[] {
+  return PERMISSIONS.map((permission) => permission.value);
+}
+
 function normalizePermissions(values?: string[]): TeamPermission[] {
-  return (values || []).filter((value): value is TeamPermission =>
-    PERMISSIONS.some((permission) => permission.value === value),
-  );
+  return Array.from(new Set((values || []).map(normalizeTeamPermission).filter((value): value is TeamPermission => Boolean(value))));
+}
+
+function permissionsForAccessProfile(profile: AccessProfile, values?: string[]): TeamPermission[] {
+  return profile === "full_access" ? allPermissions() : normalizePermissions(values);
 }
 
 export default function TeamMemberActions({
@@ -124,6 +164,8 @@ export default function TeamMemberActions({
   status,
   accessProfile,
   permissions,
+  canEditMember = true,
+  onAccessDenied,
   onChanged,
 }: TeamMemberActionsProps) {
   const [editOpen, setEditOpen] = useState(false);
@@ -134,17 +176,23 @@ export default function TeamMemberActions({
   const [editedWard, setEditedWard] = useState(ward);
   const [editedRole, setEditedRole] = useState<EditableRole>(normalizeRole(role));
   const [editedAccessProfile, setEditedAccessProfile] = useState<AccessProfile>(normalizeAccessProfile(accessProfile));
-  const [editedPermissions, setEditedPermissions] = useState<TeamPermission[]>(normalizePermissions(permissions));
+  const [editedPermissions, setEditedPermissions] = useState<TeamPermission[]>(permissionsForAccessProfile(normalizeAccessProfile(accessProfile), permissions));
   const [isWorking, setIsWorking] = useState(false);
 
   function openEdit() {
+    if (!canEditMember) {
+      capturePostHogEvent("team_member_edit_denied", { member_id: memberId });
+      onAccessDenied?.();
+      return;
+    }
     capturePostHogEvent("team_member_edit_opened", { member_id: memberId });
     setEditedName(name);
     setEditedSpecialty(specialty);
     setEditedWard(ward);
     setEditedRole(normalizeRole(role));
-    setEditedAccessProfile(normalizeAccessProfile(accessProfile));
-    setEditedPermissions(normalizePermissions(permissions));
+    const nextAccessProfile = normalizeAccessProfile(accessProfile);
+    setEditedAccessProfile(nextAccessProfile);
+    setEditedPermissions(permissionsForAccessProfile(nextAccessProfile, permissions));
     setEditOpen(true);
   }
 
@@ -156,23 +204,39 @@ export default function TeamMemberActions({
     setPendingAction(action);
   }
 
-  function togglePermission(permission: TeamPermission, checked: boolean) {
+  function changeAccessProfile(value: AccessProfile) {
+    setEditedAccessProfile(value);
     setEditedPermissions((current) =>
-      checked ? [...new Set([...current, permission])] : current.filter((item) => item !== permission),
+      value === "full_access" ? allPermissions() : current.filter((permission) => permission !== "full_system_access"),
     );
+  }
+
+  function togglePermission(permission: TeamPermission, checked: boolean) {
+    if (permission === "full_system_access" && checked) {
+      setEditedAccessProfile("full_access");
+      setEditedPermissions(allPermissions());
+      return;
+    }
+
+    if (!checked) setEditedAccessProfile("limited");
+    setEditedPermissions((current) => {
+      const next = checked ? [...new Set([...current, permission])] : current.filter((item) => item !== permission);
+      return checked ? next : next.filter((item) => item !== "full_system_access");
+    });
   }
 
   async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsWorking(true);
     try {
+      const nextPermissions = toBackendPermissions(editedAccessProfile === "full_access" ? allPermissions() : editedPermissions.filter((permission) => permission !== "full_system_access"));
       await updateTeamMember(memberId, {
         name: editedName.trim(),
         role: editedRole,
         ward: editedWard.trim(),
         specialty: editedSpecialty.trim(),
         accessProfile: editedAccessProfile,
-        permissions: editedPermissions,
+        permissions: nextPermissions,
       });
       capturePostHogEvent("team_member_updated", { member_id: memberId, role: editedRole, access_profile: editedAccessProfile });
       toast.success("Team member updated");
@@ -351,7 +415,7 @@ export default function TeamMemberActions({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-member-access">Access profile</Label>
-                <Select value={editedAccessProfile} onValueChange={(value) => setEditedAccessProfile(value as AccessProfile)}>
+                <Select value={editedAccessProfile} onValueChange={(value) => changeAccessProfile(value as AccessProfile)}>
                   <SelectTrigger id="edit-member-access">
                     <SelectValue />
                   </SelectTrigger>
@@ -365,7 +429,7 @@ export default function TeamMemberActions({
                 <legend className="px-1 text-sm font-semibold text-foreground">Permissions</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {PERMISSIONS.map((permission) => (
-                    <label key={permission.value} className="flex items-center gap-2 text-sm text-foreground">
+                    <label key={permission.id} className="flex items-center gap-2 text-sm text-foreground">
                       <Checkbox
                         checked={editedPermissions.includes(permission.value)}
                         onCheckedChange={(checked) => togglePermission(permission.value, checked === true)}

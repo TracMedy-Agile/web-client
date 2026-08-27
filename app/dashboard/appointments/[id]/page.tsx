@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useParams } from "next/navigation";
+import type { components } from "@/docs/types/api";
 import {
   AlertCircle,
   Bell,
@@ -31,18 +32,29 @@ import {
   getAppointmentById,
   markNoShow,
 } from "@/lib/api/appointments";
+import { getCallToken, joinCall, startCall } from "@/lib/api/video-call";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { cn } from "@/lib/utils";
 import CancelAppointmentModal from "../components/CancelAppointmentModal";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
 import { AppointmentMessageModal } from "../components/AppointmentMessageModal";
+import VideoCallView from "@/components/video-call/VideoCallView";
 
 type ApiRecord = Record<string, unknown>;
+type AppointmentResponseDto = components["schemas"]["AppointmentResponseDto"];
+type AppointmentCallFields = Pick<AppointmentResponseDto, "type" | "streamCallCid" | "callStatus" | "callStartedAt" | "callEndedAt">;
 
 type ClinicianOption = {
   id: string;
   name: string;
   department: string;
+};
+
+type ActiveVideoCallSession = {
+  appointmentId: string;
+  callCid: string;
+  token: string;
 };
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -54,7 +66,7 @@ type AppointmentHistoryStep = {
   active?: boolean;
 };
 
-type AppointmentDetails = {
+type AppointmentDetails = AppointmentCallFields & {
   id: string;
   clinicianId: string | null;
   appointmentCode: string;
@@ -187,11 +199,46 @@ function normalizeStatusKey(status: string) {
   return status.toLowerCase().replace(/[\s-]+/g, "_");
 }
 
+function normalizeAppointmentType(type: string): AppointmentResponseDto["type"] {
+  const normalized = normalizeStatusKey(type || "in_person");
+  if (normalized === "teleconsultation") return "teleconsultation";
+  if (normalized === "nurse_checkin") return "nurse_checkin";
+  return "in_person";
+}
+
 function mapType(type: string) {
   const normalized = type.toLowerCase().replace(/[_-]/g, " ");
   if (normalized.includes("tele")) return "Teleconsultation";
   if (normalized.includes("nurse")) return "Nurse Check-in";
   return "Physical Visit";
+}
+
+function normalizeCallStatus(status: string | null | undefined) {
+  const normalized = normalizeStatusKey(status ?? "not_started");
+  if (["not_started", "waiting", "active", "ended", "missed"].includes(normalized)) return normalized;
+  return "not_started";
+}
+
+function getCallDurationMinutes(startedAt: string | null | undefined, endedAt: string | null | undefined) {
+  if (!startedAt || !endedAt) return null;
+  const startTime = Date.parse(startedAt);
+  const endTime = Date.parse(endedAt);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return null;
+  return Math.max(1, Math.round((endTime - startTime) / 60000));
+}
+
+function getCallStatusMeta(status: string, startedAt: string | null | undefined, endedAt: string | null | undefined) {
+  if (status === "waiting") return { label: "Call: Waiting...", className: "bg-orange-100 text-orange-600" };
+  if (status === "active") return { label: "Call: Active", className: "bg-emerald-100 text-emerald-600" };
+  if (status === "missed") return { label: "Call: Missed", className: "bg-red-100 text-red-500" };
+  if (status === "ended") {
+    const durationMinutes = getCallDurationMinutes(startedAt, endedAt);
+    return {
+      label: durationMinutes ? `Call: Ended (${durationMinutes} min)` : "Call: Ended",
+      className: "bg-slate-100 text-[#344054]",
+    };
+  }
+  return { label: "Call: Not started", className: "bg-[#E7F2FF] text-primary" };
 }
 
 function mapStatus(status: string) {
@@ -245,6 +292,18 @@ function formatDateTime(dateValue: string, timeValue: string) {
   return date === "--" && time === "--" ? "--" : `${date} - ${time}`;
 }
 
+function getAgeFromDateOfBirth(value: string) {
+  if (!value) return "";
+  const dateOfBirth = new Date(value);
+  if (Number.isNaN(dateOfBirth.getTime())) return "";
+
+  const today = new Date();
+  let age = today.getFullYear() - dateOfBirth.getFullYear();
+  const birthdayThisYear = new Date(today.getFullYear(), dateOfBirth.getMonth(), dateOfBirth.getDate());
+  if (today < birthdayThisYear) age -= 1;
+
+  return age >= 0 ? String(age) : "";
+}
 function getHistoryItems(record: ApiRecord, fallbackStatus: string, fallbackDate: string): AppointmentHistoryStep[] {
   const rawHistory = record.statusHistory;
 
@@ -290,10 +349,18 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
   const department = getString(record, ["department", "service"], "") || getString(departmentRecord, ["name"], "Unassigned");
   const clinicianId = getNullableString(record, ["clinicianId"]) ?? getNullableString(clinician, ["id", "clinicianId", "_id"]);
   const assignedDoctor = clinicianId ? getString(record, ["clinicianName", "doctor", "assignedDoctor"], "") || getString(clinician, ["name", "fullName"], "None assigned") : "None assigned";
-  const patientAgeGender = [getString(patient, ["age"]), getString(patient, ["gender", "sex"])].filter(Boolean).join(" yrs, ");
+  const patientAge = getString(patient, ["age"]) || getAgeFromDateOfBirth(getString(patient, ["dateOfBirth", "dob"]));
+  const patientAgeGender = [patientAge, getString(patient, ["gender", "sex"])].filter(Boolean).join(" yrs, ");
+  const appointmentType = normalizeAppointmentType(getString(record, ["type", "appointmentType"], "in_person"));
+  const callStatus = normalizeCallStatus(getNullableString(record, ["callStatus"]));
 
   return {
     id: getString(record, ["id"], fallbackId),
+    type: appointmentType,
+    streamCallCid: getNullableString(record, ["streamCallCid"]),
+    callStatus,
+    callStartedAt: getNullableString(record, ["callStartedAt"]),
+    callEndedAt: getNullableString(record, ["callEndedAt"]),
     clinicianId,
     appointmentCode,
     rawStatus,
@@ -320,7 +387,7 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
     },
     service: {
       department,
-      type: mapType(getString(record, ["type", "appointmentType"], "in_person")),
+      type: mapType(appointmentType),
       assignedDoctor,
     },
     notes: {
@@ -379,6 +446,7 @@ function DetailsSkeleton() {
 
 export default function AppointmentDetailsPage() {
   const params = useParams<{ id: string }>();
+  const { user } = useDashboardUser();
   const appointmentId = decodeURIComponent(params.id);
   const [appointment, setAppointment] = useState<AppointmentDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -397,6 +465,7 @@ export default function AppointmentDetailsPage() {
   const [pendingClinicianId, setPendingClinicianId] = useState<string | null>(null);
   const [forceAssignChecked, setForceAssignChecked] = useState(false);
   const [resolvedDoctorName, setResolvedDoctorName] = useState<string | null>(null);
+  const [activeVideoCallSession, setActiveVideoCallSession] = useState<ActiveVideoCallSession | null>(null);
 
   const loadAppointment = useCallback(async () => {
     setIsLoading(true);
@@ -558,6 +627,12 @@ export default function AppointmentDetailsPage() {
   const canCancel = isPending || isConfirmed;
   const canShowMoreActions = isConfirmed;
   const needsClinician = isPending && !appointment?.clinicianId;
+  const callStatus = normalizeCallStatus(appointment?.callStatus);
+  const isAssignedClinician = Boolean(appointment?.clinicianId && user?.id && appointment.clinicianId.toLowerCase() === user.id.toLowerCase());
+  const isCurrentUserClinician = [user?.role, user?.systemRole].some((role) => role?.toLowerCase() === "clinician");
+  const canStartOrJoinCall = Boolean(appointment && appointment.type === "teleconsultation" && isConfirmed && callStatus !== "ended" && isCurrentUserClinician && isAssignedClinician);
+  const callActionLabel = callStatus === "waiting" || callStatus === "active" ? "Join Call" : "Start Call";
+  const callStatusMeta = getCallStatusMeta(callStatus, appointment?.callStartedAt, appointment?.callEndedAt);
 
   const handleConfirmClick = () => {
     if (needsClinician) {
@@ -566,6 +641,34 @@ export default function AppointmentDetailsPage() {
     }
 
     void runAction("Appointment confirmed", () => confirmAppointment(appointmentId));
+  };
+
+  const handleCallClick = async () => {
+    if (!appointment || !canStartOrJoinCall) return;
+
+    setActiveAction("Appointment call");
+    try {
+      let callCid = appointment.streamCallCid;
+
+      if (callStatus === "not_started") {
+        const startResponse = await startCall(appointment.id);
+        callCid = startResponse.callCid;
+      }
+
+      if (!callCid) throw new Error("Call session was not returned.");
+
+      const tokenResponse = await getCallToken(appointment.id);
+      if (!tokenResponse.token) throw new Error("Call token was not returned.");
+
+      const joinResponse = await joinCall(appointment.id);
+      setActiveVideoCallSession({ appointmentId: appointment.id, callCid, token: tokenResponse.token });
+      toast.success(joinResponse.callStatus === "active" ? "Video call active." : "Video call session ready.");
+      await loadAppointment();
+    } catch (requestError) {
+      toast.error(requestError instanceof Error ? requestError.message : "Unable to open the video call.");
+    } finally {
+      setActiveAction(null);
+    }
   };
 
   return (
@@ -605,6 +708,12 @@ export default function AppointmentDetailsPage() {
               >
                 {activeAction === "Appointment completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Mark as Completed
+              </button>
+            ) : null}
+            {canStartOrJoinCall ? (
+              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => void handleCallClick()} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+                {activeAction === "Appointment call" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
+                {callActionLabel}
               </button>
             ) : null}
             {canReschedule ? (
@@ -711,6 +820,9 @@ export default function AppointmentDetailsPage() {
                 <div className="space-y-6">
                   <DetailItem label="Service / Department" value={appointment.service.department} />
                   <DetailItem label="Appointment Type" value={<Link href="#" className="inline-flex items-center gap-2 text-[#1473E6]"><Video className="h-4 w-4" />{appointment.service.type}</Link>} />
+                  {appointment.type === "teleconsultation" ? (
+                    <DetailItem label="Call Status" value={<span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", callStatusMeta.className)}>{callStatusMeta.label}</span>} />
+                  ) : null}
                   <div>
                     <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-[#344054]">Assigned Doctor</p>
                     <div className="relative">
@@ -846,6 +958,17 @@ export default function AppointmentDetailsPage() {
           void loadAppointment();
         }}
       />
+      {activeVideoCallSession ? (
+        <VideoCallView
+          appointmentId={activeVideoCallSession.appointmentId}
+          callCid={activeVideoCallSession.callCid}
+          token={activeVideoCallSession.token}
+          onEnd={async () => {
+            setActiveVideoCallSession(null);
+            await loadAppointment();
+          }}
+        />
+      ) : null}
     </>
   );
 }

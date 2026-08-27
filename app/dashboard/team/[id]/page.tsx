@@ -5,10 +5,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
-  Bell,
   Calendar,
   CheckCircle2,
   Clock,
@@ -29,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AccessDeniedState from "@/components/system/AccessDeniedState";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import NetworkErrorState from "@/components/system/NetworkErrorState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
@@ -49,6 +48,7 @@ import { cn } from "@/lib/utils";
 import TeamMemberActions from "../components/TeamMemberActions";
 
 type EscalationChannel = UpdateEscalationPreferenceInput["channels"][number];
+type WhatsappSeverityThreshold = NonNullable<UpdateEscalationPreferenceInput["whatsappSeverityThreshold"]>;
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
@@ -129,15 +129,12 @@ const PERMISSION_GROUPS = [
     icon: Stethoscope,
     bgColor: "bg-blue-50",
     permissions: [
-      { label: "View patients", key: "care_episode" },
-      { label: "View care episodes", key: "care_episode" },
-      { label: "Manage care episodes", key: "care_episode" },
+      { label: "Connected patients", key: "connected_patients" },
+      { label: "Care episodes", key: "care_episode" },
       { label: "View appointments", key: "appointments" },
       { label: "Manage appointments", key: "appointments" },
-      { label: "View alerts", key: "care_episode" },
-      { label: "Acknowledge alerts", key: "care_episode" },
-      { label: "View messages", key: "care_episode" },
-      { label: "Send messages", key: "care_episode" },
+      { label: "Alerts", key: "alerts" },
+      { label: "Messages", key: "messages" },
     ],
   },
   {
@@ -163,7 +160,7 @@ const PERMISSION_GROUPS = [
 ] as const;
 
 function hasPermission(member: TeamMember, permission: string) {
-  return member.permissions.includes("full_system_access") || member.permissions.includes(permission);
+  return member.accessProfile === "full_access" || member.permissions.includes("full_system_access") || member.permissions.includes(permission);
 }
 
 function channelsFromPreference(preference: EscalationPreference | null, member: TeamMember | null): EscalationChannel[] {
@@ -171,6 +168,12 @@ function channelsFromPreference(preference: EscalationPreference | null, member:
   return channels.filter((channel): channel is EscalationChannel =>
     channel === "sms" || channel === "email" || channel === "in_app" || channel === "whatsapp",
   );
+}
+
+function whatsappSeverityThreshold(value: string | null | undefined): WhatsappSeverityThreshold {
+  return value === "info" || value === "low" || value === "moderate" || value === "high" || value === "critical"
+    ? value
+    : "critical";
 }
 
 function getActivityIcon(action: string) {
@@ -209,6 +212,8 @@ export default function TeamMemberPage() {
   const [error, setError] = useState<unknown | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [escalationError, setEscalationError] = useState<string | null>(null);
+  const [editAccessDenied, setEditAccessDenied] = useState(false);
+  const { hasPermission: hasCurrentUserPermission } = useDashboardUser();
 
   const loadActivity = useCallback(async (targetMember: TeamMember, pageNum = 1, append = false) => {
     const requestMemberId = getTeamMemberRequestId(targetMember);
@@ -277,7 +282,7 @@ export default function TeamMemberPage() {
       const requestMemberId = getTeamMemberRequestId(member);
       const preference = await updateTeamMemberEscalationPreference(requestMemberId, {
         channels: nextChannels,
-        whatsappSeverityThreshold: escalation?.whatsappSeverityThreshold ?? "critical",
+        whatsappSeverityThreshold: whatsappSeverityThreshold(escalation?.whatsappSeverityThreshold),
       });
       setEscalation(preference);
       capturePostHogEvent("team_escalation_preference_updated", { member_id: requestMemberId, channels: nextChannels });
@@ -289,6 +294,10 @@ export default function TeamMemberPage() {
     } finally {
       setIsSavingEscalation(false);
     }
+  }
+
+  if (editAccessDenied) {
+    return <AccessDeniedState description="Hospital settings permission is required to edit team member profiles and permissions." />;
   }
 
   if (isLoading) return <MemberSkeleton />;
@@ -358,6 +367,8 @@ export default function TeamMemberPage() {
             status={member.status}
             accessProfile={member.accessProfile}
             permissions={member.permissions}
+            canEditMember={hasCurrentUserPermission("configure_settings")}
+            onAccessDenied={() => setEditAccessDenied(true)}
             onChanged={loadProfile}
           />
         </div>
@@ -404,7 +415,7 @@ export default function TeamMemberPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
               </div>
               <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
-              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy.name}</p> : null}
             </article>
             <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-center gap-2">
@@ -414,7 +425,7 @@ export default function TeamMemberPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
               </div>
               <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
-              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy}</p> : null}
+              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy.name}</p> : null}
             </article>
             <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-center gap-2">
@@ -561,7 +572,7 @@ export default function TeamMemberPage() {
                 </div>
                 {member.invitedBy ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    By: <span className="font-medium text-[#023E8A]">{member.invitedBy}</span>
+                    By: <span className="font-medium text-[#023E8A]">{member.invitedBy.name}</span>
                   </p>
                 ) : null}
               </div>

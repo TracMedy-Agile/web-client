@@ -2,53 +2,87 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronRight, RotateCcw, Save } from "lucide-react";
+import { RotateCcw, Save } from "lucide-react";
 
-import { SaveNotice, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
+import { InfoBanner, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
 import { Button } from "@/components/ui/button";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { DependencyRules, PolicyToggle, RoleCard, RolesTable, UnsavedFooter, roleAccess, unavailableRolePolicy } from "@/app/dashboard/settings/roles/components";
+import {
+  AdministrativePowerTable,
+  DependencyRulesPanel,
+  PolicyToggle,
+  RoleCard,
+  UnsavedFooter,
+  permissionPolicies,
+  roleAccess,
+  unavailableRolePolicy,
+  type PermissionPolicyKey,
+} from "@/app/dashboard/settings/roles/components";
+
+function defaultPolicyState(): Record<PermissionPolicyKey, boolean> {
+  return Object.fromEntries(permissionPolicies.map((policy) => [policy.key, policy.defaultChecked])) as Record<PermissionPolicyKey, boolean>;
+}
 
 export default function RolesPage() {
-  const [auditRequired, setAuditRequired] = useState(true);
-  const [adminApproval, setAdminApproval] = useState(true);
-  const dirty = auditRequired !== true || adminApproval !== true;
+  const [policies, setPolicies] = useState<Record<PermissionPolicyKey, boolean>>(defaultPolicyState);
+  const dirty = permissionPolicies.some((policy) => policies[policy.key] !== policy.defaultChecked);
 
   useEffect(() => {
-    capturePostHogEvent("settings_roles_viewed", { expanded: false });
+    capturePostHogEvent("settings_roles_viewed");
   }, []);
 
   function reset() {
-    setAuditRequired(true);
-    setAdminApproval(true);
+    setPolicies(defaultPolicyState());
     capturePostHogEvent("settings_roles_reset");
   }
 
   return (
     <div>
-      <SettingsHeader title="Roles & Permissions" description="Review default role access, workspace administration grants, and permission dependency rules." />
-      <SettingsPanel title="Default Role Access" description="These cards summarize the default access profile for each hospital role.">
-        <div className="grid gap-4 xl:grid-cols-3">{roleAccess.map((role) => <RoleCard key={role.role} {...role} />)}</div>
-        <Button type="button" asChild variant="outline" className="h-10 w-fit rounded-lg font-semibold"><Link href="/dashboard/settings/roles/expanded">View expanded permissions<ChevronRight className="h-4 w-4" /></Link></Button>
-      </SettingsPanel>
+      <SettingsHeader title="Roles & Permissions" description="Configure the default access model and permission governance for your hospital workspace." />
+
+      <InfoBanner>
+        Role defaults apply only to newly invited team members. Existing members retain their current permissions unless updated individually from the{" "}
+        <Link href="/dashboard/team" className="font-semibold underline">Team module</Link>.
+      </InfoBanner>
 
       <div className="mt-5 space-y-5">
-        <SettingsPanel title="Permission Policies" description="Set workspace-level safeguards for sensitive administrative permissions.">
-          <PolicyToggle title="Require audit visibility for settings managers" description="Users who can manage hospital settings must also be able to view audit logs." checked={auditRequired} onChange={setAuditRequired} />
-          <PolicyToggle title="Require hospital admin approval for full access" description="Full access changes must be approved by a hospital admin before they take effect." checked={adminApproval} onChange={setAdminApproval} />
-          <SaveNotice>Dedicated role-policy persistence is not available in the backend yet. Team member permissions exist, but policy defaults still need a settings contract.</SaveNotice>
+        <SettingsPanel title="Default Role Access" description="Configure the default access assigned to newly invited team members.">
+          <div className="grid gap-4 xl:grid-cols-3">
+            {roleAccess.map((role) => <RoleCard key={role.role} {...role} />)}
+          </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Workspace Administration" description="Default access profiles mapped to hospital roles.">
-          <RolesTable />
+        <SettingsPanel title="Permission Policies" description="Define how permissions behave across the hospital workspace.">
+          <div className="grid gap-4 md:grid-cols-2">
+            {permissionPolicies.map((policy) => (
+              <PolicyToggle
+                key={policy.key}
+                title={policy.title}
+                description={policy.description}
+                checked={policies[policy.key]}
+                onChange={(checked) => setPolicies((current) => ({ ...current, [policy.key]: checked }))}
+              />
+            ))}
+          </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Permission Dependency Rules" description="Permissions that depend on another capability are listed here.">
-          <DependencyRules />
+        <SettingsPanel title="Workspace Administration" description="Configure who is allowed to perform administrative actions.">
+          <AdministrativePowerTable />
         </SettingsPanel>
+
+        <DependencyRulesPanel />
       </div>
 
-      <UnsavedFooter dirty={dirty}><Button type="button" variant="outline" onClick={reset} className="h-10 rounded-lg font-semibold"><RotateCcw className="h-4 w-4" />Discard Changes</Button><Button type="button" onClick={() => unavailableRolePolicy("Save role permission policies")} className="h-10 rounded-lg font-semibold"><Save className="h-4 w-4" />Save Changes</Button></UnsavedFooter>
+      <UnsavedFooter dirty={dirty}>
+        <Button type="button" variant="outline" onClick={reset} className="h-10 rounded-lg font-semibold">
+          <RotateCcw className="h-4 w-4" />
+          Discard Changes
+        </Button>
+        <Button type="button" onClick={() => unavailableRolePolicy("Save role permission policies")} className="h-10 rounded-lg font-semibold">
+          <Save className="h-4 w-4" />
+          Save Changes
+        </Button>
+      </UnsavedFooter>
     </div>
   );
 }

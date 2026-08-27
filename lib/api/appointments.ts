@@ -37,6 +37,11 @@ type PendingUnassignedQueryParams = {
 type AppointmentMutationData = Record<string, unknown>;
 export type AppointmentCapacity = components["schemas"]["CapacityResponseDto"];
 export type CompleteAppointmentInput = components["schemas"]["CompleteAppointmentDto"];
+export type CallTokenResponse = components["schemas"]["CallTokenResponseDto"];
+export type CallStartResponse = components["schemas"]["CallStartResponseDto"];
+export type CallJoinResponse = components["schemas"]["CallJoinResponseDto"];
+export type CallEndResponse = components["schemas"]["CallEndResponseDto"];
+export type CallNudgeResponse = components["schemas"]["CallNudgeResponseDto"];
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -187,4 +192,41 @@ export async function completeAppointment(id: string, data: CompleteAppointmentI
     method: "PATCH",
     body: JSON.stringify(data),
   });
+}
+
+function unwrapData<T>(payload: unknown): T {
+  if (payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload) {
+    return (payload as { data: T }).data;
+  }
+  return payload as T;
+}
+
+export async function getAppointmentCallToken(id: string): Promise<CallTokenResponse> {
+  return unwrapData<CallTokenResponse>(await request(`/appointments/${encodeURIComponent(id)}/call/token`, {
+    method: "POST",
+  }));
+}
+
+export async function startAppointmentCall(id: string): Promise<CallStartResponse> {
+  return unwrapData<CallStartResponse>(await request(`/appointments/${encodeURIComponent(id)}/call/start`, {
+    method: "POST",
+  }));
+}
+
+export async function joinAppointmentCall(id: string): Promise<CallJoinResponse> {
+  return unwrapData<CallJoinResponse>(await request(`/appointments/${encodeURIComponent(id)}/call/join`, {
+    method: "POST",
+  }));
+}
+
+export async function endAppointmentCall(id: string): Promise<CallEndResponse> {
+  return unwrapData<CallEndResponse>(await request(`/appointments/${encodeURIComponent(id)}/call/end`, {
+    method: "POST",
+  }));
+}
+
+export async function nudgeAppointmentCall(id: string): Promise<CallNudgeResponse> {
+  return unwrapData<CallNudgeResponse>(await request(`/appointments/${encodeURIComponent(id)}/call/nudge`, {
+    method: "POST",
+  }));
 }

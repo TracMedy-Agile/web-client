@@ -9,19 +9,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { getHospitalProfileSettings, type HospitalProfileSettings, updateHospitalProfileSettings, uploadHospitalLogo } from "@/lib/api/settings";
+import { getHospitalProfileSettings, type HospitalProfileSettings, updateHospitalLocation, updateHospitalProfileSettings, uploadHospitalCoverPhoto, uploadHospitalLogo } from "@/lib/api/settings";
 
 const defaultProfile: HospitalProfileSettings = {
   facilityId: "",
   name: "Lagos General Hospital",
   address: "12 Marina Road, Lagos Island, Lagos",
+  latitude: null,
+  longitude: null,
   contactEmail: "admin@lagosgeneral.ng",
   contactPhone: "+234 801 000 0001",
   timezone: "Africa/Lagos",
   logoUrl: "",
+  coverPhotoUrl: "",
 };
 
 const timezones = ["Africa/Lagos", "Africa/Accra", "Africa/Nairobi", "Europe/London", "America/New_York"];
+
+type HospitalProfileTextField = "name" | "contactEmail" | "contactPhone" | "timezone";
+type FacilityLocationSelection = { address?: string; latitude?: number; longitude?: number };
+
+const FACILITY_LOCATION_SELECTED_EVENT = "tracmedy:facility-location-selected";
 
 function initials(name: string) {
   return name
@@ -41,8 +49,11 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState("");
   const [noticeTone, setNoticeTone] = useState<"info" | "success" | "error">("info");
   const [logoPreview, setLogoPreview] = useState("");
+  const [coverPreview, setCoverPreview] = useState("");
   const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+  const [pendingCoverFile, setPendingCoverFile] = useState<File | null>(null);
   const logoPreviewRef = useRef("");
+  const coverPreviewRef = useRef("");
 
   useEffect(() => {
     capturePostHogEvent("settings_hospital_profile_viewed");
@@ -54,6 +65,7 @@ export default function SettingsPage() {
         setProfile(settings);
         setInitialProfile(settings);
         setLogoPreview(settings.logoUrl);
+        setCoverPreview(settings.coverPhotoUrl);
       })
       .catch((error: unknown) => {
         if (!isMounted) return;
@@ -68,27 +80,59 @@ export default function SettingsPage() {
     return () => {
       isMounted = false;
       if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
+      if (coverPreviewRef.current) URL.revokeObjectURL(coverPreviewRef.current);
     };
   }, []);
 
-  function updateField(field: keyof HospitalProfileSettings, value: string) {
+  useEffect(() => {
+    function handleFacilityLocationSelected(event: Event) {
+      const detail = (event as CustomEvent<FacilityLocationSelection>).detail;
+      const latitude = detail && typeof detail.latitude === "number" && Number.isFinite(detail.latitude) ? detail.latitude : null;
+      const longitude = detail && typeof detail.longitude === "number" && Number.isFinite(detail.longitude) ? detail.longitude : null;
+      if (latitude === null || longitude === null) return;
+
+      setProfile((current) => ({
+        ...current,
+        address: detail.address || current.address,
+        latitude,
+        longitude,
+      }));
+      setNotice("");
+    }
+
+    window.addEventListener(FACILITY_LOCATION_SELECTED_EVENT, handleFacilityLocationSelected);
+    return () => window.removeEventListener(FACILITY_LOCATION_SELECTED_EVENT, handleFacilityLocationSelected);
+  }, []);
+
+  function updateField(field: HospitalProfileTextField, value: string) {
     setProfile((current) => ({ ...current, [field]: value }));
     setNotice("");
+  }
+
+  function updateAddress(value: string) {
+    setProfile((current) => ({ ...current, address: value, latitude: null, longitude: null }));
+    setNotice("");
+  }
+
+  function validateImageFile(file: File, label: "logo" | "cover photo") {
+    const validType = file.type === "image/png" || file.type === "image/jpeg";
+    if (!validType) {
+      toast.error(`Upload a PNG or JPG ${label}.`);
+      return false;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(`${label === "logo" ? "Logo" : "Cover photo"} must be 2MB or smaller.`);
+      return false;
+    }
+
+    return true;
   }
 
   function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    const validType = file.type === "image/png" || file.type === "image/jpeg";
-    if (!validType) {
-      toast.error("Upload a PNG or JPG logo.");
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Logo must be 2MB or smaller.");
+    if (!validateImageFile(file, "logo")) {
       event.target.value = "";
       return;
     }
@@ -103,6 +147,24 @@ export default function SettingsPage() {
     capturePostHogEvent("settings_logo_selected", { file_type: file.type, file_size: file.size });
   }
 
+  function handleCoverChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!validateImageFile(file, "cover photo")) {
+      event.target.value = "";
+      return;
+    }
+
+    if (coverPreviewRef.current) URL.revokeObjectURL(coverPreviewRef.current);
+    const preview = URL.createObjectURL(file);
+    coverPreviewRef.current = preview;
+    setPendingCoverFile(file);
+    setCoverPreview(preview);
+    setNotice("Cover photo selected. Save configuration to upload it.");
+    setNoticeTone("info");
+    capturePostHogEvent("settings_cover_photo_selected", { file_type: file.type, file_size: file.size });
+  }
+
   function removeLogo() {
     if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
     logoPreviewRef.current = "";
@@ -113,12 +175,26 @@ export default function SettingsPage() {
     setNoticeTone("info");
   }
 
+  function removeCoverPhoto() {
+    if (coverPreviewRef.current) URL.revokeObjectURL(coverPreviewRef.current);
+    coverPreviewRef.current = "";
+    setPendingCoverFile(null);
+    setCoverPreview("");
+    setProfile((current) => ({ ...current, coverPhotoUrl: "" }));
+    setNotice("Cover photo will be removed when you save configuration.");
+    setNoticeTone("info");
+  }
+
   function resetProfile() {
     if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
+    if (coverPreviewRef.current) URL.revokeObjectURL(coverPreviewRef.current);
     logoPreviewRef.current = "";
+    coverPreviewRef.current = "";
     setPendingLogoFile(null);
+    setPendingCoverFile(null);
     setProfile(initialProfile);
     setLogoPreview(initialProfile.logoUrl);
+    setCoverPreview(initialProfile.coverPhotoUrl);
     setNotice("Hospital profile has been reset to the last loaded values.");
     setNoticeTone("info");
     capturePostHogEvent("settings_hospital_profile_reset");
@@ -132,16 +208,34 @@ export default function SettingsPage() {
       let nextProfile = profile;
       if (pendingLogoFile) {
         const logoUrl = await uploadHospitalLogo(profile.facilityId, pendingLogoFile);
-        nextProfile = { ...profile, logoUrl };
+        nextProfile = { ...nextProfile, logoUrl };
+      }
+      if (pendingCoverFile) {
+        const coverPhotoUrl = await uploadHospitalCoverPhoto(nextProfile.facilityId, pendingCoverFile);
+        nextProfile = { ...nextProfile, coverPhotoUrl };
       }
 
-      const savedProfile = await updateHospitalProfileSettings(nextProfile);
+      let savedProfile = await updateHospitalProfileSettings(nextProfile);
+      const hasSelectedCoordinates = nextProfile.latitude !== null && nextProfile.longitude !== null;
+      const shouldSyncLocation = hasSelectedCoordinates && (nextProfile.latitude !== initialProfile.latitude || nextProfile.longitude !== initialProfile.longitude);
+      if (shouldSyncLocation) {
+        const location = await updateHospitalLocation(savedProfile.facilityId, {
+          latitude: nextProfile.latitude,
+          longitude: nextProfile.longitude,
+        });
+        savedProfile = { ...savedProfile, ...location };
+      }
+
       if (logoPreviewRef.current) URL.revokeObjectURL(logoPreviewRef.current);
+      if (coverPreviewRef.current) URL.revokeObjectURL(coverPreviewRef.current);
       logoPreviewRef.current = "";
+      coverPreviewRef.current = "";
       setPendingLogoFile(null);
+      setPendingCoverFile(null);
       setProfile(savedProfile);
       setInitialProfile(savedProfile);
       setLogoPreview(savedProfile.logoUrl);
+      setCoverPreview(savedProfile.coverPhotoUrl);
       setNotice("Hospital profile saved successfully.");
       setNoticeTone("success");
       capturePostHogEvent("settings_hospital_profile_saved", { mode: "api" });
@@ -198,30 +292,57 @@ export default function SettingsPage() {
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-              <div
-                aria-label="Hospital logo preview"
-                className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary bg-cover bg-center text-4xl font-semibold text-primary-foreground"
-                role="img"
-                style={logoPreview ? { backgroundImage: `url(${logoPreview})` } : undefined}
-              >
-                {logoPreview ? null : initials(profile.name)}
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                <div
+                  aria-label="Hospital logo preview"
+                  className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary bg-cover bg-center text-4xl font-semibold text-primary-foreground"
+                  role="img"
+                  style={logoPreview ? { backgroundImage: `url(${logoPreview})` } : undefined}
+                >
+                  {logoPreview ? null : initials(profile.name)}
+                </div>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" asChild disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold">
+                      <label>
+                        <ImagePlus className="h-4 w-4" />
+                        Change Logo
+                        <input type="file" accept="image/png,image/jpeg" onChange={handleLogoChange} disabled={isSaving} className="sr-only" />
+                      </label>
+                    </Button>
+                    <Button type="button" variant="outline" onClick={removeLogo} disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold text-muted-foreground">
+                      <X className="h-4 w-4" />
+                      Remove logo
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">We support PNGs, JPGs max size 2MB</p>
+                </div>
               </div>
+
               <div className="space-y-3">
+                <div
+                  aria-label="Hospital cover photo preview"
+                  className="flex h-28 min-h-28 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted bg-cover bg-center text-sm font-semibold text-muted-foreground"
+                  role="img"
+                  style={coverPreview ? { backgroundImage: `url(${coverPreview})` } : undefined}
+                >
+                  {coverPreview ? null : "Cover photo"}
+                </div>
                 <div className="flex flex-wrap gap-3">
                   <Button type="button" asChild disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold">
                     <label>
                       <ImagePlus className="h-4 w-4" />
-                      Change Image
-                      <input type="file" accept="image/png,image/jpeg" onChange={handleLogoChange} disabled={isSaving} className="sr-only" />
+                      Change Cover
+                      <input type="file" accept="image/png,image/jpeg" onChange={handleCoverChange} disabled={isSaving} className="sr-only" />
                     </label>
                   </Button>
-                  <Button type="button" variant="outline" onClick={removeLogo} disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold text-muted-foreground">
+                  <Button type="button" variant="outline" onClick={removeCoverPhoto} disabled={isSaving} className="h-10 rounded-lg px-4 text-sm font-semibold text-muted-foreground">
                     <X className="h-4 w-4" />
-                    Remove image
+                    Remove cover
                   </Button>
                 </div>
-                <p className="text-base text-muted-foreground">We support PNGs, JPGs max size 2MB</p>
+                <p className="text-sm text-muted-foreground">We support PNGs, JPGs max size 2MB</p>
               </div>
             </div>
 
@@ -230,7 +351,7 @@ export default function SettingsPage() {
                 <Input value={profile.name} onChange={(event) => updateField("name", event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
               <Field label="Address" className="md:col-span-2">
-                <Input value={profile.address} onChange={(event) => updateField("address", event.target.value)} disabled={isSaving} className={inputClassName} />
+                <Input value={profile.address} onChange={(event) => updateAddress(event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
               <Field label="Contact Email">
                 <Input type="email" value={profile.contactEmail} onChange={(event) => updateField("contactEmail", event.target.value)} disabled={isSaving} className={inputClassName} />

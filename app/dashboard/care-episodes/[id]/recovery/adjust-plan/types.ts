@@ -49,6 +49,7 @@ export type Clinician = { id: string; name: string; role: string };
 
 type GeneratedCarePlan = components["schemas"]["CarePlanDto"];
 type GeneratedCreateCarePlan = components["schemas"]["CreateCarePlanDto"];
+export type CarePlanMonitoringRule = components["schemas"]["CarePlanMonitoringRuleDto"];
 
 // The generated schema currently describes these JSON-array fields as opaque
 // objects/string arrays. These refinements mirror the backend DTO while keeping
@@ -59,9 +60,10 @@ export type CarePlan = Omit<GeneratedCarePlan, "tasks" | "medications" | "lifest
   lifestyleRecommendations?: Array<string | { title: string; description: string }>;
 };
 
-export type CarePlanPayload = Omit<GeneratedCreateCarePlan, "tasks" | "medications"> & {
+export type CarePlanPayload = Omit<GeneratedCreateCarePlan, "tasks" | "medications" | "monitoringRules"> & {
   tasks?: CarePlanTask[];
   medications?: Omit<Medication, "id">[];
+  monitoringRules?: CarePlanMonitoringRule[];
 };
 
 export type CarePlanForm = {

@@ -1,7 +1,8 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { Toaster } from "sonner";
 import { PostHogProvider } from "@/app/(landing)/components/posthog-provider";
 import { PostHogPageView } from "@/app/components/PostHogPageView";
+import "@stream-io/video-react-sdk/dist/css/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
