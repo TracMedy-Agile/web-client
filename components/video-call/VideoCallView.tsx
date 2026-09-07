@@ -10,10 +10,12 @@ import {
   type Call,
   type StreamVideoClient,
 } from "@stream-io/video-react-sdk";
-import { Loader2 } from "lucide-react";
+import { Loader2, TimerReset } from "lucide-react";
+import { toast } from "sonner";
 import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { endCall } from "@/lib/api/video-call";
 import { connectStreamUser } from "@/lib/stream";
+import { cn } from "@/lib/utils";
 
 type VideoCallViewProps = {
   callCid: string;
@@ -21,6 +23,17 @@ type VideoCallViewProps = {
   onEnd: () => void | Promise<void>;
   appointmentId?: string;
 };
+
+// Live consultations are capped at 10 minutes; the call ends automatically once this elapses.
+const LIVE_CALL_DURATION_SECONDS = 10 * 60;
+const LOW_TIME_WARNING_SECONDS = 60;
+
+function formatCountdown(seconds: number) {
+  const clamped = Math.max(seconds, 0);
+  const minutes = Math.floor(clamped / 60);
+  const remaining = clamped % 60;
+  return `${minutes}:${String(remaining).padStart(2, "0")}`;
+}
 
 function parseCallCid(callCid: string) {
   const [callType, ...callIdParts] = callCid.split(":");
@@ -48,11 +61,12 @@ export function VideoCallView({ appointmentId, callCid, token, onEnd }: VideoCal
   const [call, setCall] = useState<Call | null>(null);
   const [error, setError] = useState("");
   const [isJoining, setIsJoining] = useState(true);
+  const [remainingSeconds, setRemainingSeconds] = useState(LIVE_CALL_DURATION_SECONDS);
   const hasEndedRef = useRef(false);
 
   const resolvedAppointmentId = appointmentId ?? getAppointmentIdFromCallCid(callCid);
 
-  const handleEndCall = useCallback(async () => {
+  const handleEndCall = useCallback(async (reason?: "timeout") => {
     if (hasEndedRef.current) return;
     hasEndedRef.current = true;
 
@@ -65,8 +79,33 @@ export function VideoCallView({ appointmentId, callCid, token, onEnd }: VideoCal
       return;
     }
 
+    if (reason === "timeout") {
+      toast.info("Consultation ended — the 10-minute time limit was reached.");
+    }
+
     await onEnd();
   }, [call, onEnd, resolvedAppointmentId]);
+
+  // Live consultations are capped at LIVE_CALL_DURATION_SECONDS, starting once this clinician
+  // has actually joined the call. Recomputed from a wall-clock timestamp each tick rather than
+  // decremented, so it stays accurate even if the tab is backgrounded and timers get throttled.
+  useEffect(() => {
+    if (!call) return;
+
+    const startedAt = Date.now();
+    const intervalId = window.setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      const nextRemaining = Math.max(LIVE_CALL_DURATION_SECONDS - elapsedSeconds, 0);
+      setRemainingSeconds(nextRemaining);
+
+      if (nextRemaining <= 0) {
+        window.clearInterval(intervalId);
+        void handleEndCall("timeout");
+      }
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [call, handleEndCall]);
 
   useEffect(() => {
     let isActive = true;
@@ -141,6 +180,17 @@ export function VideoCallView({ appointmentId, callCid, token, onEnd }: VideoCal
           <StreamTheme as="main" className="flex min-h-dvh flex-1 flex-col bg-[#111827]">
             <StreamCall call={call}>
               <div className="flex min-h-dvh flex-1 flex-col">
+                <div className="flex justify-center px-4 pt-4">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold",
+                      remainingSeconds <= LOW_TIME_WARNING_SECONDS ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white/90",
+                    )}
+                  >
+                    <TimerReset className="h-3.5 w-3.5" aria-hidden />
+                    {formatCountdown(remainingSeconds)} remaining
+                  </span>
+                </div>
                 <div className="flex min-h-0 flex-1">
                   <SpeakerLayout />
                 </div>

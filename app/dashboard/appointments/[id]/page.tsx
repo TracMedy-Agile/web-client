@@ -74,6 +74,7 @@ type AppointmentDetails = AppointmentCallFields & {
   status: string;
   patient: {
     initials: string;
+    avatarUrl: string;
     name: string;
     hospitalId: string;
     ageGender: string;
@@ -367,6 +368,7 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
     status,
     patient: {
       initials: getInitials(patientName),
+      avatarUrl: getString(record, ["patientAvatarUrl"], "") || getString(patient, ["avatarUrl", "patientAvatarUrl"], ""),
       name: patientName,
       hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracmedyId", "medicalRecordNumber", "id"], "--"),
       ageGender: patientAgeGender || "--",
@@ -765,7 +767,12 @@ export default function AppointmentDetailsPage() {
               <Card>
                 <CardHeader icon={<UsersRound className="h-5 w-5" />} title="Patient Information" showChevron />
                 <div className="flex items-center gap-4 lg:gap-6">
-                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold md:text-3xl text-white">{appointment.patient.initials}</div>
+                  {appointment.patient.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={appointment.patient.avatarUrl} alt={appointment.patient.name} className="h-20 w-20 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold md:text-3xl text-white">{appointment.patient.initials}</div>
+                  )}
                   <div>
                     <h3 className="text-lg font-bold text-[#111827]">{appointment.patient.name}</h3>
                     <p className="mt-3 text-base font-medium text-[#344054]">Hospital ID: <Link href="#" className="font-bold text-[#1473E6]">{appointment.patient.hospitalId}</Link></p>

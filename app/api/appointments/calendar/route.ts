@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers'
+import { getAccessToken } from '@/lib/services/auth/cookie-storage.server'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -16,8 +16,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'API URL is not configured' }, { status: 500 })
     }
 
-    const cookieStore = await cookies()
-    const token = cookieStore.get('accessToken')?.value || cookieStore.get('token')?.value
+    const token = await getAccessToken()
     const backendUrl = new URL('/appointments/calendar', baseUrl)
     backendUrl.searchParams.set('facilityId', facilityId)
     backendUrl.searchParams.set('date', date)

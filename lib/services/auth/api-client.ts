@@ -6,7 +6,7 @@ async function getAccessToken(): Promise<string | null> {
     try {
       const { cookies } = await import('next/headers')
       const cookieStore = await cookies()
-      return cookieStore.get('accessToken')?.value ?? null
+      return cookieStore.get('__Host-accessToken')?.value ?? null
     } catch {
       return null
     }

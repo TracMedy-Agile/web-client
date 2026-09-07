@@ -1,5 +1,5 @@
 import type { components } from '@/docs/types/api'
-import type { LoginResponse } from '@/lib/types/auth'
+import type { SafeUser } from '@/lib/types/auth'
 import { apiClient } from '@/lib/services/auth/api-client'
 
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -58,8 +58,53 @@ async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 export const apiRegister = (data: { name: string; email: string; hospitalId: string; password: string }) =>
   post<{ userId: string }>('/auth/hospital/register', data)
 
-export const apiLogin = (data: { email: string; password: string }) =>
-  post<LoginResponse>('/auth/hospital/login', data)
+export type HospitalLoginSession = {
+  user: SafeUser | null
+  expiresIn: number
+}
+
+export async function apiHospitalLogin(data: { email: string; password: string }): Promise<ApiResult<HospitalLoginSession>> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    })
+    const json = await readJson(res)
+
+    if (res.ok && json?.ok === true) {
+      return {
+        ok: true,
+        data: {
+          user: (json.user ?? null) as SafeUser | null,
+          expiresIn: typeof json.expiresIn === 'number' ? json.expiresIn : 15 * 60,
+        },
+      }
+    }
+
+    const message = typeof json?.message === 'string' && json.message.trim()
+      ? json.message
+      : res.status === 401
+        ? 'Invalid email or password'
+        : 'Something went wrong. Please try again.'
+
+    return {
+      ok: false,
+      code: typeof json?.code === 'string' ? json.code : `HTTP_${res.status}`,
+      message,
+      statusCode: typeof json?.statusCode === 'number' ? json.statusCode : res.status,
+    }
+  } catch {
+    return {
+      ok: false,
+      code: 'NETWORK_ERROR',
+      message: 'Network error. Please check your connection.',
+      statusCode: 0,
+    }
+  }
+}
+
 
 export const apiVerifyOtp = (data: { userId: string; otp: string }) =>
   post('/auth/verify-otp', data)
@@ -101,21 +146,6 @@ export async function apiAcceptTeamInvite(data: components['schemas']['AcceptInv
       message: 'Network error. Please check your connection.',
       statusCode: 0,
     }
-  }
-}
-export async function storeTokens(tokens: { accessToken: string; refreshToken: string; expiresIn: number }) {
-  try {
-    const res = await fetch('/api/auth/set-tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tokens),
-    })
-
-    if (!res.ok) {
-      console.error('Failed to store tokens:', await res.text())
-    }
-  } catch (err) {
-    console.error('storeTokens error:', err)
   }
 }
 
