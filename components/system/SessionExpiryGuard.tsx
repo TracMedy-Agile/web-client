@@ -29,8 +29,8 @@ function getTokenExpiration(accessToken: string) {
 
 async function endExpiredSession() {
   try {
-    await fetch("/api/auth/set-tokens", {
-      method: "DELETE",
+    await fetch("/api/auth/logout", {
+      method: "POST",
       credentials: "include",
     });
   } finally {

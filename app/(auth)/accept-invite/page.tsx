@@ -14,9 +14,9 @@ type PasswordCheck = {
 function AcceptInviteContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token') ?? ''
-  // Personalization (hospital/inviter/role/email) is not part of the invite
-  // link today — only `token` is. These fall back gracefully if backend
-  // later adds them as query params instead of showing fabricated data.
+  // hospitalName/inviterName/role/email are sent as query params by
+  // team.service.ts's sendInviteEmail(). Fall back gracefully to generic
+  // copy if any are ever missing, rather than showing fabricated data.
   const hospitalName = searchParams.get('hospitalName') ?? ''
   const inviterName = searchParams.get('inviterName') ?? ''
   const role = searchParams.get('role') ?? ''

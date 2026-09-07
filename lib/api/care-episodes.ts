@@ -913,23 +913,28 @@ export async function getCareEpisodeDailyVitals(id: string, days = 7): Promise<D
   return getRecordArray(body, ["days"]).map(normalizeDailyVitals);
 }
 
+export type MedicationSource = MedicationAdherenceApiRecord["source"];
+
 export type MedicationAdherenceRecord = Omit<MedicationAdherenceApiRecord, "lastTakenAt"> & {
   lastTakenAt: string | null;
-  source?: string;
 };
 
+function normalizeMedicationSource(value: string): MedicationSource {
+  if (value === "care_plan" || value === "patient" || value === "manual" || value === "user_entered") return value;
+  return null;
+}
+
 function normalizeMedicationAdherence(record: ApiRecord): MedicationAdherenceRecord {
-  const source = getString(record, ["source"]);
   return {
     medicationId: getString(record, ["medicationId", "id", "_id"]),
     name: getString(record, ["name", "medicationName"], "Medication"),
     dosageStrength: getString(record, ["dosageStrength", "dosage", "strength"]),
+    source: normalizeMedicationSource(getString(record, ["source"])),
     totalDoses: getNumber(record, ["totalDoses"]) ?? 0,
     takenCount: getNumber(record, ["takenCount"]) ?? 0,
     missedCount: getNumber(record, ["missedCount"]) ?? 0,
     adherencePercentage: getNumber(record, ["adherencePercentage"]) ?? 0,
     lastTakenAt: getString(record, ["lastTakenAt"]) || null,
-    ...(source ? { source } : {}),
   };
 }
 

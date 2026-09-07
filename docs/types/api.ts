@@ -1041,6 +1041,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/care-episodes/{id}/tasks/completion-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get historical task completion log
+         * @description For today: returns live task state from the active care plan. For past dates: returns the TaskCompletionLog entries. Returns empty tasks array if no care plan exists or date is in the future.
+         */
+        get: operations["CareEpisodesController_getTaskCompletionLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/care-episodes/{id}/care-plan": {
         parameters: {
             query?: never;
@@ -4257,66 +4277,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/drugs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get drug detail
-         * @description Returns full drug data from local cache or fresh fetch from RxNorm.
-         */
-        get: operations["DrugsController_getDetail"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/drugs/{id}/education": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get drug education content
-         * @description Returns patient-friendly education content generated from DailyMed/openFDA data, summarized by AI. Cached for 24 hours.
-         */
-        get: operations["DrugsController_getEducation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/drugs/interactions/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Check drug interactions
-         * @description Checks pairwise interactions between specified drugs using DDInter 2.0 dataset with openFDA fallback.
-         */
-        post: operations["DrugsController_checkInteractions"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/drugs/bookmarks": {
         parameters: {
             query?: never;
@@ -4356,6 +4316,66 @@ export interface paths {
          * @description Remove a bookmarked drug.
          */
         delete: operations["DrugsController_removeBookmark"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/interactions/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check drug interactions
+         * @description Checks pairwise interactions between specified drugs using DDInter 2.0 dataset with openFDA fallback.
+         */
+        post: operations["DrugsController_checkInteractions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get drug detail
+         * @description Returns full drug data from local cache or fresh fetch from RxNorm.
+         */
+        get: operations["DrugsController_getDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drugs/{id}/education": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get drug education content
+         * @description Returns patient-friendly education content generated from DailyMed/openFDA data, summarized by AI. Cached for 24 hours.
+         */
+        get: operations["DrugsController_getEducation"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5273,6 +5293,10 @@ export interface components {
             facilityId: string;
             /** @description Clinician ID */
             clinicianId?: string;
+            /** @description Assigned clinician display name */
+            clinicianName?: string | null;
+            /** @description Assigned clinician profile photo URL */
+            clinicianAvatarUrl?: string | null;
             /** @description Diagnosis */
             diagnosis?: string;
             /** @description Status */
@@ -5523,6 +5547,10 @@ export interface components {
             facilityId: string;
             /** @description Clinician ID */
             clinicianId?: string;
+            /** @description Assigned clinician display name */
+            clinicianName?: string | null;
+            /** @description Assigned clinician profile photo URL */
+            clinicianAvatarUrl?: string | null;
             /** @description Diagnosis */
             diagnosis?: string;
             /** @description Status */
@@ -5579,8 +5607,6 @@ export interface components {
             dayProgress: number;
             /** @description Recent timeline events */
             recentTimelineEvents: components["schemas"]["CareTimelineEventDto"][];
-            /** @description Clinician name */
-            clinicianName?: string;
             /** @description Facility info */
             facility?: components["schemas"]["FacilityInfoDto"];
             /** @description Closure summary (present when episode is closed) */
@@ -5972,6 +5998,11 @@ export interface components {
             name: string;
             /** @description Dosage strength */
             dosageStrength: string;
+            /**
+             * @description Who added the medication
+             * @enum {string|null}
+             */
+            source: "care_plan" | "patient" | "manual" | "user_entered" | null;
             /** @description Total doses */
             totalDoses: number;
             /** @description Taken count */
@@ -6809,7 +6840,7 @@ export interface components {
             /** @description Blood group */
             bloodGroup: Record<string, never> | null;
             /** @description Avatar URL */
-            avatarUrl: Record<string, never> | null;
+            avatarUrl: string | null;
         };
         PatientConnectionInfoDto: {
             /** @description PatientFacilityLink ID */
@@ -7056,7 +7087,7 @@ export interface components {
              * @description Patient profile picture URL
              * @example https://res.cloudinary.com/...
              */
-            avatarUrl: Record<string, never> | null;
+            avatarUrl: string | null;
             /**
              * @description Tracmedy patient ID
              * @example TRC-2529-001
@@ -7144,6 +7175,8 @@ export interface components {
             id: string;
             /** @description Patient ID */
             patientId: string;
+            /** @description Patient avatar URL. Never null — uploaded image or generated initials avatar. */
+            patientAvatarUrl: string;
             /** @description Facility ID */
             facilityId: string;
             /** @description Clinician ID */
@@ -7218,6 +7251,11 @@ export interface components {
              * @example +2348012345678
              */
             clinicianPhone: string | null;
+            /**
+             * @description Assigned clinician avatar URL. Never null when a clinician is assigned — uploaded image or generated initials avatar.
+             * @example https://ui-avatars.com/api/?name=Dr%20Sarah%20Jones&background=023E8A&color=fff&size=128&bold=true
+             */
+            clinicianAvatarUrl: string | null;
             /**
              * Format: date-time
              * @description Created at
@@ -7250,6 +7288,8 @@ export interface components {
             id: string;
             /** @description Patient ID */
             patientId: string;
+            /** @description Patient avatar URL. Never null — uploaded image or generated initials avatar. */
+            patientAvatarUrl: string;
             /** @description Facility ID */
             facilityId: string;
             /** @description Clinician ID */
@@ -7324,6 +7364,11 @@ export interface components {
              * @example +2348012345678
              */
             clinicianPhone: string | null;
+            /**
+             * @description Assigned clinician avatar URL. Never null when a clinician is assigned — uploaded image or generated initials avatar.
+             * @example https://ui-avatars.com/api/?name=Dr%20Sarah%20Jones&background=023E8A&color=fff&size=128&bold=true
+             */
+            clinicianAvatarUrl: string | null;
             /**
              * Format: date-time
              * @description Created at
@@ -7790,7 +7835,7 @@ export interface components {
             /** @description Email address */
             email?: Record<string, never>;
             /** @description Avatar URL */
-            avatarUrl?: Record<string, never>;
+            avatarUrl?: string;
             /**
              * @description Profile color for display
              * @example #4A90D9
@@ -8517,7 +8562,7 @@ export interface components {
              */
             phone?: Record<string, never>;
             /** @description Avatar URL */
-            avatarUrl?: Record<string, never>;
+            avatarUrl?: string;
             /** @description Whether email is verified */
             emailVerified: boolean;
             /** @description Whether phone is verified */
@@ -9607,7 +9652,7 @@ export interface components {
             /** @description Patient display name */
             patientName: string;
             /** @description Patient avatar URL */
-            patientAvatarUrl?: string | null;
+            patientAvatarUrl: string;
             /** @description Diagnosis */
             diagnosis?: string | null;
             /** @description Episode status */
@@ -10142,6 +10187,40 @@ export interface components {
              */
             isCustom: boolean;
         };
+        DrugBookmarkResponseDto: {
+            /** @description Bookmark ID */
+            id: string;
+            /** @description Drug reference details */
+            drugReference: components["schemas"]["DrugSearchResultDto"];
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+        };
+        InteractionCheckDto: {
+            /**
+             * @description Array of drug reference IDs to check for interactions
+             * @example [
+             *       "drug-id-1",
+             *       "drug-id-2"
+             *     ]
+             */
+            drugIds: string[];
+        };
+        InteractionResultDto: {
+            /** @description First drug name */
+            drugA: string;
+            /** @description Second drug name */
+            drugB: string;
+            /**
+             * @description Interaction severity
+             * @enum {string}
+             */
+            severity: "major" | "moderate" | "minor" | "unknown";
+            /** @description Interaction description */
+            description: string;
+        };
         DrugDetailResponseDto: {
             /** @description Drug reference ID */
             id: string;
@@ -10214,40 +10293,6 @@ export interface components {
             warnings: components["schemas"]["EducationWarningDto"][];
             /** @description Storage instructions */
             storage: string[];
-        };
-        InteractionCheckDto: {
-            /**
-             * @description Array of drug reference IDs to check for interactions
-             * @example [
-             *       "drug-id-1",
-             *       "drug-id-2"
-             *     ]
-             */
-            drugIds: string[];
-        };
-        InteractionResultDto: {
-            /** @description First drug name */
-            drugA: string;
-            /** @description Second drug name */
-            drugB: string;
-            /**
-             * @description Interaction severity
-             * @enum {string}
-             */
-            severity: "major" | "moderate" | "minor" | "unknown";
-            /** @description Interaction description */
-            description: string;
-        };
-        DrugBookmarkResponseDto: {
-            /** @description Bookmark ID */
-            id: string;
-            /** @description Drug reference details */
-            drugReference: components["schemas"]["DrugSearchResultDto"];
-            /**
-             * Format: date-time
-             * @description Created at
-             */
-            createdAt: string;
         };
         CallTokenResponseDto: {
             /** @description Short-lived Stream user token */
@@ -12647,6 +12692,37 @@ export interface operations {
             };
             /** @description Episode not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CareEpisodesController_getTaskCompletionLog: {
+        parameters: {
+            query?: {
+                /** @description Date in YYYY-MM-DD format. Defaults to today. */
+                date?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Care episode ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task completion log returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Access denied */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20386,116 +20462,6 @@ export interface operations {
             };
         };
     };
-    DrugsController_getDetail: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Drug detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DrugDetailResponseDto"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Drug not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    DrugsController_getEducation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Drug education content */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DrugEducationResponseDto"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Drug not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    DrugsController_checkInteractions: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InteractionCheckDto"];
-            };
-        };
-        responses: {
-            /** @description Interaction results */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InteractionResultDto"][];
-                };
-            };
-            /** @description Validation error */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     DrugsController_getBookmarks: {
         parameters: {
             query?: never;
@@ -20583,6 +20549,116 @@ export interface operations {
                 content?: never;
             };
             /** @description Drug reference not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_checkInteractions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InteractionCheckDto"];
+            };
+        };
+        responses: {
+            /** @description Interaction results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteractionResultDto"][];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_getDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drug detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugDetailResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DrugsController_getEducation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Drug education content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrugEducationResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Drug not found */
             404: {
                 headers: {
                     [name: string]: unknown;

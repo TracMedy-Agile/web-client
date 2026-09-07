@@ -16,11 +16,12 @@ export default function SessionExpiredPage() {
     setIsLeaving(true);
     capturePostHogEvent("session_login_clicked");
     try {
-      await fetch("/api/auth/set-tokens", {
-        method: "DELETE",
+      const response = await fetch("/api/auth/refresh", {
+        method: "POST",
         credentials: "include",
       });
-    } finally {
+      window.location.replace(response.ok ? "/dashboard" : "/login");
+    } catch {
       window.location.replace("/login");
     }
   }
