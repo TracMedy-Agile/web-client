@@ -6,14 +6,15 @@ export interface AuthTokens {
   expiresIn: number
 }
 
-const ACCESS_TOKEN_COOKIE = 'accessToken'
-const REFRESH_TOKEN_COOKIE = 'refreshToken'
+export const ACCESS_TOKEN_COOKIE = '__Host-accessToken'
+export const REFRESH_TOKEN_COOKIE = '__Host-refreshToken'
 const REFRESH_TOKEN_MAX_AGE = 60 * 60 * 24 * 7
 
 function getCookieOptions(maxAge: number) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: true,
+    // SameSite=Lax keeps cookies available for normal top-level GET navigations while limiting cross-site request exposure.
     sameSite: 'lax' as const,
     path: '/',
     maxAge,

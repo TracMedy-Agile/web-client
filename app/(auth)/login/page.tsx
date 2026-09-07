@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { apiLogin, storeTokens } from '@/lib/api/auth'
+import { apiHospitalLogin } from '@/lib/api/auth'
 import posthog, { capturePostHogEvent } from '@/lib/analytics/posthog'
 import Image from 'next/image'
 
@@ -22,17 +22,12 @@ export default function LoginPage() {
     setApiError('')
     setIsLoading(true)
     try {
-      const result = await apiLogin({ email, password })
+      const result = await apiHospitalLogin({ email, password })
       if (!result.ok) {
         setApiError(result.message)
         return
       }
-     
-      await storeTokens({
-        accessToken: result.data.accessToken,
-        refreshToken: result.data.refreshToken,
-        expiresIn: result.data.expiresIn,
-      })
+
       const user = result.data.user
       const role = user?.role
 

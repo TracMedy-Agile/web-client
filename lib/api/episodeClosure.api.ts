@@ -137,29 +137,17 @@ export async function getClosedEpisodeSummary(episodeId: string): Promise<Closed
     ? Math.round(((openingRisk - closingRisk) / openingRisk) * 100)
     : null;
 
-  const carePlanEvents = chronological.filter(isCarePlanEvent);
-  const carePlanHistory: ClosureCarePlanVersion[] = carePlanEvents.map((event) => {
-    const version = getNumber(event.payload, ["version", "carePlanVersion"]);
-    const isCurrent = carePlan && version === carePlan.version;
-    return {
-      version: version == null ? "Version unavailable" : `CP-v${version}`,
-      title: event.eventType === "care_plan_reconciled" ? "Care Plan Reconciled" : "Care Plan Updated",
-      status: isCurrent ? "Completed" : carePlan && version != null && version < carePlan.version ? "Superseded" : "Updated",
-      date: event.timestamp,
-      author: getString(event.payload, ["clinicianName"], eventSource(event)),
-      description: eventDescription(event) || "No change description was supplied.",
-    };
-  });
-  if (carePlan && !carePlanHistory.some((entry) => entry.version === `CP-v${carePlan.version}`)) {
-    carePlanHistory.push({
-      version: `CP-v${carePlan.version}`,
-      title: "Final Care Plan",
-      status: "Completed",
-      date: carePlan.createdAt,
-      author: "Clinician",
-      description: carePlan.changeReason || "No change description was supplied.",
-    });
-  }
+  // GET /care-episodes/{id}/care-plan now returns every historical version directly, so the
+  // history no longer needs to be guessed from care_plan_* timeline events.
+  const carePlanVersions = carePlan ? [...carePlan.versions].sort((left, right) => left.version - right.version) : [];
+  const carePlanHistory: ClosureCarePlanVersion[] = carePlanVersions.map((version, index) => ({
+    version: `CP-v${version.version}`,
+    title: index === carePlanVersions.length - 1 ? "Final Care Plan" : "Care Plan Updated",
+    status: index === carePlanVersions.length - 1 ? "Completed" : "Superseded",
+    date: version.createdAt,
+    author: "Clinician",
+    description: version.changeReason || "No change description was supplied.",
+  }));
 
   const interventionEvents = chronological.filter((event) => {
     const type = event.eventType.toLowerCase();
@@ -229,7 +217,7 @@ export async function getClosedEpisodeSummary(episodeId: string): Promise<Closed
       },
       clinicalActivity: {
         assessments: assessmentHistory.length,
-        carePlanAdjustments: carePlanEvents.length,
+        carePlanAdjustments: carePlanVersions.length,
         specialistEscalations,
         emergencyEscalations,
         interventionsLogged: interventionEvents.length,

@@ -25,20 +25,34 @@ type GuardedRoute = {
   permission: DashboardPermission;
 };
 
-// Only routes backed by real server-side enforcement are gated here. `manage_team_members` and
-// `audit_log` are the only two permissions any backend route actually checks (TeamPermissionGuard
-// is wired onto team.controller.ts and audit.controller.ts only). connected_patients/care_episode/
-// appointments/alerts/messages/view_all_reports/configure_settings are stored on the staff record
-// but never checked by any API route — and connected_patients/alerts/messages specifically can
-// never be satisfied at all, since the Team edit UI collapses those checkboxes into the single
-// `care_episode` value on save (see TeamMemberActions.tsx), so the backend never stores those
-// literal strings. Blocking those pages here would just lock clinicians out with no way to
-// restore access via any checkbox. Add them back once the backend adds the matching
-// @TeamPermissionRequired(...) checks (see docs/backend.md, "Team → Permissions").
+// Only routes backed by real server-side enforcement are gated here. As of the Phase 12.6 backend
+// pass, TeamPermissionGuard is wired onto team.controller.ts (manage_team_members),
+// audit.controller.ts (audit_log), care-episodes.controller.ts (care_episode),
+// appointment.controller.ts (appointments), and analytics.controller.ts (view_all_reports) — and
+// the Team edit UI maps those five checkboxes directly to their matching backend values (no
+// collapsing), so they're both enforced AND satisfiable. connected_patients/alerts/messages are
+// NOT gated here: no facility/alerts/messaging route checks them, and the Team edit UI still
+// collapses all three of those checkboxes into the single `care_episode` value on save (see
+// TeamMemberActions.tsx), so the backend can never store those literal strings — gating those
+// pages would permanently lock clinicians out with no checkbox able to restore access.
+// Settings (`configure_settings`) is gated too, restoring a restriction that used to live in
+// middleware.ts and was dropped as a side effect of the login/session security-hardening rewrite —
+// Settings is meant to be hospital_admin-only. Nothing on the backend checks `configure_settings`
+// yet, and `/auth/me` doesn't return a clinician's actual granted permissions at all (see
+// docs/backend.md), so `canAccessDashboardPermission`'s fallback currently makes this behave as
+// blanket hospital_admin-only for every STRICT_PERMISSIONS entry, care_episode/appointments/
+// view_all_reports included — that's a real, separate backend bug, not something this route
+// addition causes. Once `/auth/me` is fixed to include a clinician's `FacilityStaffMember`
+// permissions, a clinician actually granted `configure_settings` will correctly gain access here
+// instead of this staying admin-only forever.
 const GUARDED_ROUTES: readonly GuardedRoute[] = [
   { prefix: "/dashboard/team", permission: "manage_team_members" },
   { prefix: "/dashboard/audit-logs", permission: "audit_log" },
   { prefix: "/dashboard/audit", permission: "audit_log" },
+  { prefix: "/dashboard/care-episodes", permission: "care_episode" },
+  { prefix: "/dashboard/appointments", permission: "appointments" },
+  { prefix: "/dashboard/reports", permission: "view_all_reports" },
+  { prefix: "/dashboard/settings", permission: "configure_settings" },
 ] as const;
 
 function requiredPermissionForPath(pathname: string) {

@@ -119,6 +119,8 @@ const PERMISSION_TO_BACKEND: Record<TeamPermission, BackendTeamPermission> = {
   full_system_access: "full_system_access",
 };
 
+const CARE_EPISODE_BUNDLE: TeamPermission[] = ["connected_patients", "care_episode", "alerts", "messages"];
+
 function toBackendPermissions(values: TeamPermission[]): BackendTeamPermission[] {
   return Array.from(new Set(values.map((permission) => PERMISSION_TO_BACKEND[permission])));
 }
@@ -146,8 +148,18 @@ function allPermissions(): TeamPermission[] {
   return PERMISSIONS.map((permission) => permission.value);
 }
 
+// connected_patients/alerts/messages all collapse into the single `care_episode` backend value on
+// save (see PERMISSION_TO_BACKEND) — the backend never stores those three literal strings. So on
+// load, treat them as granted whenever `care_episode` is present; otherwise they'd always render
+// unchecked even for a member who genuinely has that access.
 function normalizePermissions(values?: string[]): TeamPermission[] {
-  return Array.from(new Set((values || []).map(normalizeTeamPermission).filter((value): value is TeamPermission => Boolean(value))));
+  const parsed = new Set((values || []).map(normalizeTeamPermission).filter((value): value is TeamPermission => Boolean(value)));
+  if (parsed.has("care_episode")) {
+    parsed.add("connected_patients");
+    parsed.add("alerts");
+    parsed.add("messages");
+  }
+  return Array.from(parsed);
 }
 
 function permissionsForAccessProfile(profile: AccessProfile, values?: string[]): TeamPermission[] {
@@ -219,8 +231,17 @@ export default function TeamMemberActions({
     }
 
     if (!checked) setEditedAccessProfile("limited");
+
+    // Connected patients / Care episodes / Alerts / Messages all collapse into the single
+    // `care_episode` backend value (see PERMISSION_TO_BACKEND) — they aren't independently
+    // grantable today. Toggle them together so the UI honestly reflects that they're really one
+    // shared permission, instead of letting them drift out of sync with what actually gets saved.
+    const linked = CARE_EPISODE_BUNDLE.includes(permission) ? CARE_EPISODE_BUNDLE : [permission];
+
     setEditedPermissions((current) => {
-      const next = checked ? [...new Set([...current, permission])] : current.filter((item) => item !== permission);
+      const next = checked
+        ? [...new Set([...current, ...linked])]
+        : current.filter((item) => !linked.includes(item));
       return checked ? next : next.filter((item) => item !== "full_system_access");
     });
   }

@@ -159,8 +159,16 @@ const PERMISSION_GROUPS = [
   },
 ] as const;
 
+// connected_patients/alerts/messages collapse into the single `care_episode` backend value on save
+// (see TeamMemberActions.tsx) — the backend never stores those three literal strings. Treat them as
+// granted whenever `care_episode` is present, or these three would always show unchecked even for a
+// member who genuinely has that access.
+const CARE_EPISODE_BUNDLED_PERMISSIONS = new Set(["connected_patients", "alerts", "messages"]);
+
 function hasPermission(member: TeamMember, permission: string) {
-  return member.accessProfile === "full_access" || member.permissions.includes("full_system_access") || member.permissions.includes(permission);
+  if (member.accessProfile === "full_access" || member.permissions.includes("full_system_access")) return true;
+  if (member.permissions.includes(permission)) return true;
+  return CARE_EPISODE_BUNDLED_PERMISSIONS.has(permission) && member.permissions.includes("care_episode");
 }
 
 function channelsFromPreference(preference: EscalationPreference | null, member: TeamMember | null): EscalationChannel[] {

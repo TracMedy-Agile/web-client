@@ -1,7 +1,6 @@
-import { cookies } from 'next/headers'
+import { getAccessToken } from '@/lib/services/auth/cookie-storage.server'
 
 export async function GET() {
-  const cookieStore = await cookies()
-  const accessToken = cookieStore.get('accessToken')?.value
+  const accessToken = await getAccessToken()
   return Response.json({ accessToken: accessToken ?? null })
 }
