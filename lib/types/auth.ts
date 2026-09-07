@@ -4,12 +4,6 @@ export type UserRole =
 export type UserStatus =
   'pending' | 'active' | 'locked' | 'suspended';
 
-export interface TokenPair {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-}
-
 export interface SafeUser {
   id: string;
   email: string;
@@ -26,11 +20,4 @@ export interface SafeUser {
   facilityId: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-  user: SafeUser;
 }

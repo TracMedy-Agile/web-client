@@ -28,11 +28,15 @@ function TracmedyLogo() {
   )
 }
 
+const REGISTRATION_TOKEN_KEY = 'tracmedy_registration_token'
+
 function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const email = searchParams.get('email') ?? 'your email'
-  const userId = searchParams.get('userId') ?? ''
+  const registrationToken = typeof window !== 'undefined'
+    ? window.sessionStorage.getItem(REGISTRATION_TOKEN_KEY) ?? ''
+    : ''
 
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''))
   const [error, setError] = useState<OtpError>(null)
@@ -95,7 +99,7 @@ function VerifyEmailContent() {
     setIsResending(true)
     setError(null)
     setDigits(Array(OTP_LENGTH).fill(''))
-    await apiResendOtp({ userId })
+    await apiResendOtp({ registrationToken })
     setCountdown(RESEND_SECONDS)
     setIsResending(false)
     inputRefs.current[0]?.focus()
@@ -108,7 +112,7 @@ function VerifyEmailContent() {
     setIsSubmitting(true)
     setError(null)
     try {
-      const result = await apiVerifyOtp({ userId, otp: code })
+      const result = await apiVerifyOtp({ registrationToken, otp: code })
       if (!result.ok) {
         const known: OtpError = (
           result.code === 'AUTH_OTP_EXPIRED' ||
@@ -118,6 +122,7 @@ function VerifyEmailContent() {
         setError(known)
         return
       }
+      window.sessionStorage.removeItem(REGISTRATION_TOKEN_KEY)
       router.push('/login')
     } finally {
       setIsSubmitting(false)

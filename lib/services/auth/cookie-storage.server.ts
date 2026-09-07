@@ -14,8 +14,8 @@ function getCookieOptions(maxAge: number) {
   return {
     httpOnly: true,
     secure: true,
-    // SameSite=Lax keeps cookies available for normal top-level GET navigations while limiting cross-site request exposure.
-    sameSite: 'lax' as const,
+    // SameSite=Strict matches backend hospital-login cookies (auth.controller.ts) — consistent CSRF protection.
+    sameSite: 'strict' as const,
     path: '/',
     maxAge,
   }
