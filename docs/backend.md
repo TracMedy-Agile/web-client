@@ -4,9 +4,9 @@ Re-audited 2026-08-27, most recently against the `feat(phase-12.6): notify patie
 
 ---
 
-## `GET /auth/me` never returns a clinician's actual granted permissions — makes every permission-gated page effectively hospital_admin-only
+## `GET /auth/me` never returns a clinician's actual granted permissions — makes Care Episodes/Appointments/Reports effectively hospital_admin-only
 
-**What you'll see:** a clinician granted `care_episode`/`appointments`/`view_all_reports`/`configure_settings` in Team Management still gets "Access Restricted" on Care Episodes, Appointments, Reports & Analytics, and Settings — regardless of what was actually granted. Only hospital_admin accounts get through. Team and Audit Log are unaffected (see why below).
+**What you'll see:** a clinician granted `care_episode`/`appointments`/`view_all_reports` in Team Management still gets "Access Restricted" on Care Episodes, Appointments, and Reports & Analytics — regardless of what was actually granted. Only hospital_admin accounts get through. Team and Audit Log are unaffected (see why below). Settings is intentionally hospital_admin-only regardless of this bug, so it's not listed here as an affected page — a clinician was never meant to reach it either way.
 
 **Why:** `permissions` and `accessProfile` live exclusively on `FacilityStaffMember` (`prisma/schema.prisma`), a separate model related to `User` via the `user.facilityStaffMember` relation — `User` itself has no such fields. But `AuthService.getMe()` (`auth.service.ts`) only does `this.prisma.user.findUnique({ where: { id: userId } })` with no `include` for `facilityStaffMember`, so the response the web-client uses to determine "what can I access" can never contain the clinician's actual granted permissions, no matter what Team Management saved.
 

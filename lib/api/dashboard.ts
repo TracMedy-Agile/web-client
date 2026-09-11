@@ -74,6 +74,7 @@ export async function getDashboardLiveAlerts(limit = 3): Promise<LiveAlert[]> {
     description: alert.reason,
     time: relativeTime(alert.timestamp),
     actionLabel: alert.severity === "critical" ? "Review" : "View Details",
+    actionHref: `/dashboard/alerts?alertId=${encodeURIComponent(alert.id)}`,
   }));
 }
 

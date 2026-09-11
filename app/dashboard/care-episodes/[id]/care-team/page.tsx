@@ -139,7 +139,7 @@ export default function CareTeamPage() {
           <div className="mb-5 flex items-center gap-2 border-b border-slate-100 pb-5">
             <UsersRound className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-bold text-slate-900">Clinicians</h2>
-            <span className="ml-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-500">{team.length}</span>
+            <span className="ml-1 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-500">{team.length} MEMBERS</span>
           </div>
 
           {error ? <p className="py-12 text-center text-sm font-medium text-red-600">{error}</p> : null}

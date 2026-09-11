@@ -41,13 +41,25 @@ type EventCategory = "critical" | "completed" | "clinician" | "missed" | "pendin
 
 const PAGE_SIZE = 10;
 
-function getEventCategory(event: TimelineEventRecord): EventCategory {
-  const status = event.status.toLowerCase();
-  const source = event.source.toLowerCase();
-  const eventType = event.eventType.toLowerCase();
+type EventTypeOption = { value: string; label: string };
 
-  if (status === "critical" || eventType.includes("alert") || eventType.includes("escalation")) return "critical";
-  if (status === "missed") return "missed";
+const EVENT_TYPE_OPTIONS: EventTypeOption[] = [
+  { value: "medication_taken", label: "Medication" },
+  { value: "clinical_assessment", label: "Clinical Assessment" },
+  { value: "follow_up_scheduled", label: "Follow-up Appointment" },
+  { value: "message_sent", label: "Messaging" },
+  { value: "ai_follow_up", label: "AI Follow-up Agent" },
+  { value: "alert_acknowledged", label: "Alert Acknowledged" },
+];
+
+function getEventCategory(event: TimelineEventRecord): EventCategory {
+  const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
+  const source = event.source.toLowerCase();
+  const eventType = event.eventType.toLowerCase().replace(/[\s-]+/g, "_");
+
+  if (eventType.includes("alert_acknowledged")) return source.includes("clinician") ? "clinician" : "completed";
+  if (status === "critical" || (eventType.includes("alert") && !eventType.includes("acknowledged")) || eventType.includes("escalation")) return "critical";
+  if (status === "missed" || status.includes("fail") || status.includes("not_reach")) return "missed";
   if (status === "pending") return "pending";
   if (source === "clinician" || eventType.includes("clinician")) return "clinician";
   return "completed";
@@ -79,9 +91,14 @@ const CATEGORY_BADGE: Record<EventCategory, string> = {
 
 const SOURCE_LABEL: Record<string, string> = {
   system: "System",
+  patient: "Patient",
   patient_app: "Patient App",
   patientapp: "Patient App",
   clinician: "Clinician",
+  ai_follow_up: "AI Follow-up Agent",
+  ai_follow_up_agent: "AI Follow-up Agent",
+  ai_followup_agent: "AI Follow-up Agent",
+  appointment_module: "Appointment",
 };
 
 function getSourceLabel(source: string) {
@@ -89,15 +106,87 @@ function getSourceLabel(source: string) {
   return SOURCE_LABEL[key] ?? (humanizeSlug(source) || "System");
 }
 
+function hasMeaningfulTimelineValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasMeaningfulTimelineValue);
+  if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).some(hasMeaningfulTimelineValue);
+  if (typeof value === "number") return Number.isFinite(value) && value > 0;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return Boolean(normalized) && !["0", "false", "none", "null", "n/a", "na"].includes(normalized);
+  }
+  return false;
+}
+
+function getPositiveSummaryCount(summary: string, terms: string[]) {
+  for (const term of terms) {
+    const match = summary.match(new RegExp("(\\d+)\\s+" + term));
+    if (match) return Number(match[1]) > 0;
+  }
+  return null;
+}
+
+function getCheckinTitle(payload: Record<string, unknown>, summary: string) {
+  const symptomsFromPayload = ["symptoms", "symptomCount", "symptomsCount"].some((key) => hasMeaningfulTimelineValue(payload[key]));
+  const vitalsFromPayload = ["vitals", "vitalCount", "vitalsCount"].some((key) => hasMeaningfulTimelineValue(payload[key]));
+  const symptomsFromSummary = getPositiveSummaryCount(summary, ["symptoms?", "symptom"]);
+  const vitalsFromSummary = getPositiveSummaryCount(summary, ["vitals?", "vital"]);
+  const hasSymptoms = symptomsFromPayload || symptomsFromSummary === true ||
+    (symptomsFromSummary === null && summary.includes("symptom") && !summary.includes("no symptom"));
+  const hasVitals = vitalsFromPayload || vitalsFromSummary === true ||
+    (vitalsFromSummary === null && summary.includes("vital") && !summary.includes("no vital"));
+
+  if (hasSymptoms && hasVitals) return "Symptom and vitals check-in submitted";
+  if (hasSymptoms) return "Symptom check-in submitted";
+  if (hasVitals) return "Vitals submitted";
+  return "Daily check-in submitted";
+}
+
+function getEventTypeLabel(eventType: string) {
+  const key = eventType.toLowerCase().replace(/[\s-]+/g, "_");
+  if (key.includes("patient_note")) return "Patient Note";
+  if (key.includes("checkin") || key.includes("check_in")) return "Check-in";
+  if (key.includes("medication")) return "Medication";
+  if (key.includes("clinical_assessment") || key.includes("assessment")) return "Clinical Assessment";
+  if (key.includes("follow_up") || key.includes("followup")) return "Follow-up";
+  if (key.includes("message")) return "Messaging";
+  if (key.includes("ai_follow")) return "Follow-up";
+  if (key.includes("alert")) return "Alert";
+  return humanizeSlug(eventType) || "Update";
+}
 function getEventTitle(event: TimelineEventRecord) {
-  const message = getString(event.payload, ["message", "title"]);
-  return message || humanizeSlug(event.eventType) || "Update";
+  const eventType = event.eventType.toLowerCase().replace(/[\s-]+/g, "_");
+  const payload = event.payload;
+  const payloadSummary = getString(payload, ["message", "title", "details", "description", "summary"]);
+  const summary = `${eventType} ${payloadSummary}`.toLowerCase();
+
+  if (eventType.includes("patient_note")) return "Patient note added";
+  if (eventType.includes("message")) return "Message sent";
+  if (eventType.includes("checkin") || eventType.includes("check_in") || summary.includes("daily check-in") || summary.includes("daily check in")) {
+    return getCheckinTitle(payload, summary);
+  }
+  if (eventType.includes("clinical_assessment") || eventType.includes("assessment")) return "Clinical assessment recorded";
+  if (eventType.includes("follow_up") || eventType.includes("followup")) return "Follow-up appointment scheduled";
+  if (eventType.includes("medication")) return "Medication recorded";
+  if (eventType.includes("ai_follow")) {
+    const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
+    return ["failed", "missed", "not_reached", "unsuccessful"].some((value) => status.includes(value))
+      ? "AI follow-up unsuccessful"
+      : "AI follow-up completed";
+  }
+  if (eventType.includes("alert") && eventType.includes("acknowledged")) return "Alert acknowledged";
+  return humanizeSlug(event.eventType) || "Update";
 }
 
-function getEventDescription(event: TimelineEventRecord) {
-  return getString(event.payload, ["details", "description", "note", "summary"]);
+function getEventStatusLabel(event: TimelineEventRecord, category: EventCategory) {
+  const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
+  const eventType = event.eventType.toLowerCase().replace(/[\s-]+/g, "_");
+  if (eventType.includes("ai_follow") && (status.includes("failed") || status.includes("missed") || status.includes("not_reach") || status.includes("unsuccessful"))) {
+    return "Not reached";
+  }
+  if (eventType.includes("alert_acknowledged")) return "Completed";
+  return CATEGORY_LABEL[category];
 }
-
 function localDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -294,8 +383,13 @@ export default function CareEpisodeTimelinePage() {
   }, [filterOptionEventsWithMedication]);
 
   const eventTypeOptions = useMemo(() => {
-    const values = new Set(filterOptionEventsWithMedication.map((event) => event.eventType));
-    return Array.from(values).filter(Boolean);
+    const options = new Map(EVENT_TYPE_OPTIONS.map((option) => [option.value, option]));
+    for (const event of filterOptionEventsWithMedication) {
+      if (event.eventType && !options.has(event.eventType)) {
+        options.set(event.eventType, { value: event.eventType, label: getEventTypeLabel(event.eventType) });
+      }
+    }
+    return Array.from(options.values());
   }, [filterOptionEventsWithMedication]);
 
   const sourceOptions = useMemo(() => {
@@ -309,7 +403,7 @@ export default function CareEpisodeTimelinePage() {
     const query = search.trim().toLowerCase();
     if (!query) return eventsWithMedicationCompletion;
     return eventsWithMedicationCompletion.filter((event) => {
-      const haystack = `${getEventTitle(event)} ${getEventDescription(event)}`.toLowerCase();
+      const haystack = `${getEventTitle(event)} ${getEventTypeLabel(event.eventType)} ${getSourceLabel(event.source)}`.toLowerCase();
       return haystack.includes(query);
     });
   }, [eventsWithMedicationCompletion, search]);
@@ -355,7 +449,7 @@ export default function CareEpisodeTimelinePage() {
 
   return (
     <div className="space-y-6">
-      <CareEpisodeSubHeader episodeId={episodeId} episode={episode} />
+      <CareEpisodeSubHeader episodeId={episodeId} episode={episode} variant="timeline" />
 
       <Card className="rounded-xl border-border bg-card shadow-sm">
         <CardContent className="p-4 sm:p-6">
@@ -395,7 +489,7 @@ export default function CareEpisodeTimelinePage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" className="h-10 gap-2 rounded-lg border-border text-sm font-medium text-foreground/80">
-                  {eventTypeFilter === "Event Types" ? "Event Types" : humanizeSlug(eventTypeFilter)}
+                  {eventTypeFilter === "Event Types" ? "Event Types" : eventTypeOptions.find((option) => option.value === eventTypeFilter)?.label ?? humanizeSlug(eventTypeFilter)}
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -403,9 +497,9 @@ export default function CareEpisodeTimelinePage() {
                 <DropdownMenuItem onSelect={() => { setEventTypeFilter("Event Types"); setPage(1); }} className="rounded-md text-sm">
                   Event Types
                 </DropdownMenuItem>
-                {eventTypeOptions.map((type) => (
-                  <DropdownMenuItem key={type} onSelect={() => { setEventTypeFilter(type); setPage(1); }} className="rounded-md text-sm">
-                    {humanizeSlug(type)}
+                {eventTypeOptions.map((option) => (
+                  <DropdownMenuItem key={option.value} onSelect={() => { setEventTypeFilter(option.value); setPage(1); }} className="rounded-md text-sm">
+                    {option.label}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -464,7 +558,6 @@ export default function CareEpisodeTimelinePage() {
                     {groupItems.map((event) => {
                       const category = getEventCategory(event);
                       const iconMeta = CATEGORY_ICON[category];
-                      const description = getEventDescription(event);
                       return (
                         <div key={event.id} className="flex gap-3 rounded-lg border border-border p-4">
                           <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", iconMeta.className)}>
@@ -474,10 +567,9 @@ export default function CareEpisodeTimelinePage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-bold text-foreground">{getEventTitle(event)}</p>
                               <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", CATEGORY_BADGE[category])}>
-                                {CATEGORY_LABEL[category]}
+                                {getEventStatusLabel(event, category)}
                               </span>
                             </div>
-                            {description ? <p className="mt-1 text-sm font-medium text-muted-foreground">{description}</p> : null}
                             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-muted-foreground">
                               <span>{formatTime(event.timestamp)}</span>
                               <span className="inline-flex items-center gap-1">
@@ -485,7 +577,7 @@ export default function CareEpisodeTimelinePage() {
                                 {getSourceLabel(event.source)}
                               </span>
                               <span className="rounded-md bg-muted px-2 py-0.5 font-bold text-muted-foreground">
-                                {humanizeSlug(event.eventType)}
+                                {getEventTypeLabel(event.eventType)}
                               </span>
                             </div>
                           </div>

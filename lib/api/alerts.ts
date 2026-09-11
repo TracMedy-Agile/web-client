@@ -127,6 +127,7 @@ async function getAccessToken(): Promise<string | null> {
 async function requestAlerts(path: string, query: URLSearchParams): Promise<unknown> {
   const accessToken = await getAccessToken();
   const response = await fetch(`${BASE}${path}?${query.toString()}`, {
+    cache: "no-store",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
   const payload: unknown = await response.json().catch(() => null);
@@ -143,6 +144,7 @@ async function requestAlertAction(path: string, init?: RequestInit): Promise<unk
   const accessToken = await getAccessToken();
   const response = await fetch(`${BASE}${path}`, {
     ...init,
+    cache: "no-store",
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -445,7 +447,9 @@ export async function getAlertsSnapshot(): Promise<AlertsSnapshot> {
   const [activeAlerts, historyAlerts, episodesResponse, clinicianDirectory, patientDirectory] = await Promise.all([
     getAllAlertRecords("/alerts", { status: "open" }),
     getAllAlertRecords("/alerts/history"),
-    getCareEpisodes({ page: 1, limit: 100 }),
+    // Episode names are a best-effort enrichment (requires the `care_episode` team permission) —
+    // a 403 here must not take down the whole Alerts page, which has no such requirement itself.
+    getCareEpisodes({ page: 1, limit: 100 }).catch(() => ({ data: [] as CareEpisodeRecord[] })),
     getClinicianDirectory().catch(() => ({})),
     getHospitalFacilityId()
       .then((facilityId) => getConnectedPatients(facilityId, { page: 1, limit: 100 }))

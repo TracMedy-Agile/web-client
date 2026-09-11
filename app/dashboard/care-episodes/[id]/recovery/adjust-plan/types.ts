@@ -58,6 +58,8 @@ export type CarePlan = Omit<GeneratedCarePlan, "tasks" | "medications" | "lifest
   tasks?: CarePlanTask[];
   medications?: Omit<Medication, "id">[];
   lifestyleRecommendations?: Array<string | { title: string; description: string }>;
+  clinicianId?: string | null;
+  clinicianName?: string | null;
 };
 
 export type CarePlanPayload = Omit<GeneratedCreateCarePlan, "tasks" | "medications" | "monitoringRules"> & {

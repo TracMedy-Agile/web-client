@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -241,6 +241,7 @@ function PaginationControls({
 export default function AlertsScreen() {
   const searchParams = useSearchParams();
   const isHistory = searchParams.get("view") === "history";
+  const selectedAlertId = searchParams.get("alertId");
   const [snapshot, setSnapshot] = useState<AlertsSnapshot>(EMPTY_SNAPSHOT);
   const [severity, setSeverity] = useState<"all" | AlertSeverity>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -255,6 +256,29 @@ export default function AlertsScreen() {
   const [reviewImpact, setReviewImpact] = useState<AlertReviewImpact | null>(null);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const reviewRequestId = useRef(0);
+  const openReview = useCallback((alert: ClinicalAlert) => {
+    capturePostHogEvent("alert_review_opened", {
+      alert_id: alert.id,
+      episode_id: alert.episodeId,
+      severity: alert.severity,
+    });
+    const requestId = reviewRequestId.current + 1;
+    reviewRequestId.current = requestId;
+    setReviewAlert(alert);
+    setReviewImpact(null);
+    setIsReviewLoading(true);
+    void getAlertReviewImpact(alert)
+      .then((impact) => {
+        if (reviewRequestId.current !== requestId) return;
+        setReviewImpact(impact);
+        if (impact.analysisSummary) {
+          capturePostHogEvent("ai_insight_viewed", { source: "alert_impact", alert_id: alert.id, episode_id: alert.episodeId });
+        }
+      })
+      .finally(() => {
+        if (reviewRequestId.current === requestId) setIsReviewLoading(false);
+      });
+  }, []);
 
   useEffect(() => {
     capturePostHogEvent(isHistory ? "alerts_history_viewed" : "alerts_viewed");
@@ -264,7 +288,20 @@ export default function AlertsScreen() {
     let ignore = false;
     getAlertsSnapshot()
       .then((data) => {
-        if (!ignore) setSnapshot(data);
+        if (ignore) return;
+        setSnapshot(data);
+        if (!isHistory && selectedAlertId) {
+          const selectedAlert = data.active.find((alert) => alert.id === selectedAlertId);
+          if (selectedAlert) {
+            setSeverity("all");
+            setSearchQuery("");
+            setDateRange("all");
+            setSource("all");
+            setClinician("all");
+            setPage(1);
+            openReview(selectedAlert);
+          }
+        }
       })
       .catch((requestError: unknown) => {
         if (!ignore) setError(requestError instanceof Error ? requestError.message : "Unable to load alerts.");
@@ -275,7 +312,7 @@ export default function AlertsScreen() {
     return () => {
       ignore = true;
     };
-  }, [refreshKey]);
+  }, [isHistory, openReview, refreshKey, selectedAlertId]);
 
   const sourceAlerts = isHistory ? snapshot.history : snapshot.active;
   const pageSize = isHistory ? 6 : 7;
@@ -359,30 +396,6 @@ export default function AlertsScreen() {
     setSource("all");
     setClinician("all");
     setPage(1);
-  };
-
-  const openReview = (alert: ClinicalAlert) => {
-    capturePostHogEvent("alert_review_opened", {
-      alert_id: alert.id,
-      episode_id: alert.episodeId,
-      severity: alert.severity,
-    });
-    const requestId = reviewRequestId.current + 1;
-    reviewRequestId.current = requestId;
-    setReviewAlert(alert);
-    setReviewImpact(null);
-    setIsReviewLoading(true);
-    void getAlertReviewImpact(alert)
-      .then((impact) => {
-        if (reviewRequestId.current !== requestId) return;
-        setReviewImpact(impact);
-        if (impact.analysisSummary) {
-          capturePostHogEvent("ai_insight_viewed", { source: "alert_impact", alert_id: alert.id, episode_id: alert.episodeId });
-        }
-      })
-      .finally(() => {
-        if (reviewRequestId.current === requestId) setIsReviewLoading(false);
-      });
   };
 
   const exportAlerts = () => {

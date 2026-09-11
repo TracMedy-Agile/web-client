@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PAGE_LIMIT = 20;
+const NOTIFICATIONS_CHANGED_EVENT = "tracmedy:notifications-changed";
 
 function notificationIcon(type: string) {
   const normalized = type.toLowerCase();
@@ -87,6 +88,7 @@ export default function NotificationsPage() {
       await markAllNotificationsAsRead();
       const readAt = new Date().toISOString();
       setNotifications((current) => current.map((item) => ({ ...item, readAt: item.readAt ?? readAt })));
+      window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT, { detail: { unreadCount: 0 } }));
       capturePostHogEvent("notifications_marked_all_read");
     } catch (requestError) {
       toast.error(requestError instanceof Error ? requestError.message : "Unable to mark notifications as read.");
@@ -98,7 +100,9 @@ export default function NotificationsPage() {
       try {
         await markNotificationAsRead(notification.id);
         const readAt = new Date().toISOString();
+        const nextUnreadCount = Math.max(0, unreadCount - 1);
         setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
+        window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT, { detail: { unreadCount: nextUnreadCount } }));
       } catch (requestError) {
         toast.error(requestError instanceof Error ? requestError.message : "Unable to mark notification as read.");
         return;
@@ -109,7 +113,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1000px]">
+    <div className="w-full min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Notifications</h1>
@@ -121,10 +125,10 @@ export default function NotificationsPage() {
           <button
             type="button"
             onClick={() => void handleMarkAllRead()}
-            className="inline-flex items-center gap-1.5 text-sm font-bold text-primary hover:underline"
+            className="mt-1 inline-flex items-center gap-1.5 text-sm font-bold text-primary hover:underline"
           >
             <CheckCheck className="h-4 w-4" />
-            Mark all as read
+            Mark all read
           </button>
         ) : null}
       </div>
@@ -135,8 +139,9 @@ export default function NotificationsPage() {
             <TabsTrigger
               key={item}
               value={item}
-              className="rounded-none border-b-2 border-transparent px-4 pb-3 text-sm font-semibold text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none"
+              className="inline-flex items-center gap-2 rounded-none border-b-2 border-transparent px-4 pb-3 text-sm font-semibold text-muted-foreground data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none"
             >
+              {item === "All" ? <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" /> : null}
               {item}
             </TabsTrigger>
           ))}
@@ -171,24 +176,24 @@ export default function NotificationsPage() {
                     <div
                       key={notification.id}
                       className={cn(
-                        "flex flex-wrap items-center gap-4 rounded-xl border border-border px-5 py-4 sm:flex-nowrap",
-                        notification.readAt === null ? "bg-primary/5" : "bg-card",
+                        "flex flex-wrap items-center gap-4 rounded-xl border px-5 py-4 sm:flex-nowrap",
+                        notification.readAt === null ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card",
                       )}
                     >
-                      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", className)}>
+                      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", notification.readAt === null ? "bg-white/15 text-white" : className)}>
                         <Icon className="h-5 w-5" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-foreground">{notification.title}</span>
-                          <span className="text-xs text-muted-foreground">{formatNotificationTime(notification.createdAt)}</span>
+                          <span className={cn("font-semibold", notification.readAt === null ? "text-white" : "text-foreground")}>{notification.title}</span>
+                          <span className={cn("text-xs", notification.readAt === null ? "text-white/75" : "text-muted-foreground")}>{formatNotificationTime(notification.createdAt)}</span>
                         </span>
-                        <p className="mt-0.5 truncate text-sm text-muted-foreground">{notification.body}</p>
+                        <p className={cn("mt-0.5 truncate text-sm", notification.readAt === null ? "text-white/85" : "text-muted-foreground")}>{notification.body}</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => void handleView(notification)}
-                        className="ml-auto h-10 shrink-0 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground hover:bg-primary/90"
+                        className={cn("ml-auto h-10 shrink-0 rounded-lg px-5 text-sm font-bold", notification.readAt === null ? "bg-card text-primary hover:bg-card/90" : "bg-primary text-primary-foreground hover:bg-primary/90")}
                       >
                         View
                       </button>

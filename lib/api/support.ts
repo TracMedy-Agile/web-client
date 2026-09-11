@@ -66,6 +66,7 @@ export async function getSupportFaq(): Promise<SupportFaq[]> {
   if (!BASE) throw new Error("API base URL is not configured.");
 
   const response = await fetch(`${BASE}/support/faq`, {
+    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload: unknown = await response.json().catch(() => null);

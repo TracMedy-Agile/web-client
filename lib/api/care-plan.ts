@@ -118,6 +118,8 @@ function normalizeCarePlan(value: unknown): CarePlan {
     id: stringValue(value, "id"),
     episodeId: stringValue(value, "episodeId"),
     version: typeof value.version === "number" ? value.version : 1,
+    clinicianId: typeof value.clinicianId === "string" ? value.clinicianId : null,
+    clinicianName: typeof value.clinicianName === "string" ? value.clinicianName : null,
     tasks,
     medications,
     lifestyleRecommendations,

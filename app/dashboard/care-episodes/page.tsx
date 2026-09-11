@@ -34,6 +34,7 @@ import {
   getCareEpisodes,
   getHospitalFacilityId,
   type CareEpisodeRecord,
+  type CareEpisodesResponse,
 } from "@/lib/api/care-episodes";
 import { getClinicianDirectory, type ClinicianSearchResult } from "@/lib/api/clinicians";
 import { getConnectedPatients, type ConnectedPatientRecord } from "@/lib/api/connected-patients";
@@ -48,6 +49,23 @@ type Counts = {
 };
 
 const DEFAULT_COUNTS: Counts = { activeCount: 0, pendingCount: 0, closedCount: 0, highRiskCount: 0 };
+type SummaryMetrics = Pick<
+  CareEpisodesResponse,
+  | "activeCountDeltaPct"
+  | "metricsComparedTo"
+  | "pendingUrgentCount"
+  | "highRiskActionRequiredDeltaPct"
+  | "closedMonthSatisfactionPct"
+  | "closedMonthOutcomeRate"
+>;
+const DEFAULT_SUMMARY_METRICS: SummaryMetrics = {
+  activeCountDeltaPct: null,
+  metricsComparedTo: null,
+  pendingUrgentCount: null,
+  highRiskActionRequiredDeltaPct: null,
+  closedMonthSatisfactionPct: null,
+  closedMonthOutcomeRate: null,
+};
 const PAGE_LIMIT = 5;
 
 const TABS: { key: TabKey; label: string; dotClassName: string; borderClassName: string; countKey: keyof Counts }[] = [
@@ -96,10 +114,10 @@ function getEpisodeDuration(createdAt: string, closedAt: string | null | undefin
 function getClinicianLabel(directory: Record<string, ClinicianSearchResult>, clinicianId: string | null) {
   if (!clinicianId) return "--";
   const clinician = directory[clinicianId];
-  if (!clinician) return clinicianId;
-  const prefix = clinician.name.startsWith("Dr.") ? "" : "Dr. ";
-  const displayName = `${prefix}${clinician.name}`;
-  return clinician.department ? `${displayName} - ${clinician.department}` : displayName;
+  if (!clinician) return "--";
+  const nameOnly = clinician.name.split(/\s+[-–—]\s+/)[0].trim();
+  const prefix = nameOnly.startsWith("Dr.") ? "" : "Dr. ";
+  return `${prefix}${nameOnly}`;
 }
 
 function getPatientName(directory: Record<string, ConnectedPatientRecord>, patientId: string) {
@@ -108,7 +126,8 @@ function getPatientName(directory: Record<string, ConnectedPatientRecord>, patie
 
 function getPatientTracmedyCode(directory: Record<string, ConnectedPatientRecord>, patientId: string) {
   const tracmedyPatientId = directory[patientId]?.tracmedyPatientId;
-  return tracmedyPatientId ? `#PT-${tracmedyPatientId}` : "--";
+  if (!tracmedyPatientId) return "--";
+  return tracmedyPatientId.replace(/^#PT-/i, "") || "--";
 }
 
 function getCarePhaseBadge(carePhase: string | null) {
@@ -149,11 +168,45 @@ function getProgressPercent(dayStart: number | null, expectedDurationDays: numbe
   return Math.min(100, Math.max(0, Math.round((dayStart / expectedDurationDays) * 100)));
 }
 
+function getCurrentEpisodeDay(createdAt: string, storedDayStart: number | null) {
+  const createdTimestamp = Date.parse(createdAt);
+  const fallbackDay = storedDayStart && storedDayStart > 0 ? storedDayStart : 1;
+  if (!Number.isFinite(createdTimestamp)) return fallbackDay;
+
+  const createdDate = new Date(createdTimestamp);
+  createdDate.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const elapsedDays = Math.floor((today.getTime() - createdDate.getTime()) / 86_400_000);
+  return Math.max(fallbackDay, elapsedDays + 1);
+}
+
 function getPaginationItems(current: number, total: number) {
   if (total <= 5) return Array.from({ length: Math.max(total, 1) }, (_, index) => index + 1);
   if (current <= 3) return [1, 2, 3, "...", total];
   if (current >= total - 2) return [1, "...", total - 2, total - 1, total];
   return [1, "...", current, "... ", total];
+}
+
+function formatMetricNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function formatPercentChange(value: number | null, suffix: string) {
+  if (value === null) return "Comparison unavailable";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatMetricNumber(value)}% ${suffix}`;
+}
+
+function formatUrgentCount(value: number | null) {
+  if (value === null) return "Urgent count unavailable";
+  return `${value.toLocaleString()} urgent request${value === 1 ? "" : "s"}`;
+}
+
+function formatClosedOutcomeNote(satisfaction: number | null, outcomeRate: number | null) {
+  if (satisfaction !== null) return `${formatMetricNumber(satisfaction)}% satisfaction rate`;
+  if (outcomeRate !== null) return `${formatMetricNumber(outcomeRate)}% positive outcomes`;
+  return "Outcome data unavailable";
 }
 
 function StatCard({
@@ -170,8 +223,8 @@ function StatCard({
   isLoading?: boolean;
 }) {
   return (
-    <Card className="rounded-xl border-border bg-white shadow-sm">
-      <CardContent className="p-4 sm:p-5">
+    <Card className="h-[166px] rounded-xl border-border bg-white shadow-sm">
+      <CardContent className="flex h-full flex-col p-4 sm:p-5">
         {note ? (
           <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", noteClassName)}>{note}</span>
         ) : null}
@@ -255,6 +308,7 @@ export default function CareEpisodesPage() {
   const [clinicianDirectory, setClinicianDirectory] = useState<Record<string, ClinicianSearchResult>>({});
   const [patientDirectory, setPatientDirectory] = useState<Record<string, ConnectedPatientRecord>>({});
   const [counts, setCounts] = useState<Counts>(DEFAULT_COUNTS);
+  const [summaryMetrics, setSummaryMetrics] = useState<SummaryMetrics>(DEFAULT_SUMMARY_METRICS);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [page, setPage] = useState(1);
@@ -351,11 +405,20 @@ export default function CareEpisodesPage() {
           closedCount: response.closedCount,
           highRiskCount: response.highRiskCount,
         });
+        setSummaryMetrics({
+          activeCountDeltaPct: response.activeCountDeltaPct,
+          metricsComparedTo: response.metricsComparedTo,
+          pendingUrgentCount: response.pendingUrgentCount,
+          highRiskActionRequiredDeltaPct: response.highRiskActionRequiredDeltaPct,
+          closedMonthSatisfactionPct: response.closedMonthSatisfactionPct,
+          closedMonthOutcomeRate: response.closedMonthOutcomeRate,
+        });
       } catch (requestError) {
         if (ignore) return;
         setEpisodes([]);
         setTotal(0);
         setTotalPages(1);
+        setSummaryMetrics(DEFAULT_SUMMARY_METRICS);
         setError(requestError instanceof Error ? requestError.message : "Failed to load care episodes.");
       } finally {
         if (!ignore) setIsLoading(false);
@@ -371,6 +434,7 @@ export default function CareEpisodesPage() {
   const rangeStart = episodes.length > 0 ? (page - 1) * PAGE_LIMIT + 1 : 0;
   const rangeEnd = (page - 1) * PAGE_LIMIT + episodes.length;
   const tabNoun = activeTab === "active" ? "Active Episodes" : activeTab === "pending" ? "Pending Reviews" : "Closed Episodes";
+  const comparisonSuffix = summaryMetrics.metricsComparedTo === "previous_day" ? "from yesterday" : "from previous period";
 
   useEffect(() => {
     if (!isEmpty) return;
@@ -389,7 +453,7 @@ export default function CareEpisodesPage() {
         episode.diagnosis ?? "",
         getClinicianLabel(clinicianDirectory, episode.clinicianId),
         getCarePhaseBadge(episode.carePhase).label,
-        `Day ${episode.dayStart ?? 0}/${episode.expectedDurationDays ?? 0}`,
+        `Day ${episode.currentDay ?? (episode.expectedDurationDays ? getCurrentEpisodeDay(episode.createdAt, episode.dayStart) : episode.dayStart) ?? 0}/${episode.expectedDurationDays ?? 0}`,
         getRiskBadge(episode.riskCategory).label,
       ]);
       return [header, ...rows];
@@ -460,32 +524,32 @@ export default function CareEpisodesPage() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
         <StatCard
           label="Active Episodes"
           value={counts.activeCount.toLocaleString()}
-          note=""
+          note={formatPercentChange(summaryMetrics.activeCountDeltaPct, comparisonSuffix)}
           noteClassName="bg-emerald-50 text-emerald-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
           label="Pending Reviews"
           value={counts.pendingCount.toLocaleString()}
-          note=""
+          note={formatUrgentCount(summaryMetrics.pendingUrgentCount)}
           noteClassName="bg-red-50 text-red-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
           label="High-Risk Patients"
           value={counts.highRiskCount.toLocaleString()}
-          note=""
+          note={formatPercentChange(summaryMetrics.highRiskActionRequiredDeltaPct, "action required")}
           noteClassName="bg-red-50 text-red-500"
           isLoading={isLoading && episodes.length === 0}
         />
         <StatCard
           label="Closed Episodes"
           value={counts.closedCount.toLocaleString()}
-          note=""
+          note={formatClosedOutcomeNote(summaryMetrics.closedMonthSatisfactionPct, summaryMetrics.closedMonthOutcomeRate)}
           noteClassName="bg-emerald-50 text-emerald-500"
           isLoading={isLoading && episodes.length === 0}
         />
@@ -518,7 +582,7 @@ export default function CareEpisodesPage() {
               ))}
             </div>
 
-            <div className="flex shrink-0 flex-nowrap items-center gap-2">
+            <div className="flex h-10 shrink-0 flex-nowrap items-center gap-2">
               <SelectFilter
                 label="Filter care episodes by risk"
                 value={riskFilter}
@@ -591,7 +655,7 @@ export default function CareEpisodesPage() {
                 variant="ghost"
                 onClick={exportCsv}
                 disabled={episodes.length === 0}
-                className="h-10 shrink-0 gap-1.5 whitespace-nowrap px-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                className="h-10 shrink-0 self-center gap-1.5 whitespace-nowrap px-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
               >
                 <Download className="h-4 w-4" />
                 Export
@@ -604,7 +668,16 @@ export default function CareEpisodesPage() {
           ) : (
             <>
               {activeTab === "active" ? (
-                <Table className="w-full table-fixed">
+                <Table className="w-full table-fixed text-xs [&_th]:align-middle [&_td]:align-middle">
+                  <colgroup>
+                    <col className="w-[16%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
                   <TableHeader className="bg-blue-50">
                     <TableRow className="border-0 hover:bg-blue-50">
                       {["PATIENT NAME", "DIAGNOSIS", "ASSIGNED CLINICIAN", "STATUS", "PROGRESS", "RISK LEVEL", "ACTION"].map((heading) => (
@@ -618,7 +691,7 @@ export default function CareEpisodesPage() {
                     {isLoading ? (
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
-                          <TableCell colSpan={7} className="px-3 py-5 sm:px-4">
+                          <TableCell colSpan={7} className="px-3 py-3 leading-4 sm:px-4">
                             <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
@@ -627,42 +700,45 @@ export default function CareEpisodesPage() {
                       episodes.map((episode) => {
                         const statusBadge = getCarePhaseBadge(episode.carePhase);
                         const riskBadge = getRiskBadge(episode.riskCategory);
-                        const percent = getProgressPercent(episode.dayStart, episode.expectedDurationDays);
+                        const currentDay = episode.currentDay ?? (episode.expectedDurationDays ? getCurrentEpisodeDay(episode.createdAt, episode.dayStart) : episode.dayStart);
+                        const percent = episode.dayProgress ?? getProgressPercent(currentDay, episode.expectedDurationDays);
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
-                              <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-0.5 block text-xs leading-4 font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
-                            <TableCell className="break-words px-3 py-5 text-slate-700 sm:px-4">{episode.diagnosis || "--"}</TableCell>
-                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">
+                            <TableCell className="break-words px-3 py-3 leading-4 text-slate-700 sm:px-4">{episode.diagnosis || "--"}</TableCell>
+                            <TableCell className="px-3 py-3 leading-4 text-slate-700 sm:px-4">
                               {getClinicianLabel(clinicianDirectory, episode.clinicianId)}
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", statusBadge.className)}>
                                 {statusBadge.label}
                               </span>
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
-                              <div className="flex items-center gap-2">
-                                <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
-                                  Day {episode.dayStart ?? 0}/{episode.expectedDurationDays ?? 0}
-                                </span>
-                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
+                              <div className="w-full max-w-24 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
+                                    Day {currentDay ?? 0}/{episode.expectedDurationDays ?? 0}
+                                  </span>
+                                  <span className="text-xs font-semibold text-slate-700">{percent}%</span>
+                                </div>
+                                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                                   <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
                                 </div>
-                                <span className="text-xs font-semibold text-slate-700">{percent}%</span>
                               </div>
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>
                                 {riskBadge.label}
                               </span>
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <Link
                                 href={`/dashboard/care-episodes/${encodeURIComponent(episode.id)}`}
-                                className="text-sm font-bold text-primary"
+                                className="text-xs font-bold text-primary"
                               >
                                 View
                               </Link>
@@ -676,7 +752,14 @@ export default function CareEpisodesPage() {
               ) : null}
 
               {activeTab === "pending" ? (
-                <Table className="w-full table-fixed">
+                <Table className="w-full table-fixed text-xs [&_th]:align-middle [&_td]:align-middle">
+                  <colgroup>
+                    <col className="w-[20%]" />
+                    <col className="w-[27%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
                   <TableHeader className="bg-blue-50">
                     <TableRow className="border-0 hover:bg-blue-50">
                       {["PATIENT NAME", "DIAGNOSIS", "CREATED DATE", "RECOMMENDATION", "ACTION"].map((heading) => (
@@ -690,7 +773,7 @@ export default function CareEpisodesPage() {
                     {isLoading ? (
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
-                          <TableCell colSpan={5} className="px-3 py-5 sm:px-4">
+                          <TableCell colSpan={5} className="px-3 py-3 leading-4 sm:px-4">
                             <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
@@ -698,21 +781,21 @@ export default function CareEpisodesPage() {
                     ) : (
                       episodes.map((episode) => (
                         <TableRow key={episode.id} className="border-0 hover:bg-transparent">
-                          <TableCell className="px-3 py-5 sm:px-4">
+                          <TableCell className="px-3 py-3 leading-4 sm:px-4">
                             <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
-                            <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                            <span className="mt-0.5 block text-xs leading-4 font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                           </TableCell>
-                          <TableCell className="break-words px-3 py-5 text-slate-700 sm:px-4">{episode.diagnosis || "--"}</TableCell>
-                          <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{formatDate(episode.createdAt)}</TableCell>
-                          <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{getRecommendation(episode.riskCategory)}</TableCell>
-                          <TableCell className="px-3 py-5 sm:px-4">
+                          <TableCell className="break-words px-3 py-3 leading-4 text-slate-700 sm:px-4">{episode.diagnosis || "--"}</TableCell>
+                          <TableCell className="px-3 py-3 leading-4 text-slate-700 sm:px-4">{formatDate(episode.createdAt)}</TableCell>
+                          <TableCell className="px-3 py-3 leading-4 text-slate-700 sm:px-4">{getRecommendation(episode.riskCategory)}</TableCell>
+                          <TableCell className="px-3 py-3 leading-4 sm:px-4">
                             <button
                               type="button"
                               onClick={() => {
                                 setReviewEpisodeId(episode.id);
                                 setIsReviewModalOpen(true);
                               }}
-                              className="text-sm font-bold text-primary"
+                              className="text-xs font-bold text-primary"
                             >
                               Review
                             </button>
@@ -725,7 +808,14 @@ export default function CareEpisodesPage() {
               ) : null}
 
               {activeTab === "closed" ? (
-                <Table className="w-full table-fixed">
+                <Table className="w-full table-fixed text-xs [&_th]:align-middle [&_td]:align-middle">
+                  <colgroup>
+                    <col className="w-[25%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[15%]" />
+                  </colgroup>
                   <TableHeader className="bg-blue-50">
                     <TableRow className="border-0 hover:bg-blue-50">
                       {["PATIENT NAME", "CLOSED DATE", "EPISODE DURATION", "CLOSURE REASON", "ACTION"].map((heading) => (
@@ -739,7 +829,7 @@ export default function CareEpisodesPage() {
                     {isLoading ? (
                       Array.from({ length: 3 }).map((_, index) => (
                         <TableRow key={index} className="border-0 hover:bg-transparent">
-                          <TableCell colSpan={5} className="px-3 py-5 sm:px-4">
+                          <TableCell colSpan={5} className="px-3 py-3 leading-4 sm:px-4">
                             <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                           </TableCell>
                         </TableRow>
@@ -749,24 +839,24 @@ export default function CareEpisodesPage() {
                         const closure = getClosureInfo(episode.closureReason);
                         return (
                           <TableRow key={episode.id} className="border-0 hover:bg-transparent">
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <span className="block font-bold text-slate-900">{getPatientName(patientDirectory, episode.patientId)}</span>
-                              <span className="mt-1 block text-xs font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
+                              <span className="mt-0.5 block text-xs leading-4 font-medium text-slate-500">{getPatientTracmedyCode(patientDirectory, episode.patientId)}</span>
                             </TableCell>
-                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{formatDate(episode.closedAt || episode.updatedAt)}</TableCell>
-                            <TableCell className="px-4 py-5 text-slate-700 sm:px-6">
+                            <TableCell className="px-3 py-3 leading-4 text-slate-700 sm:px-4">{formatDate(episode.closedAt || episode.updatedAt)}</TableCell>
+                            <TableCell className="px-3 py-3 leading-4 text-slate-700 sm:px-4">
                               {getEpisodeDuration(episode.createdAt, episode.closedAt, episode.expectedDurationDays)} days
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
-                              <span className={cn("inline-flex items-center gap-2 text-sm font-semibold", closure.textClassName)}>
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
+                              <span className={cn("inline-flex items-center gap-2 text-xs font-semibold", closure.textClassName)}>
                                 <span className={cn("h-1.5 w-1.5 rounded-full", closure.dotClassName)} />
                                 {closure.label}
                               </span>
                             </TableCell>
-                            <TableCell className="px-3 py-5 sm:px-4">
+                            <TableCell className="px-3 py-3 leading-4 sm:px-4">
                               <Link
                                 href={`/dashboard/care-episodes/${encodeURIComponent(episode.id)}/closed-summary`}
-                                className="text-sm font-bold text-primary"
+                                className="text-xs font-bold text-primary"
                               >
                                 View Summary
                               </Link>

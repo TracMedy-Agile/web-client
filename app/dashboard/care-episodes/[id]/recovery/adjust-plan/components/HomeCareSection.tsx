@@ -111,14 +111,14 @@ export function HomeCareSection({
             </label>
 
             <FieldLabel>Fulfillment method</FieldLabel>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${item.fulfillmentMethod === "hospital" ? "border-primary bg-primary/5" : "border-border bg-card"}`}>
+            <div className="grid items-stretch gap-3 sm:grid-cols-2">
+              <label className={`flex h-full min-h-[68px] cursor-pointer items-start gap-3 rounded-xl border p-3 ${item.fulfillmentMethod === "hospital" ? "border-primary bg-primary/5" : "border-border bg-card"}`}>
                 <input className="mt-0.5 accent-primary" type="radio" name={`fulfillment-${item.id}`} checked={item.fulfillmentMethod === "hospital"} onChange={() => update(index, { fulfillmentMethod: "hospital" })} />
-                <span><strong className="block text-[11px] text-foreground">Assign hospital provider</strong><span className="text-[9px] leading-4 text-muted-foreground">Assign a nurse, CHW, or physiotherapist from your hospital team</span></span>
+                <span className="min-w-0 space-y-0.5"><strong className="block text-[11px] leading-4 text-foreground">Assign hospital provider</strong><span className="block text-[9px] leading-4 text-muted-foreground">Assign a nurse, CHW, or physiotherapist from your hospital team</span></span>
               </label>
-              <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${item.fulfillmentMethod === "network" ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
+              <label className={`flex h-full min-h-[68px] cursor-pointer items-start gap-3 rounded-xl border p-3 ${item.fulfillmentMethod === "network" ? "border-primary bg-primary/10" : "border-border bg-card"}`}>
                 <input className="mt-0.5 accent-primary" type="radio" name={`fulfillment-${item.id}`} checked={item.fulfillmentMethod === "network"} onChange={() => update(index, { fulfillmentMethod: "network", clinicianId: "" })} />
-                <span><strong className="block text-[11px] text-foreground">Tracmedy care network</strong><span className="text-[9px] leading-4 text-muted-foreground">Record Tracmedy as the requested provider-assignment route</span></span>
+                <span className="min-w-0 space-y-0.5"><strong className="block text-[11px] leading-4 text-foreground">Tracmedy care network</strong><span className="block text-[9px] leading-4 text-muted-foreground">Record Tracmedy as the requested provider-assignment route</span></span>
               </label>
             </div>
 

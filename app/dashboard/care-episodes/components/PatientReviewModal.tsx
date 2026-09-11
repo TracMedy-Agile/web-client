@@ -73,8 +73,15 @@ function getClinicalConcern(episode: CareEpisodeDetail): ClinicalConcern {
   return "None";
 }
 
+function formatStatusLabel(value: string | null | undefined, fallback = "Not specified") {
+  const normalized = value?.replaceAll("_", " ").trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === "pending" || normalized === "pending review") return "Pending Review";
+  return normalized.replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 function FieldLabel({ children }: { children: ReactNode }) {
-  return <span className="block text-xs font-medium text-slate-500">{children}</span>;
+  return <span className="block text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-500">{children}</span>;
 }
 
 export function PatientReviewModal({
@@ -156,6 +163,7 @@ export function PatientReviewModal({
   const expectedFollowUp = episode?.expectedDurationDays
     ? episode.expectedDurationDays + " days"
     : "Not specified";
+  const dischargeStatus = episode?.dischargeStatus ?? episode?.closure?.dischargeStatus ?? null;
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
@@ -208,15 +216,15 @@ export function PatientReviewModal({
                   </div>
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div>
-                      <FieldLabel>Patient ID</FieldLabel>
+                      <FieldLabel>PATIENT ID</FieldLabel>
                       <p className="mt-1 text-sm font-bold text-slate-900">{patientCode}</p>
                     </div>
                     <div>
-                      <FieldLabel>Diagnosis</FieldLabel>
+                      <FieldLabel>DIAGNOSIS</FieldLabel>
                       <p className="mt-1 text-sm font-bold text-primary">{episode.diagnosis || "Not specified"}</p>
                     </div>
                     <div>
-                      <FieldLabel>Primary Provider</FieldLabel>
+                      <FieldLabel>PRIMARY PROVIDER</FieldLabel>
                       <p className="mt-1 text-sm font-bold text-slate-900">{episode.clinicianName || "Not assigned"}</p>
                     </div>
                   </div>
@@ -237,9 +245,9 @@ export function PatientReviewModal({
                         <p className="mt-1 text-sm font-bold text-slate-900">{formatDateTime(episode.createdAt)}</p>
                       </div>
                       <div>
-                        <FieldLabel>Episode Status</FieldLabel>
-                        <span className="mt-1 inline-flex rounded-md bg-amber-50 px-2.5 py-1 text-xs font-bold capitalize text-amber-600">
-                          {episode.status.replaceAll("_", " ")}
+                        <FieldLabel>Discharge Status</FieldLabel>
+                        <span className="mt-1 inline-flex rounded-md bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-600">
+                          {formatStatusLabel(dischargeStatus)}
                         </span>
                       </div>
                       <div>
@@ -301,7 +309,7 @@ export function PatientReviewModal({
                     <span className="text-xs text-slate-500">STATUS</span>
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold capitalize text-amber-600">
                       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                      {episode.status.replaceAll("_", " ")}
+                      {formatStatusLabel(episode.status)}
                     </span>
                   </div>
                 </div>

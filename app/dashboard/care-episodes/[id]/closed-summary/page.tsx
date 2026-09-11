@@ -8,7 +8,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  CalendarCheck,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -16,15 +15,12 @@ import {
   FileCheck2,
   Gauge,
   History,
-  ListTree,
   Lock,
-  Pill,
   ShieldCheck,
   Sparkles,
   Stethoscope,
   Syringe,
   TrendingDown,
-  User,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getClosedEpisodeSummary } from "@/lib/api/episodeClosure.api";
 import { getAvatarColor, getInitials } from "../_shared/utils";
-import type { ClosedEpisodeRecord, TimelineEventStatus, TimelineEventType } from "../_shared/episodeClosureTypes";
+import type { ClosedEpisodeRecord } from "../_shared/episodeClosureTypes";
 
 const ESCALATION_BADGE_CLASSNAME: Record<string, string> = {
   Stable: "bg-emerald-50 text-emerald-600",
@@ -54,20 +50,6 @@ const CARE_PLAN_STATUS_CLASSNAME: Record<string, string> = {
   Completed: "bg-emerald-50 text-emerald-600",
 };
 
-const TIMELINE_STATUS_CLASSNAME: Record<TimelineEventStatus, string> = {
-  Critical: "bg-destructive/10 text-destructive",
-  Completed: "bg-emerald-50 text-emerald-600",
-  Missed: "bg-amber-50 text-amber-600",
-  Pending: "bg-muted text-muted-foreground",
-};
-
-const TIMELINE_ICON_CLASSNAME: Record<TimelineEventType, string> = {
-  Alert: "bg-destructive/10 text-destructive",
-  "Check-in": "bg-emerald-50 text-emerald-600",
-  Clinician: "bg-primary/10 text-primary",
-  Medication: "bg-amber-50 text-amber-600",
-  System: "bg-muted text-muted-foreground",
-};
 
 function formatDate(value: string) {
   const parsed = Date.parse(value);
@@ -87,11 +69,15 @@ function formatDateTime(value: string) {
 
 function ReadOnlyBadge() {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
-      <Lock className="h-3 w-3" />
+    <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border px-2 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+      <Lock className="h-3 w-3 shrink-0" />
       Read-Only
     </span>
   );
+}
+
+function IconContainer({ children }: { children: React.ReactNode }) {
+  return <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">{children}</span>;
 }
 
 function SectionHeading({
@@ -105,7 +91,7 @@ function SectionHeading({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+      <IconContainer>{icon}</IconContainer>
       <div>
         <h2 className="text-sm font-bold text-foreground sm:text-base">{title}</h2>
         {subtitle ? <p className="text-xs font-medium text-muted-foreground">{subtitle}</p> : null}
@@ -127,8 +113,8 @@ function ExpandableCard({
 }) {
   const [expanded, setExpanded] = useState(true);
   return (
-    <Card className="rounded-xl border-border bg-card shadow-sm">
-      <CardContent className="p-5 sm:p-6">
+    <Card className="w-full rounded-xl border-border bg-card shadow-sm">
+      <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <SectionHeading icon={icon} title={title} subtitle={subtitle} />
           <div className="flex shrink-0 items-center gap-2">
@@ -136,14 +122,15 @@ function ExpandableCard({
             <button
               type="button"
               onClick={() => setExpanded((current) => !current)}
+              aria-expanded={expanded}
               aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
             >
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
           </div>
         </div>
-        {expanded ? <div className="mt-5">{children}</div> : null}
+        {expanded ? <div className="mt-4">{children}</div> : null}
       </CardContent>
     </Card>
   );
@@ -151,11 +138,11 @@ function ExpandableCard({
 
 function ClosureArtifactCard({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-xl border border-border p-4">
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
-      <p className="mt-3 text-xs font-extrabold uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm font-bold text-foreground">{value}</p>
-      <p className="mt-0.5 text-xs font-medium leading-5 text-muted-foreground">{detail}</p>
+    <div className="rounded-xl border border-border p-2.5">
+      <IconContainer>{icon}</IconContainer>
+      <p className="mt-1.5 text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-xs font-bold text-foreground">{value}</p>
+      <p className="mt-0.5 text-[11px] font-medium leading-4 text-muted-foreground">{detail}</p>
     </div>
   );
 }
@@ -198,16 +185,15 @@ export default function ClosedEpisodeSummaryPage() {
     return <div className="mx-auto flex max-w-[1080px] flex-col items-center gap-4 rounded-xl border border-destructive/20 bg-destructive/5 px-6 py-16 text-center"><AlertCircle className="h-8 w-8 text-destructive" /><p className="text-sm font-semibold text-destructive">{error || "Closed episode summary is unavailable."}</p><Button asChild variant="outline"><Link href="/dashboard/care-episodes">Back to Care Episodes</Link></Button></div>;
   }
 
-  const { patient, overview, closureRecord, aiClosureSummary, intelligenceSummary, assessmentHistory, carePlanHistory, interventionsLog, careTimeline, closureArtifacts } =
+  const { patient, overview, closureRecord, aiClosureSummary, intelligenceSummary, assessmentHistory, carePlanHistory, interventionsLog, closureArtifacts } =
     record;
   const closureDateTime = formatDateTime(closureRecord.closureDateTime);
-  const timelineGroupLabel = careTimeline.length > 0 ? formatDate(`${careTimeline[0].date}T00:00:00`) : "";
 
   return (
-    <div className="mx-auto max-w-[1080px] space-y-5 pb-10">
-      <Card className="rounded-xl border-border bg-card shadow-sm">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div className="flex items-center gap-4">
+    <div className="mx-auto w-full max-w-[1080px] space-y-3 pb-8">
+      <Card className="w-full rounded-xl border-border bg-card shadow-sm">
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex items-center gap-3">
             <span
               className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white"
               style={{ backgroundColor: getAvatarColor(patient.name) }}
@@ -240,14 +226,14 @@ export default function ClosedEpisodeSummaryPage() {
         </CardContent>
       </Card>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <Card className="rounded-xl border-border bg-card shadow-sm">
-          <CardContent className="p-5 sm:p-6">
+      <div className="grid w-full min-w-0 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <Card className="w-full h-full rounded-xl border-border bg-card shadow-sm">
+          <CardContent className="h-full p-4 sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <SectionHeading icon={<ClipboardList className="h-4.5 w-4.5" />} title="Episode overview" />
               <ReadOnlyBadge />
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3">
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Facility / Provider</p>
                 <p className="mt-1 text-sm font-bold text-foreground">{overview.facility}</p>
@@ -288,17 +274,17 @@ export default function ClosedEpisodeSummaryPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border-border bg-card shadow-sm">
-          <CardContent className="p-5">
+        <Card className="w-full h-full rounded-xl border-border bg-card shadow-sm">
+          <CardContent className="h-full p-4">
             <div className="flex items-center justify-between gap-2">
               <SectionHeading icon={<ShieldCheck className="h-4.5 w-4.5" />} title="Closure record" />
               <ReadOnlyBadge />
             </div>
-            <div className="mt-5 space-y-4 text-sm">
+            <div className="mt-4 space-y-3 text-sm">
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Closed By</p>
                 <p className="mt-1 font-bold text-foreground">
-                  {closureRecord.closedBy} · {closureRecord.closedByRole}
+                  {closureRecord.closedBy}
                 </p>
               </div>
               <div>
@@ -315,88 +301,89 @@ export default function ClosedEpisodeSummaryPage() {
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Final Notes</p>
                 <p className="mt-1 italic leading-6 text-foreground/80">{closureRecord.finalNotes}</p>
               </div>
-              <p className="border-t border-border pt-3 text-xs font-medium text-muted-foreground">Audit ref: {closureRecord.auditRef}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="rounded-xl border-primary/30 bg-primary/10 shadow-sm">
-        <CardContent className="p-5 sm:p-6">
+      <Card className="w-full rounded-xl border-primary/20 bg-primary/5 shadow-sm">
+        <CardContent className="p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
-            <SectionHeading icon={<Sparkles className="h-4.5 w-4.5" />} title="Episode Closure Summary" />
+            <SectionHeading icon={<Sparkles className="h-4.5 w-4.5" />} title="AI Episode Closure Summary" />
             <ReadOnlyBadge />
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600">
-              <CheckCircle2 className="h-3.5 w-3.5" />
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+              <CheckCircle2 className="h-3 w-3" />
               {aiClosureSummary.statusBadge}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1 text-xs font-bold text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" />
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+              <Lock className="h-3 w-3" />
               {aiClosureSummary.frozenAtLabel}
             </span>
           </div>
-          <div className="mt-4 space-y-3 text-sm leading-6 text-foreground/80">
+          <div className="mt-2 space-y-1.5 text-xs leading-5 text-foreground/80">
             {aiClosureSummary.narrative.split("\n\n").map((paragraph, index) => (
               <p key={index}>{paragraph}</p>
             ))}
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-primary/20 pt-4 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-primary/20 pt-2 sm:grid-cols-4">
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Medication adherence</p>
-              <p className="mt-1 text-2xl font-extrabold text-foreground">{aiClosureSummary.medicationAdherencePercent == null ? "--" : `${aiClosureSummary.medicationAdherencePercent}%`}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Medication adherence</p>
+              <p className="mt-1 text-xl font-extrabold text-foreground">{aiClosureSummary.medicationAdherencePercent == null ? "--" : `${aiClosureSummary.medicationAdherencePercent}%`}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Check-in completion</p>
-              <p className="mt-1 text-2xl font-extrabold text-foreground">{aiClosureSummary.checkInCompletionPercent == null ? "--" : `${aiClosureSummary.checkInCompletionPercent}%`}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Check-in completion</p>
+              <p className="mt-1 text-xl font-extrabold text-foreground">{aiClosureSummary.checkInCompletionPercent == null ? "--" : `${aiClosureSummary.checkInCompletionPercent}%`}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Emergency escalations</p>
-              <p className="mt-1 text-2xl font-extrabold text-foreground">{aiClosureSummary.emergencyEscalations}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Emergency escalations</p>
+              <p className="mt-1 text-xl font-extrabold text-foreground">{aiClosureSummary.emergencyEscalations == null ? "--" : aiClosureSummary.emergencyEscalations}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground">Monitoring days</p>
-              <p className="mt-1 text-2xl font-extrabold text-foreground">
-                {aiClosureSummary.monitoringDays.completed}/{aiClosureSummary.monitoringDays.total}
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.04em] text-muted-foreground">Monitoring days</p>
+              <p className="mt-1 text-xl font-extrabold text-foreground">
+                {aiClosureSummary.monitoringDays.completed == null || aiClosureSummary.monitoringDays.total == null
+                  ? "--"
+                  : `${aiClosureSummary.monitoringDays.completed}/${aiClosureSummary.monitoringDays.total}`}
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="rounded-xl border-border bg-card shadow-sm">
-        <CardContent className="p-5 sm:p-6">
+      <Card className="w-full h-full rounded-xl border-border bg-card shadow-sm">
+        <CardContent className="h-full p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
             <SectionHeading icon={<Gauge className="h-4.5 w-4.5" />} title="Episode Intelligence Summary" subtitle="Risk, alerts and clinical activity across the full episode" />
             <ReadOnlyBadge />
           </div>
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-border p-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-border p-2.5">
               <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                 <TrendingDown className="h-4 w-4 text-emerald-600" />
                 Risk Trend
               </p>
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Opening</p>
-                  <p className="text-2xl font-extrabold text-destructive">{intelligenceSummary.riskTrend.opening ?? "--"}</p>
+                  <p className="text-xl font-extrabold text-destructive">{intelligenceSummary.riskTrend.opening ?? "--"}</p>
                 </div>
                 <ArrowLeft className="h-4 w-4 rotate-180 text-muted-foreground" />
                 <div className="text-right">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Closing</p>
-                  <p className="text-2xl font-extrabold text-emerald-600">{intelligenceSummary.riskTrend.closing ?? "--"}</p>
+                  <p className="text-xl font-extrabold text-emerald-600">{intelligenceSummary.riskTrend.closing ?? "--"}</p>
                 </div>
               </div>
-              {intelligenceSummary.riskTrend.improvementPercent == null ? <p className="mt-3 text-xs text-muted-foreground">Opening risk score unavailable</p> : <p className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><TrendingDown className="h-3.5 w-3.5" />{intelligenceSummary.riskTrend.improvementPercent}% improvement</p>}
+              {intelligenceSummary.riskTrend.improvementPercent == null ? <p className="mt-2 text-xs text-muted-foreground">Opening risk score unavailable</p> : <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><TrendingDown className="h-3.5 w-3.5" />{intelligenceSummary.riskTrend.improvementPercent}% improvement</p>}
             </div>
 
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border p-2.5">
               <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 Alert Summary
               </p>
-              <dl className="mt-3 space-y-2 text-sm">
+              <dl className="mt-2 space-y-1 text-xs">
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Total alerts</dt>
                   <dd className="font-bold text-foreground">{intelligenceSummary.alertSummary.totalAlerts}</dd>
@@ -413,7 +400,7 @@ export default function ClosedEpisodeSummaryPage() {
                   <dt className="text-muted-foreground">Low</dt>
                   <dd className="font-bold text-foreground">{intelligenceSummary.alertSummary.low}</dd>
                 </div>
-                <div className="flex justify-between border-t border-border pt-2">
+                <div className="flex justify-between border-t border-border pt-1.5">
                   <dt className="text-muted-foreground">Resolved</dt>
                   <dd className="font-bold text-emerald-600">
                     {intelligenceSummary.alertSummary.resolved.count} / {intelligenceSummary.alertSummary.resolved.total}
@@ -422,12 +409,12 @@ export default function ClosedEpisodeSummaryPage() {
               </dl>
             </div>
 
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border p-2.5">
               <p className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                 <Activity className="h-4 w-4 text-primary" />
                 Clinical Activity
               </p>
-              <dl className="mt-3 space-y-2 text-sm">
+              <dl className="mt-2 space-y-1 text-xs">
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Assessments</dt>
                   <dd className="font-bold text-foreground">{intelligenceSummary.clinicalActivity.assessments}</dd>
@@ -442,9 +429,9 @@ export default function ClosedEpisodeSummaryPage() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Emergency escalations</dt>
-                  <dd className="font-bold text-foreground">{intelligenceSummary.clinicalActivity.emergencyEscalations}</dd>
+                  <dd className="font-bold text-foreground">{intelligenceSummary.clinicalActivity.emergencyEscalations == null ? "--" : intelligenceSummary.clinicalActivity.emergencyEscalations}</dd>
                 </div>
-                <div className="flex justify-between border-t border-border pt-2">
+                <div className="flex justify-between border-t border-border pt-1.5">
                   <dt className="text-muted-foreground">Interventions logged</dt>
                   <dd className="font-bold text-foreground">{intelligenceSummary.clinicalActivity.interventionsLogged}</dd>
                 </div>
@@ -471,28 +458,28 @@ export default function ClosedEpisodeSummaryPage() {
               </tr>
             </thead>
             <tbody>
-              {assessmentHistory.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No clinical assessments were recorded for this episode.</td></tr> : null}
+              {assessmentHistory.length === 0 ? <tr><td colSpan={5} className="px-4 py-4 text-center text-sm text-muted-foreground">No clinical assessments were recorded for this episode.</td></tr> : null}
               {assessmentHistory.map((assessment) => {
                 const { datePart, timePart } = formatDateTime(assessment.date);
                 return (
                   <tr key={assessment.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-3 py-3 align-top">
                       <span className="block font-bold text-foreground">{datePart}</span>
                       <span className="mt-0.5 block text-xs font-medium text-muted-foreground">{timePart}</span>
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-3 py-3 align-top">
                       <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", ESCALATION_BADGE_CLASSNAME[assessment.escalationStatus] ?? "bg-muted text-muted-foreground")}>
                         {assessment.escalationStatus}
                       </span>
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-3 py-3 align-top">
                       <span className={cn("inline-flex items-center gap-1.5 text-sm font-bold", OUTCOME_TEXT_CLASSNAME[assessment.outcome] ?? "text-muted-foreground")}>
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         {assessment.outcome}
                       </span>
                     </td>
                     <td className="max-w-xs px-4 py-4 align-top text-sm text-foreground/80">{assessment.clinicianNotes}</td>
-                    <td className="px-4 py-4 align-top text-sm font-medium text-foreground/80">{assessment.clinicianName}</td>
+                    <td className="px-3 py-3 align-top text-sm font-medium text-foreground/80">{assessment.clinicianName}</td>
                   </tr>
                 );
               })}
@@ -502,8 +489,8 @@ export default function ClosedEpisodeSummaryPage() {
       </ExpandableCard>
 
       <ExpandableCard icon={<History className="h-4.5 w-4.5" />} title="Care Plan History" subtitle={`${carePlanHistory.length} versions · interventions attempted during episode`}>
-        <div className="space-y-5">
-          {carePlanHistory.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No care-plan version events were found.</p> : null}
+        <div className="space-y-2">
+          {carePlanHistory.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No care-plan version events were found.</p> : null}
           {carePlanHistory.map((version, index) => {
             const { datePart, timePart } = formatDateTime(version.date);
             return (
@@ -518,7 +505,7 @@ export default function ClosedEpisodeSummaryPage() {
                 <p className="mt-1 text-xs font-medium text-muted-foreground">
                   {datePart} · {timePart} · {version.author}
                 </p>
-                <p className="mt-1.5 text-sm leading-6 text-foreground/80">{version.description}</p>
+                <p className="mt-1 text-xs leading-5 text-foreground/80">{version.description}</p>
               </div>
             );
           })}
@@ -527,6 +514,9 @@ export default function ClosedEpisodeSummaryPage() {
 
       <ExpandableCard icon={<Syringe className="h-4.5 w-4.5" />} title="Interventions log">
         <div className="overflow-x-auto">
+          {interventionsLog.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">No intervention events were found.</p>
+          ) : (
           <table className="w-full min-w-[680px] border-collapse">
             <thead className="bg-primary/5">
               <tr>
@@ -538,62 +528,31 @@ export default function ClosedEpisodeSummaryPage() {
               </tr>
             </thead>
             <tbody>
-              {interventionsLog.length === 0 ? <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">No intervention events were found.</td></tr> : null}
               {interventionsLog.map((entry) => (
                 <tr key={entry.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-4 align-top">
+                  <td className="px-3 py-3 align-top">
                     <span className="block font-bold text-foreground">{entry.intervention}</span>
                     <span className="mt-0.5 block text-xs font-medium text-muted-foreground">{entry.description}</span>
                   </td>
-                  <td className="px-4 py-4 align-top text-sm font-medium text-foreground/80">{formatDate(entry.date)}</td>
-                  <td className="px-4 py-4 align-top text-sm font-medium text-foreground/80">{entry.clinicianName}</td>
-                  <td className="px-4 py-4 align-top text-sm text-foreground/80">{entry.linkedTrigger}</td>
+                  <td className="px-3 py-3 align-top text-sm font-medium text-foreground/80">{formatDate(entry.date)}</td>
+                  <td className="px-3 py-3 align-top text-sm font-medium text-foreground/80">{entry.clinicianName}</td>
+                  <td className="px-3 py-3 align-top text-sm text-foreground/80">{entry.linkedTrigger}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </ExpandableCard>
 
-      <ExpandableCard icon={<ListTree className="h-4.5 w-4.5" />} title="Unified Care Timeline">
-        <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{timelineGroupLabel}</p>
-        <div className="space-y-3">
-          {careTimeline.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No timeline events were found.</p> : null}
-          {careTimeline.map((event) => (
-            <div key={event.id} className="flex items-start gap-3 rounded-xl border border-border p-4">
-              <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", TIMELINE_ICON_CLASSNAME[event.type])}>
-                {event.type === "Alert" ? <AlertCircle className="h-4.5 w-4.5" /> : event.type === "Check-in" ? <CheckCircle2 className="h-4.5 w-4.5" /> : event.type === "Clinician" ? <Stethoscope className="h-4.5 w-4.5" /> : event.type === "Medication" ? <Pill className="h-4.5 w-4.5" /> : <ClipboardList className="h-4.5 w-4.5" />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-bold text-foreground">{event.title}</p>
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-bold", TIMELINE_STATUS_CLASSNAME[event.status])}>{event.status}</span>
-                </div>
-                <p className="mt-0.5 text-sm text-muted-foreground">{event.description}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarCheck className="h-3.5 w-3.5" />
-                    {event.time}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <User className="h-3.5 w-3.5" />
-                    {event.source}
-                  </span>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{event.type}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </ExpandableCard>
 
-      <Card className="rounded-xl border-border bg-card shadow-sm">
-        <CardContent className="p-5 sm:p-6">
+      <Card className="w-full h-full rounded-xl border-border bg-card shadow-sm">
+        <CardContent className="h-full p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
             <SectionHeading icon={<FileCheck2 className="h-4.5 w-4.5" />} title="Closure Artifacts" subtitle="Final preserved records at episode close" />
             <ReadOnlyBadge />
           </div>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <ClosureArtifactCard icon={<Stethoscope className="h-4 w-4" />} {...closureArtifacts.finalClinicalAssessment} />
             <ClosureArtifactCard icon={<History className="h-4 w-4" />} {...closureArtifacts.finalCarePlanVersion} />
             <ClosureArtifactCard icon={<Activity className="h-4 w-4" />} {...closureArtifacts.finalRecoveryStatus} />

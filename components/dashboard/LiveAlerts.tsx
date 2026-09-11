@@ -9,6 +9,7 @@ export interface LiveAlert {
   description: string;
   time: string;
   actionLabel: string;
+  actionHref: string;
 }
 
 interface LiveAlertsProps {
@@ -49,11 +50,10 @@ export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlert
             <AlertTriangle className="h-5 w-5 text-destructive" />
             Live Alerts
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">Most urgent patient signals</p>
         </div>
         {hasAlerts ? (
-          <Link href="/dashboard/alerts" className="shrink-0 text-sm font-bold text-primary hover:underline">
-            View all
+          <Link href="/dashboard/alerts" className="inline-flex shrink-0 items-center gap-1 text-sm font-bold text-primary hover:underline">
+            View all <span aria-hidden="true">&rarr;</span>
           </Link>
         ) : null}
       </div>
@@ -90,7 +90,7 @@ export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlert
                   {alert.time}
                 </span>
                 <Link
-                  href="/dashboard/alerts"
+                  href={alert.actionHref}
                   className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90"
                 >
                   {alert.actionLabel}

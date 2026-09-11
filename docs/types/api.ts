@@ -11,6 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * Health check
+         * @description Lightweight liveness probe. Returns 200 OK without authentication. Used by mobile offline-queue and monitoring.
+         */
         get: operations["HealthController_check"];
         put?: never;
         post?: never;
@@ -132,6 +136,23 @@ export interface paths {
         put?: never;
         /** Logout and invalidate refresh token */
         post: operations["AuthController_logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log out from every device */
+        post: operations["AuthController_logoutAll"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1268,7 +1289,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a lab result for a care episode
-         * @description Accepts an optional multipart file plus structured values. Either a file or structured values (or both) must be provided. Stored under records/ for the patient, emits a lab_result_uploaded timeline event. Patients may upload for their own episodes; clinicians/admins for episodes in their facility.
+         * @description Accepts an optional multipart file plus structured values. Either a file or structured values (or both) must be provided. Stored under records/ for the patient, emits a lab_result_uploaded timeline event. Patients may upload for their own episodes; clinicians/admins for episodes in their facility. Accepts optional resultDate (Result Date) and status (Result Status) limited to pending | received — reviewed/flagged are clinician-only review states set via PATCH /care-episodes/lab-results/:resultId.
          */
         post: operations["CareEpisodesController_uploadLabResult"];
         delete?: never;
@@ -3278,7 +3299,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update home care request draft
+         * @description Persists draft fields across the 3 request screens: recipient, address, preferred date/time, emergency contact, access instructions. Patient ownership enforced.
+         */
+        patch: operations["HomeCareController_updateRequestDraft"];
         trace?: never;
     };
     "/home-care/quotes/{quoteId}": {
@@ -3350,11 +3375,91 @@ export interface paths {
         };
         /**
          * Get document requirements for a service
-         * @description Returns required documents for a given home care service.
+         * @description Returns required documents for a given home care service (Phase 13C: real per-service requirements from the service record).
          */
         get: operations["HomeCareController_getDocumentRequirements"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{requestId}/availability-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start availability check for a request
+         * @description Creates a persisted availability check for the request. Returns checkId, progress and the three evaluation steps. Result is stored server-side.
+         */
+        post: operations["HomeCareController_startAvailabilityCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/quotes/{quoteId}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initialize Paystack payment for a quote
+         * @description Creates a Paystack transaction for an issued quote. Returns authorizationUrl + reference. 409/400 when the quote is not payable; idempotent when already paid.
+         */
+        post: operations["HomeCareController_payQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/payments/verify/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify a quote payment by gateway reference
+         * @description Verifies the Paystack transaction for the given reference (PRD: verify before confirming) and advances quote/request state on success.
+         */
+        get: operations["HomeCareController_verifyQuotePayment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home-care/payments/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paystack webhook receiver
+         * @description Signature-verified (HMAC-SHA512) Paystack webhook. On charge.success, verifies the transaction with the gateway API, marks the quote paid, and advances the request to finding_provider.
+         */
+        post: operations["HomeCareController_paystackWebhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3371,14 +3476,38 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload document for a request draft
-         * @description Accepts a document upload for a home care request draft. Cloudinary integration deferred.
+         * Upload a document for a request draft
+         * @description Multipart upload to Cloudinary (tracmedy/patients/{patientId}/home-care-documents/). File type and size validated against the service requirements. Send directly (not via offline queue).
          */
         post: operations["HomeCareController_uploadDocument"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/home-care/requests/{draftId}/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an uploaded document
+         * @description Deletes the Cloudinary asset and the document record (page 2 remove flow).
+         */
+        delete: operations["HomeCareController_removeDocument"];
+        options?: never;
+        head?: never;
+        /**
+         * Replace an uploaded document
+         * @description Uploads a new asset and overwrites the document record (page 2 replace flow). Returns the updated document.
+         */
+        patch: operations["HomeCareController_replaceDocument"];
         trace?: never;
     };
     "/support/faq": {
@@ -3581,30 +3710,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/caregivers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get caregiver detail
-         * @description Returns full caregiver profile including permissions and recent activity for the authenticated patient.
-         */
-        get: operations["CaregiversController_getCaregiverDetail"];
-        put?: never;
-        post?: never;
-        /**
-         * Remove caregiver
-         * @description Patient removes a caregiver from their care circle. Access is revoked immediately.
-         */
-        delete: operations["CaregiversController_removeCaregiver"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/caregivers/{id}/permissions": {
         parameters: {
             query?: never;
@@ -3660,6 +3765,30 @@ export interface paths {
          */
         post: operations["CaregiversController_resendInvitation"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/caregivers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get caregiver detail
+         * @description Returns full caregiver profile including permissions and recent activity for the authenticated patient.
+         */
+        get: operations["CaregiversController_getCaregiverDetail"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove caregiver
+         * @description Patient removes a caregiver from their care circle. Access is revoked immediately.
+         */
+        delete: operations["CaregiversController_removeCaregiver"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4451,10 +4580,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * End teleconsultation call
-         * @description Ends the call, writes CareTimeline events, and cleans up the Stream call.
+         * End teleconsultation call (assigned clinician only)
+         * @description Closes the entire consultation for both parties: marks the appointment call ended, writes CareTimeline events (video_call_started / video_call_ended), computes duration, and ends the Stream call. Patients must use /call/leave to leave without ending the consultation.
          */
         post: operations["TelemedicineController_endCall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave teleconsultation call as a participant
+         * @description Participant-aware local leave. Does NOT mark the appointment call ended, does NOT write video_call_ended, and does NOT close the Stream call for the other party. The participant can rejoin the same call via /call/join. Only the assigned clinician can end the consultation via /call/end.
+         */
+        post: operations["TelemedicineController_leaveCall"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4475,6 +4624,940 @@ export interface paths {
          * @description Re-triggers ringing push notification to the patient. Call must be in "waiting" status.
          */
         post: operations["TelemedicineController_nudgePatient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/{id}/call/nudge-clinician": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nudge assigned clinician to join call (patient only)
+         * @description Patient-safe contract for a patient waiting in the teleconsultation lobby to nudge the assigned clinician. The notification targets the clinician, not the patient. Call must be in "waiting" status and the appointment must have an assigned clinician.
+         */
+        post: operations["TelemedicineController_nudgeClinician"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin dashboard overview (DAS-01/DAS-02)
+         * @description Returns all overview-dashboard widgets in one screen payload: summary cards, activity series, user distribution, module health, top facilities, recent activity, and the admin profile. Revenue/payment widgets are marked `not_configured` until the Phase 14 Paystack integration. Returns zeros and empty arrays (hasData: false) when the platform has no data.
+         */
+        get: operations["AdminController_dashboardOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get authenticated admin profile (AUTH-01 hydration)
+         * @description Returns the authenticated tracmedy_admin profile including role, status, sub-role, and permissions for admin shell hydration after reload.
+         */
+        get: operations["AdminController_getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request an admin password reset link (AUTH-04..AUTH-06)
+         * @description Issues a reset token only for tracmedy_admin accounts. Always returns a generic success message to avoid account enumeration (AUTH-05 caveat). Supports safe resend via repeated calls (rate-limited by global throttler).
+         */
+        post: operations["AdminController_forgotPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset an admin password (AUTH-07/AUTH-08)
+         * @description Validates an admin-scoped reset token, enforces the admin password policy, and invalidates all existing admin refresh sessions after reset.
+         */
+        post: operations["AdminController_resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User summary counts (USER-01 summary cards)
+         * @description Returns total, active, suspended, inactive and plan counts. Per-user subscription plans (Plus/Free) are not modeled until Phase 14, so plusUsers=0 and freeUsers=total without fabricating billing data.
+         */
+        get: operations["AdminUsersController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Paginated admin user list (USER-01 table)
+         * @description Returns paginated patient rows with search/status filters for the Users table.
+         */
+        get: operations["AdminUsersController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export users CSV (USER-01 Export)
+         * @description Returns a CSV string for the current filters. Minimal JSON export stub until the frontend consumes streaming CSV.
+         */
+        get: operations["AdminUsersController_export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin user detail drawer (USER-02)
+         * @description Returns the drawer payload for a single user including subscription/suspension metadata.
+         */
+        get: operations["AdminUsersController_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change user status (USER-01/02 suspend/activate)
+         * @description Suspends or activates a patient account. Suspension blocks login via the JWT guard (mobile app access revoked). `deactivate` is rejected because no inactive account state is modeled.
+         */
+        patch: operations["AdminUsersController_changeStatus"];
+        trace?: never;
+    };
+    "/admin/facilities/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Facility summary counts (FAC-01 summary cards) */
+        get: operations["AdminFacilitiesController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/facilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paginated admin facility list (FAC-01 table) */
+        get: operations["AdminFacilitiesController_list"];
+        put?: never;
+        /**
+         * Register a facility (FAC-03)
+         * @description Creates an active facility with a generated TRCFAC-{yyww}-{seq} tracId. Contact person/subscription fields are not modeled until Phase 13.6/14.
+         */
+        post: operations["AdminFacilitiesController_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/facilities/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export facilities CSV (FAC-01/02 Export)
+         * @description Returns a CSV string for the current filters.
+         */
+        get: operations["AdminFacilitiesController_export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/facilities/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facility detail drawer (FAC-04)
+         * @description Returns facility identity, connected-patient count, and safe nulls/not_configured for contact/subscription/payments until those domains are modeled.
+         */
+        get: operations["AdminFacilitiesController_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/facilities/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change facility status (FAC-05 suspend/activate)
+         * @description Suspending a facility blocks its hospital-dashboard access. Activation restores it.
+         */
+        patch: operations["AdminFacilitiesController_changeStatus"];
+        trace?: never;
+    };
+    "/admin/home-care/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home Care Network overview cards (HC-01)
+         * @description Returns summary card aggregates: totalRequests (+delta %), pendingAssignments (urgent subset), activeVisits (live label), completedVisits (+MoM delta).
+         */
+        get: operations["AdminHomeCareController_getOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Request filter options (HC-02)
+         * @description Returns filter panel enums: origins, statuses, serviceCategories, distinct locations.
+         */
+        get: operations["AdminHomeCareController_getRequestFilterOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export requests CSV
+         * @description CSV stream of the filtered request dataset (same filters as list).
+         */
+        get: operations["AdminHomeCareController_exportRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List incoming home care requests (HC-01/02/03)
+         * @description Paginated request queue with search, origin/status/category/location/date filters, and sort.
+         */
+        get: operations["AdminHomeCareController_listRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Request detail (HC-04/HC-12)
+         * @description Full request payload: overview, patient, service, requirements checklist, documents, operational timeline, stepper stage (clinician-ordered skips quote/payment), quote and visit summaries.
+         */
+        get: operations["AdminHomeCareController_getRequestDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/provider-matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider match recommendations (HC-04 right rail)
+         * @description Runs the provider recommendation engine: category match, coverage area, availability, scored by distance/load/rating/verification.
+         */
+        get: operations["AdminHomeCareController_getProviderMatches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/payment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payment summary (HC-07)
+         * @description Quote + transaction payment card: amounts, method, reference, date, expiry.
+         */
+        get: operations["AdminHomeCareController_getPaymentSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Request document preview (HC-11)
+         * @description Document metadata + preview URL for the document viewer.
+         */
+        get: operations["AdminHomeCareController_getRequestDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/assignment/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assignment preselected provider status (HC-07)
+         * @description Real-time recheck of the provisional provider for the assignment card.
+         */
+        get: operations["AdminHomeCareController_getAssignmentOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place request on hold (HC-04)
+         * @description Sets holdReason/holdAt and moves adminStatus to suspended.
+         */
+        post: operations["AdminHomeCareController_holdRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel request (HC-04)
+         * @description Cancels the request, records timeline + audit, notifies the patient.
+         */
+        post: operations["AdminHomeCareController_cancelRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/quote/provisional-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select provisional provider for quote (HC-05)
+         * @description Stores the provider selection on the active draft quote.
+         */
+        post: operations["AdminHomeCareController_selectProvisionalProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create quote (draft or send) (HC-04/05/06)
+         * @description Creates the Quote with computed totalAmount. sendNow=true issues immediately (sentAt/expiresAt, adminStatus → awaiting_payment, patient notification).
+         */
+        post: operations["AdminHomeCareController_createQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/quote/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send draft quote (HC-06)
+         * @description Issues the existing draft: sentAt/expiresAt set, adminStatus → awaiting_payment, patient notified (in-app + push).
+         */
+        post: operations["AdminHomeCareController_sendQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/quote/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit & resend quote (HC-07)
+         * @description Supersedes the previous quote (marked cancelled), creates a new version with status issued, notifies the patient.
+         */
+        post: operations["AdminHomeCareController_resendQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/quote/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel issued quote (HC-10)
+         * @description Voids the active quote and records the timeline event.
+         */
+        post: operations["AdminHomeCareController_cancelQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/assignment/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm provider assignment (HC-09/HC-12)
+         * @description Assigns the provider, creates the ActiveVisit with initial timeline entries, records audit + timeline, notifies patient + provider. Direct requests require payment confirmed first.
+         */
+        post: operations["AdminHomeCareController_confirmAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/requests/{requestId}/assignment/change-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change pre-assignment provider (HC-08)
+         * @description Swaps the provisional provider before assignment. Does not notify (still pre-assignment).
+         */
+        post: operations["AdminHomeCareController_changeProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider network summary strip (HC-13)
+         * @description Counts by availability and verification: total, available, busy, offline, pendingVerification, suspended, expiredLicences.
+         */
+        get: operations["AdminHomeCareController_getProvidersOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/form-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Add-provider form options (HC-14)
+         * @description Dropdown values: genders, professionalCategories, serviceCapabilities, states, cities, lgas, availabilityStatuses, defaultAccountStatus.
+         */
+        get: operations["AdminHomeCareController_getProviderFormOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export provider directory CSV (HC-13) */
+        get: operations["AdminHomeCareController_exportProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider directory (HC-13)
+         * @description Paginated provider table with search/filters (category, availability, verification, coverage) and sort.
+         */
+        get: operations["AdminHomeCareController_listProviders"];
+        put?: never;
+        /**
+         * Create provider (HC-14 submit)
+         * @description Onboards a provider with full profile + verification documents. Defaults verificationStatus to pending; new providers cannot be matched until verified.
+         */
+        post: operations["AdminHomeCareController_createProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save provider onboarding draft (HC-14)
+         * @description Stores partial onboarding payload without creating a provider record. Returns a draft ID to resume later.
+         */
+        post: operations["AdminHomeCareController_saveProviderDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload provider profile/verification files (HC-14)
+         * @description Multipart upload for profile photo and verification documents. Stored under tracmedy/providers/{providerId}/{docType}/ (pending/ before creation). Returns URL + metadata; attach to the create payload.
+         */
+        post: operations["AdminHomeCareController_uploadProviderFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/{providerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider detail (HC-15)
+         * @description Full provider payload: overview card, professional info, coverage, performance metrics, current assignments, verification documents, activity timeline.
+         */
+        get: operations["AdminHomeCareController_getProviderDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit provider (HC-15) / suspend or reactivate
+         * @description Partial provider updates. verificationStatus changes also flip the legacy isVerified flag.
+         */
+        patch: operations["AdminHomeCareController_updateProvider"];
+        trace?: never;
+    };
+    "/admin/home-care/providers/{providerId}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider assignments (HC-15 table)
+         * @description Active/recent assignment rows for the provider.
+         */
+        get: operations["AdminHomeCareController_getProviderAssignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/providers/{providerId}/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Provider verification document preview (HC-15) */
+        get: operations["AdminHomeCareController_getProviderDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/visits/cancellation-reasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Visit cancellation reasons (HC-18) */
+        get: operations["AdminHomeCareController_getVisitCancellationReasons"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/visits/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export active visits CSV (HC-16) */
+        get: operations["AdminHomeCareController_exportVisits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active visits (HC-16)
+         * @description Paginated visit monitor with search/filters (status, category, provider, origin, location) and sort.
+         */
+        get: operations["AdminHomeCareController_listVisits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/visits/{visitId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Visit detail (HC-17)
+         * @description Full visit payload: patient info, visit status, service details, provider info, milestone timeline, contacts, operational note.
+         */
+        get: operations["AdminHomeCareController_getVisitDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-care/visits/{visitId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel visit (HC-18)
+         * @description Validated reason code + details; sets visit cancelled, records timeline, notifies patient + provider + originating hospital.
+         */
+        post: operations["AdminHomeCareController_cancelVisit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4520,14 +5603,20 @@ export interface components {
             locale?: string;
         };
         VerifyOtpDto: {
-            /** @example cmpqz48g00000uo3so853nqfc */
-            userId: string;
+            /**
+             * @description Registration token issued at signup.
+             * @example 8f1c2d3e4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d
+             */
+            registrationToken: string;
             /** @example 123456 */
             otp: string;
         };
         ResendOtpDto: {
-            /** @example cmpqz48g00000uo3so853nqfc */
-            userId: string;
+            /**
+             * @description Registration token issued at signup.
+             * @example 8f1c2d3e4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d
+             */
+            registrationToken: string;
         };
         LoginDto: {
             /** @example john@example.com */
@@ -4601,6 +5690,42 @@ export interface components {
             /** @example strongP@ss1 */
             password: string;
         };
+        SafeUserResponseDto: {
+            /** @description Internal CUID (not user-facing). */
+            id: string;
+            email: string;
+            phone: string | null;
+            name: string | null;
+            /** @description Profile photo URL (generated fallback when unset). */
+            avatarUrl: string;
+            /** @description Global human ID (display-only). */
+            tracmedyPatientId: string | null;
+            /** @enum {string} */
+            role: "patient" | "clinician" | "hospital_admin" | "tracmedy_admin";
+            /** @enum {string} */
+            status: "pending" | "active" | "locked" | "suspended";
+            timezone: string | null;
+            locale: string | null;
+            careIntent: string[];
+            onboardingCompleted: boolean;
+            hospitalId: string | null;
+            facilityId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        MeFacilityStaffMemberResponseDto: {
+            /** @description Granted TeamPermission strings (active membership only). */
+            permissions: string[];
+            /** @example full_access */
+            accessProfile: string | null;
+        };
+        MeResponseDto: {
+            user: components["schemas"]["SafeUserResponseDto"];
+            /** @description Active facility staff grants only; null when absent, removed, or suspended. */
+            facilityStaffMember: components["schemas"]["MeFacilityStaffMemberResponseDto"] | null;
+        };
         ChangePasswordDto: {
             /** @example oldP@ss1 */
             currentPassword: string;
@@ -4609,7 +5734,7 @@ export interface components {
         };
         CompleteOnboardingDto: {
             /** @example cmpqz48g00000uo3so853nqfc */
-            userId: string;
+            userId?: string;
         };
         AuditTargetEntityDto: {
             /** @description Entity type (e.g. patient, care_episode) */
@@ -4625,10 +5750,10 @@ export interface components {
         AuditLogResponseDto: {
             /** @description Audit entry ID */
             id: string;
-            /** @description Facility this entry belongs to */
-            facilityId: string;
-            /** @description Actor user ID */
-            actorId: string;
+            /** @description Facility this entry belongs to (null for platform/admin events) */
+            facilityId?: Record<string, never> | null;
+            /** @description Actor user ID (null for unknown-actor security events) */
+            actorId?: Record<string, never> | null;
             /** @description Actor display name */
             actorName?: Record<string, never> | null;
             /** @description Actor role */
@@ -5287,6 +6412,11 @@ export interface components {
         CareEpisodeSummaryDto: {
             /** @description Episode ID */
             id: string;
+            /**
+             * @description Human-readable care episode reference
+             * @example TRCEP-2529-001
+             */
+            reference: string | null;
             /** @description Patient ID */
             patientId: string;
             /** @description Facility ID */
@@ -5541,6 +6671,11 @@ export interface components {
         CareEpisodeDetailDto: {
             /** @description Episode ID */
             id: string;
+            /**
+             * @description Human-readable care episode reference
+             * @example TRCEP-2529-001
+             */
+            reference: string | null;
             /** @description Patient ID */
             patientId: string;
             /** @description Facility ID */
@@ -6039,6 +7174,11 @@ export interface components {
         EpisodeLabResultDto: {
             /** @description Result ID */
             id: string;
+            /**
+             * @description Human-readable lab result reference
+             * @example TRCLAB-2529-001
+             */
+            reference: string | null;
             /** @description Episode ID */
             episodeId: string;
             /** @description Patient ID */
@@ -6073,6 +7213,8 @@ export interface components {
              * @description Observed at (ISO)
              */
             observedAt: string;
+            /** @description Date the lab result was issued/available (ISO) */
+            resultDate?: string | null;
             /**
              * Format: date-time
              * @description Created at (ISO)
@@ -6555,6 +7697,11 @@ export interface components {
         AlertResponseDto: {
             /** @description Alert ID */
             id: string;
+            /**
+             * @description Human-readable alert reference
+             * @example TRCALR-2529-001
+             */
+            reference: string | null;
             /** @description Care episode ID */
             episodeId?: string;
             /** @description Patient ID */
@@ -7173,6 +8320,11 @@ export interface components {
         CreateAppointmentResponseDto: {
             /** @description Appointment ID */
             id: string;
+            /**
+             * @description Human-readable appointment reference
+             * @example TRCAPP-2529-001
+             */
+            reference: string | null;
             /** @description Patient ID */
             patientId: string;
             /** @description Patient avatar URL. Never null — uploaded image or generated initials avatar. */
@@ -7286,6 +8438,11 @@ export interface components {
         AppointmentResponseDto: {
             /** @description Appointment ID */
             id: string;
+            /**
+             * @description Human-readable appointment reference
+             * @example TRCAPP-2529-001
+             */
+            reference: string | null;
             /** @description Patient ID */
             patientId: string;
             /** @description Patient avatar URL. Never null — uploaded image or generated initials avatar. */
@@ -7990,12 +9147,12 @@ export interface components {
             profileName: string;
             /**
              * @description Tracmedy patient ID
-             * @example TRAC-12345
+             * @example TRCPT-2529-001
              */
             tracmedyId?: Record<string, never>;
             /**
-             * @description Health ID (QR-scannable)
-             * @example HM-ABC123
+             * @description Health ID (unified to TRCPT- standard)
+             * @example TRCPT-2529-001
              */
             healthId?: Record<string, never>;
             /** @description Record counts per folder */
@@ -8021,6 +9178,11 @@ export interface components {
         RecordResponseDto: {
             /** @description Record ID */
             id: string;
+            /**
+             * @description Human-readable record reference
+             * @example TRCREC-2529-001
+             */
+            reference: string | null;
             /** @description Profile ID */
             profileId: string;
             /**
@@ -8501,6 +9663,8 @@ export interface components {
              *     ]
              */
             selectedFolders: string[];
+            /** @description Optional password to AES-encrypt the PDF. When set, the recipient must enter this password to open the report. */
+            password?: string;
         };
         ReportResponseDto: {
             /** @description Report ID */
@@ -8509,8 +9673,12 @@ export interface components {
             profileId: string;
             /** @description Selected folder categories */
             selectedFolders: string[];
-            /** @description Download URL */
-            fileUrl?: Record<string, never> | null;
+            /** @description PDF binary download URL (Cloudinary) */
+            fileUrl: string;
+            /** @description PNG first-page preview URL (Cloudinary) */
+            previewUrl?: string | null;
+            /** @description Whether the PDF is AES password-protected */
+            isPasswordProtected: boolean;
             /**
              * @description Report status
              * @example completed
@@ -8847,6 +10015,11 @@ export interface components {
              */
             id: string;
             /**
+             * @description Human-readable message reference
+             * @example TRCMSG-2529-001
+             */
+            reference: string | null;
+            /**
              * @description Care episode ID
              * @example clx1234567890
              */
@@ -8969,6 +10142,36 @@ export interface components {
             contactPhone?: string;
             notes?: string;
         };
+        UpdateHomeCareRequestDraftDto: {
+            /** @description Care-circle profile receiving care */
+            recipientId?: string;
+            /**
+             * @description Recipient selector state (page 1)
+             * @enum {string}
+             */
+            recipientType?: "self" | "care_circle_member";
+            /** @description Saved patient address identifier */
+            addressId?: string;
+            /** @description Preferred visit date (ISO 8601) */
+            preferredDate?: string;
+            /** @description Preferred visit time window */
+            preferredTime?: string;
+            /** @description Emergency contact profile id */
+            emergencyContactId?: string;
+            /** @description Home access instructions for the provider */
+            accessInstructions?: string;
+        };
+        PayHomeCareQuoteDto: {
+            /**
+             * @description Payment method (Paystack only this phase)
+             * @enum {string}
+             */
+            paymentMethod: "paystack";
+        };
+        UploadHomeCareDocumentDto: {
+            /** @enum {string} */
+            requestType: "referral" | "prescription" | "doctors_note" | "clinical_document" | "profile_photo" | "license" | "government_id" | "passport_photo" | "practice_certificate" | "additional";
+        };
         CreateTicketDto: {
             /**
              * @description Support category
@@ -9040,6 +10243,11 @@ export interface components {
              */
             id: string;
             /**
+             * @description Human-readable caregiver reference
+             * @example TRCCG-2529-001
+             */
+            reference: string | null;
+            /**
              * @description Caregiver user ID
              * @example clx1234567890
              */
@@ -9103,97 +10311,6 @@ export interface components {
              */
             memberLimit: number;
         };
-        CaregiverPermissionsDto: {
-            /** @example true */
-            viewCareEpisodes: boolean;
-            /** @example true */
-            viewMedications: boolean;
-            /** @example true */
-            viewAppointments: boolean;
-            /** @example true */
-            viewHealthData: boolean;
-            /** @example true */
-            viewVitals: boolean;
-            /** @example true */
-            viewSymptoms: boolean;
-            /** @example true */
-            viewLabResults: boolean;
-            /** @example true */
-            viewHealthRecords: boolean;
-            /** @example true */
-            healthAlertNotifications: boolean;
-        };
-        CaregiverActivityEntryDto: {
-            /** @description Activity ID */
-            id: string;
-            /**
-             * @description Activity type
-             * @example observation_submitted
-             */
-            activityType: string;
-            /** @description Activity description */
-            description: string;
-            /**
-             * Format: date-time
-             * @description Activity timestamp
-             */
-            createdAt: string;
-        };
-        CaregiverDetailResponseDto: {
-            /**
-             * @description Relationship ID
-             * @example clx1234567890
-             */
-            id: string;
-            /**
-             * @description Caregiver user ID
-             * @example clx1234567890
-             */
-            caregiverId: string;
-            /**
-             * @description Caregiver name
-             * @example Sarah Jones
-             */
-            name: string;
-            /**
-             * @description Caregiver avatar URL
-             * @example https://res.cloudinary.com/.../avatar.jpg
-             */
-            avatarUrl?: string | null;
-            /**
-             * @description Caregiver initials
-             * @example SJ
-             */
-            initials: string;
-            /**
-             * @description Relationship type
-             * @example spouse
-             */
-            relationship: string;
-            /**
-             * @description Caregiver role
-             * @example support_member
-             */
-            role: string;
-            /**
-             * @description Relationship status
-             * @example active
-             * @enum {string}
-             */
-            status: "pending" | "active" | "declined" | "removed";
-            /** @description Date when caregiver joined */
-            joinedAt?: Record<string, never>;
-            /**
-             * Format: date-time
-             * @description Last reminder (re-invite) sent to the caregiver
-             * @example 2026-07-20T10:00:00.000Z
-             */
-            lastRemindedAt?: string | null;
-            /** @description Caregiver permissions */
-            permissions: components["schemas"]["CaregiverPermissionsDto"];
-            /** @description Recent activity entries */
-            recentActivity: components["schemas"]["CaregiverActivityEntryDto"][];
-        };
         UpdatePermissionsDto: {
             /**
              * @description Can view care episodes
@@ -9235,6 +10352,26 @@ export interface components {
              * @example true
              */
             viewHealthRecords?: boolean;
+        };
+        CaregiverPermissionsDto: {
+            /** @example true */
+            viewCareEpisodes: boolean;
+            /** @example true */
+            viewMedications: boolean;
+            /** @example true */
+            viewAppointments: boolean;
+            /** @example true */
+            viewHealthData: boolean;
+            /** @example true */
+            viewVitals: boolean;
+            /** @example true */
+            viewSymptoms: boolean;
+            /** @example true */
+            viewLabResults: boolean;
+            /** @example true */
+            viewHealthRecords: boolean;
+            /** @example true */
+            healthAlertNotifications: boolean;
         };
         UpdateNotificationPrefsDto: {
             /**
@@ -9643,6 +10780,82 @@ export interface components {
              * @example 6
              */
             helpfulCount: number;
+        };
+        CaregiverActivityEntryDto: {
+            /** @description Activity ID */
+            id: string;
+            /**
+             * @description Activity type
+             * @example observation_submitted
+             */
+            activityType: string;
+            /** @description Activity description */
+            description: string;
+            /**
+             * Format: date-time
+             * @description Activity timestamp
+             */
+            createdAt: string;
+        };
+        CaregiverDetailResponseDto: {
+            /**
+             * @description Relationship ID
+             * @example clx1234567890
+             */
+            id: string;
+            /**
+             * @description Human-readable caregiver reference
+             * @example TRCCG-2529-001
+             */
+            reference: string | null;
+            /**
+             * @description Caregiver user ID
+             * @example clx1234567890
+             */
+            caregiverId: string;
+            /**
+             * @description Caregiver name
+             * @example Sarah Jones
+             */
+            name: string;
+            /**
+             * @description Caregiver avatar URL
+             * @example https://res.cloudinary.com/.../avatar.jpg
+             */
+            avatarUrl?: string | null;
+            /**
+             * @description Caregiver initials
+             * @example SJ
+             */
+            initials: string;
+            /**
+             * @description Relationship type
+             * @example spouse
+             */
+            relationship: string;
+            /**
+             * @description Caregiver role
+             * @example support_member
+             */
+            role: string;
+            /**
+             * @description Relationship status
+             * @example active
+             * @enum {string}
+             */
+            status: "pending" | "active" | "declined" | "removed";
+            /** @description Date when caregiver joined */
+            joinedAt?: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description Last reminder (re-invite) sent to the caregiver
+             * @example 2026-07-20T10:00:00.000Z
+             */
+            lastRemindedAt?: string | null;
+            /** @description Caregiver permissions */
+            permissions: components["schemas"]["CaregiverPermissionsDto"];
+            /** @description Recent activity entries */
+            recentActivity: components["schemas"]["CaregiverActivityEntryDto"][];
         };
         ForecastEpisodeDto: {
             /** @description Episode ID */
@@ -10331,12 +11544,404 @@ export interface components {
              */
             durationSeconds: number;
         };
+        CallLeaveResponseDto: {
+            /**
+             * @description Whether leave was recorded
+             * @example true
+             */
+            success: boolean;
+            /** @description Call status remains unchanged for other party */
+            callStatus: string;
+            /**
+             * @description Whether the leaving participant can rejoin the same call (always true for participant leave)
+             * @example true
+             */
+            rejoinable: boolean;
+        };
         CallNudgeResponseDto: {
             /**
              * @description Whether nudge was sent
              * @example true
              */
             success: boolean;
+        };
+        SummaryCardDto: {
+            value: number;
+            trendPercent?: number | null;
+            deltaLabel?: string;
+            status?: string | null;
+            /** @default available */
+            state: string;
+        };
+        SummaryDto: {
+            totalUsers: components["schemas"]["SummaryCardDto"];
+            facilities: components["schemas"]["SummaryCardDto"];
+            subscribers: components["schemas"]["SummaryCardDto"];
+            revenueMtd: components["schemas"]["SummaryCardDto"];
+        };
+        ActivityPointDto: {
+            /** @description Day label (e.g. Mon or 2026-08-01) */
+            label: string;
+            users: number;
+            facilities: number;
+            revenue: number;
+        };
+        ActivitySeriesDto: {
+            /** @example user_growth */
+            metric: string;
+            points: components["schemas"]["ActivityPointDto"][];
+        };
+        DistributionItemDto: {
+            /** @example patient */
+            key: string;
+            count: number;
+            /** @description Percentage of total (0-100) */
+            percentage: number;
+        };
+        UserDistributionDto: {
+            /** @description Total across all roles */
+            total: number;
+            byRole: components["schemas"]["DistributionItemDto"][];
+        };
+        ModuleHealthItemDto: {
+            /** @example ai_extraction */
+            module: string;
+            label: string;
+            successRate?: number | null;
+            uptimePercent?: number | null;
+            /** @description active | degraded | inactive | monitoring_inactive */
+            status: string;
+            lastIncidentAt?: string | null;
+        };
+        TopFacilityDto: {
+            rank: number;
+            facilityId: string;
+            name: string;
+            activePatients: number;
+            efficiencyTrendPercent?: number | null;
+        };
+        RecentActivityDto: {
+            id: string;
+            /** @example user_registration */
+            type: string;
+            label: string;
+            subjectId?: string | null;
+            subjectType?: string | null;
+            timestamp: string;
+            /** @default info */
+            severity: string;
+        };
+        AdminProfileDto: {
+            id: string;
+            fullName: string;
+            email: string;
+            avatarUrl?: string | null;
+            initials: string;
+            role: string;
+            adminRole?: string | null;
+        };
+        DashboardOverviewResponseDto: {
+            /** @description False when the platform has no data (DAS-02). */
+            hasData: boolean;
+            emptyStateReason?: string | null;
+            summary: components["schemas"]["SummaryDto"];
+            activitySeries: components["schemas"]["ActivitySeriesDto"];
+            userDistribution: components["schemas"]["UserDistributionDto"];
+            moduleHealth: components["schemas"]["ModuleHealthItemDto"][];
+            topFacilities: components["schemas"]["TopFacilityDto"][];
+            recentActivity: components["schemas"]["RecentActivityDto"][];
+            adminProfile: components["schemas"]["AdminProfileDto"];
+            range?: string | null;
+        };
+        AdminProfileResponseDto: {
+            id: string;
+            email: string;
+            phone?: string | null;
+            fullName: string;
+            avatarUrl?: string | null;
+            initials: string;
+            role: string;
+            status: string;
+            timezone?: string | null;
+            locale?: string | null;
+            adminRole?: string | null;
+            permissions: string[];
+            lastLoginAt?: string | null;
+            createdAt: string;
+        };
+        AdminForgotPasswordDto: {
+            /** @example admin@tracmedy.com */
+            email: string;
+        };
+        AdminMessageResponseDto: {
+            message: string;
+        };
+        AdminResetPasswordDto: {
+            /** @description Admin-scoped password reset token */
+            token: string;
+            /**
+             * @description New password. At least 12 characters, one uppercase letter, one special character (DAS-01/AUTH-07 policy).
+             * @example SecureAdmin@Pass1
+             */
+            newPassword: string;
+        };
+        AdminUsersSummaryDto: {
+            totalUsers: number;
+            activeUsers: number;
+            suspendedUsers: number;
+            inactiveUsers: number;
+            /** @description Not modeled until Phase 14 Paystack (0). */
+            plusUsers: number;
+            freeUsers: number;
+            subscriberGrowthPercent: number;
+        };
+        AdminUserRowDto: {
+            /** @description Internal CUID (not user-facing). */
+            id: string;
+            fullName: string;
+            email: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "locked" | "suspended";
+            /** @description Per-user plan not modeled until Phase 14. */
+            plan: string;
+            dateJoined: string;
+            lastActivityAt?: string | null;
+            lastActivityLabel: string;
+            allowedActions: string[];
+        };
+        AdminUsersListDto: {
+            page: number;
+            pageSize: number;
+            totalItems: number;
+            totalPages: number;
+            items: components["schemas"]["AdminUserRowDto"][];
+        };
+        AdminUserDetailDto: {
+            userId: string;
+            initials: string;
+            avatarUrl: string;
+            fullName: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "locked" | "suspended";
+            plan: string;
+            email: string;
+            phoneNumber?: string | null;
+            tracmedyPatientId?: string | null;
+            lastPaymentDate?: string | null;
+            nextBillingDate?: string | null;
+            billingCycle?: string | null;
+            dateJoined: string;
+            lastLoginAt?: string | null;
+            lastLoginLabel: string;
+            allowedActions: string[];
+        };
+        AdminUserStatusDto: {
+            /** @enum {string} */
+            action: "activate" | "suspend" | "deactivate";
+        };
+        AdminUserStatusResultDto: {
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "locked" | "suspended";
+        };
+        AdminFacilitiesSummaryDto: {
+            total: number;
+            active: number;
+            suspended: number;
+            inactive: number;
+        };
+        AdminFacilityRowDto: {
+            id: string;
+            /** @example TRCFAC-2529-001 */
+            tracId: string;
+            facilityName: string;
+            email?: string | null;
+            locationLabel?: string | null;
+            /** @enum {string} */
+            status: "active" | "suspended" | "inactive";
+            type: string;
+            dateRegistered: string;
+            allowedActions: string[];
+        };
+        AdminFacilitiesListDto: {
+            page: number;
+            pageSize: number;
+            totalItems: number;
+            totalPages: number;
+            items: components["schemas"]["AdminFacilityRowDto"][];
+        };
+        AdminFacilityRegisterDto: {
+            name: string;
+            email?: string;
+            phoneNumber?: string;
+            address?: string;
+            /** @enum {string} */
+            type?: "hospital" | "clinic" | "pharmacy" | "laboratory" | "nursing_home";
+        };
+        AdminFacilityResultDto: {
+            id: string;
+            /** @example TRCFAC-2529-001 */
+            tracId: string;
+            /** @enum {string} */
+            status: "active" | "suspended" | "inactive";
+        };
+        AdminFacilityDetailDto: {
+            id: string;
+            /** @example TRCFAC-2529-001 */
+            tracId: string;
+            initials: string;
+            facilityName: string;
+            email?: string | null;
+            phoneNumber?: string | null;
+            address?: string | null;
+            hospitalType: string;
+            connectedPatientsCount: number;
+            /** @enum {string} */
+            status: "active" | "suspended" | "inactive";
+            contactPerson: Record<string, never>;
+            subscription: Record<string, never>;
+            recentPayments: Record<string, never>;
+            allowedActions: string[];
+        };
+        AdminFacilityStatusDto: {
+            /** @enum {string} */
+            action: "activate" | "suspend";
+        };
+        AdminHomeCareHoldDto: {
+            /** @description Why the request is being placed on hold */
+            reason: string;
+        };
+        AdminHomeCareCancelDto: {
+            /** @description Cancellation reason */
+            reason: string;
+            /** @description Additional context */
+            note?: string;
+        };
+        AdminQuoteProvisionalProviderDto: {
+            /** @description HomeCareProvider id selected for the quote */
+            providerId: string;
+        };
+        AdminQuoteDto: {
+            serviceUnitRate: number;
+            numberOfVisits: number;
+            serviceFee: number;
+            travelFee: number;
+            platformFee: number;
+            /** @default 0 */
+            discount: number;
+            /** @default 24 */
+            validityHours: number;
+            /** @description Note visible to the patient */
+            patientNote?: string;
+            /** @description Internal operations-only note */
+            operationsNote?: string;
+            /** @description Provisional provider for this quote */
+            provisionalProviderId?: string;
+            /**
+             * @description true = issue immediately, false = save draft
+             * @default false
+             */
+            sendNow: boolean;
+        };
+        AdminQuoteResendDto: {
+            /** @description Existing quote id to supersede */
+            quoteId: string;
+            serviceUnitRate?: number;
+            numberOfVisits?: number;
+            serviceFee?: number;
+            travelFee?: number;
+            platformFee?: number;
+            discount?: number;
+            /** @default 24 */
+            validityHours: number;
+            patientNote?: string;
+            operationsNote?: string;
+            provisionalProviderId?: string;
+        };
+        AdminQuoteCancelDto: {
+            /** @description Why the quote is voided */
+            reason?: string;
+        };
+        AdminAssignmentConfirmDto: {
+            /** @description HomeCareProvider id to assign */
+            providerId: string;
+            /** @description Scheduled visit date (ISO) */
+            scheduledDate?: string;
+            /** @description Scheduled time label */
+            scheduledTime?: string;
+        };
+        AdminAssignmentChangeProviderDto: {
+            /** @description New HomeCareProvider id */
+            providerId: string;
+        };
+        AdminProviderDraftDto: {
+            /** @description Partial onboarding payload */
+            payload: Record<string, never>;
+        };
+        AdminProviderCreateDto: {
+            name: string;
+            /** @description Professional title/role */
+            professionalRole: string;
+            /** @description Professional registration/license number */
+            identificationNumber: string;
+            /** @description Service categories covered */
+            serviceCategories: string[];
+            email: string;
+            phone: string;
+            gender?: string;
+            /** @description ISO date */
+            dateOfBirth?: string;
+            address?: string;
+            city: string;
+            state: string;
+            lga?: string;
+            /** @description Service radius in km */
+            serviceRadius?: number;
+            yearsOfExperience?: number;
+            licenseNumber?: string;
+            licensingAuthority?: string;
+            /** @description ISO date */
+            licenseExpiryDate?: string;
+            /** @description Qualification entries */
+            qualifications?: Record<string, never>[];
+            /** @enum {string} */
+            availability?: "available" | "busy" | "on_leave" | "offline";
+            /** @description Coverage areas */
+            coverageAreas?: Record<string, never>[];
+            /** @description Service capabilities */
+            serviceCapabilities?: string[];
+            /** @description Profile photo URL (from uploads) */
+            avatarUrl?: string;
+            /** @description Verification document references {type, url, fileName, fileType} */
+            verificationDocuments?: Record<string, never>[];
+        };
+        AdminProviderUpdateDto: {
+            name?: string;
+            professionalRole?: string;
+            email?: string;
+            phone?: string;
+            city?: string;
+            state?: string;
+            lga?: string;
+            serviceRadius?: number;
+            yearsOfExperience?: number;
+            licenseNumber?: string;
+            licensingAuthority?: string;
+            licenseExpiryDate?: string;
+            /** @enum {string} */
+            availability?: "available" | "busy" | "on_leave" | "offline";
+            /** @enum {string} */
+            verificationStatus?: "pending" | "verified" | "suspended" | "expired" | "rejected";
+            isActive?: boolean;
+            serviceCategories?: string[];
+            serviceCapabilities?: string[];
+            coverageAreas?: Record<string, never>[];
+            qualifications?: Record<string, never>[];
+        };
+        AdminVisitCancelDto: {
+            /** @enum {string} */
+            reasonCode: "patient_unavailable" | "provider_unavailable" | "hospital_request" | "patient_request" | "operational_constraints" | "other";
+            details?: string;
         };
         TestPushDto: {
             /**
@@ -10368,6 +11973,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Service is healthy */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -10574,6 +12180,31 @@ export interface operations {
         responses: {
             /** @description Logged out successfully */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_logoutAll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All sessions revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10930,12 +12561,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User profile returned */
+            /** @description User profile returned. facilityStaffMember is null unless the user has an active (not removed/suspended) staff membership. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MeResponseDto"];
+                };
             };
             /** @description Unauthorized */
             401: {
@@ -13414,6 +15047,13 @@ export interface operations {
                     labRequestId?: string;
                     /** @description ISO timestamp when the sample was collected */
                     observedAt?: string;
+                    /** @description ISO date when the lab result was issued/available (AC-16 Result Date) */
+                    resultDate?: string;
+                    /**
+                     * @description Patient-submitted result status (AC-16 Result Status). Safe patient states only: pending | received. reviewed/flagged are clinician-only via PATCH /care-episodes/lab-results/:resultId
+                     * @enum {string}
+                     */
+                    status?: "pending" | "received";
                     /** @description Notes for the care team */
                     notes?: string;
                 };
@@ -14690,7 +16330,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The unique tracId of the facility (e.g. TRAC-001) */
+                /** @description The unique tracId of the facility (e.g. TRCFAC-2529-001) */
                 tracId: string;
             };
             cookie?: never;
@@ -18412,6 +20052,58 @@ export interface operations {
             };
         };
     };
+    HomeCareController_updateRequestDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateHomeCareRequestDraftDto"];
+            };
+        };
+        responses: {
+            /** @description Draft updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Draft not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     HomeCareController_getQuoteDetail: {
         parameters: {
             query?: never;
@@ -18576,27 +20268,18 @@ export interface operations {
             };
         };
     };
-    HomeCareController_uploadDocument: {
+    HomeCareController_startAvailabilityCheck: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                draftId: string;
+                requestId: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Document type */
-                    type?: string;
-                    /** @description Original file name */
-                    fileName?: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Document uploaded (stub) */
+            /** @description Availability check created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -18610,6 +20293,190 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Not your request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_payQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quoteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayHomeCareQuoteDto"];
+            };
+        };
+        responses: {
+            /** @description Payment initialized */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Quote not payable / expired */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your quote */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Quote not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_verifyQuotePayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payment verification result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your payment */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Reference not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_paystackWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook processed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid signature */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_uploadDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UploadHomeCareDocumentDto"];
+            };
+        };
+        responses: {
+            /** @description Document uploaded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid file */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Draft not found */
             404: {
                 headers: {
@@ -18617,8 +20484,96 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Internal server error */
-            500: {
+        };
+    };
+    HomeCareController_removeDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HomeCareController_replaceDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draftId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UploadHomeCareDocumentDto"];
+            };
+        };
+        responses: {
+            /** @description Document replaced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid file */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not your request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Document not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -18906,92 +20861,6 @@ export interface operations {
             };
         };
     };
-    CaregiversController_getCaregiverDetail: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Caregiver relationship ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Caregiver detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CaregiverDetailResponseDto"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Caregiver not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CaregiversController_removeCaregiver: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Caregiver relationship ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Caregiver removed successfully */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Caregiver not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     CaregiversController_updatePermissions: {
         parameters: {
             query?: never;
@@ -19122,6 +20991,92 @@ export interface operations {
                 content?: never;
             };
             /** @description Forbidden — patients only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_getCaregiverDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caregiver detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaregiverDetailResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caregiver not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CaregiversController_removeCaregiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Caregiver relationship ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Caregiver removed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20851,6 +22806,56 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Only the assigned clinician can end the consultation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_leaveCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Participant left; call remains rejoinable */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallLeaveResponseDto"];
+                };
+            };
+            /** @description Call not in progress */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Not assigned to this appointment */
             403: {
                 headers: {
@@ -20910,6 +22915,1517 @@ export interface operations {
             };
             /** @description Appointment not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TelemedicineController_nudgeClinician: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nudge sent to clinician */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallNudgeResponseDto"];
+                };
+            };
+            /** @description Call not in waiting state or no clinician assigned */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Only the assigned patient can nudge the clinician */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Appointment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminController_dashboardOverview: {
+        parameters: {
+            query?: {
+                /** @description Date range tab (default 30d) */
+                range?: "today" | "7d" | "30d" | "90d";
+                /** @description Platform activity series metric (default user_growth) */
+                metric?: "user_growth" | "facility_growth" | "revenue_growth";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dashboard overview payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOverviewResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — only tracmedy_admin may access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminController_getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Admin profile returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProfileResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden — only tracmedy_admin may access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminController_forgotPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminForgotPasswordDto"];
+            };
+        };
+        responses: {
+            /** @description If the email belongs to an admin, a reset link has been sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMessageResponseDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminController_resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminResetPasswordDto"];
+            };
+        };
+        responses: {
+            /** @description Password reset successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMessageResponseDto"];
+                };
+            };
+            /** @description Invalid/expired token or weak password */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token does not belong to an admin account */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminUsersController_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUsersSummaryDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminUsersController_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                search?: string;
+                /** @description Filter by account status */
+                status?: "pending" | "active" | "locked" | "suspended";
+                /** @description ISO date (inclusive lower bound) */
+                dateFrom?: string;
+                /** @description ISO date (inclusive upper bound) */
+                dateTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUsersListDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminUsersController_export: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                search?: string;
+                /** @description Filter by account status */
+                status?: "pending" | "active" | "locked" | "suspended";
+                /** @description ISO date (inclusive lower bound) */
+                dateFrom?: string;
+                /** @description ISO date (inclusive upper bound) */
+                dateTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminUsersController_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user CUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminUsersController_changeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user CUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserStatusDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserStatusResultDto"];
+                };
+            };
+            /** @description Invalid action */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFacilitiesSummaryDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                search?: string;
+                status?: "active" | "suspended" | "inactive";
+                /** @description ISO date (inclusive lower bound) */
+                dateFrom?: string;
+                /** @description ISO date (inclusive upper bound) */
+                dateTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFacilitiesListDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFacilityRegisterDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFacilityResultDto"];
+                };
+            };
+            /** @description Validation or duplicate email */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_export: {
+        parameters: {
+            query?: {
+                search?: string;
+                status?: "active" | "suspended" | "inactive";
+                /** @description ISO date (inclusive lower bound) */
+                dateFrom?: string;
+                /** @description ISO date (inclusive upper bound) */
+                dateTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal facility CUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFacilityDetailDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facility not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminFacilitiesController_changeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal facility CUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFacilityStatusDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFacilityResultDto"];
+                };
+            };
+            /** @description Invalid action */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Facility not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Overview aggregates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getRequestFilterOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Filter options */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_exportRequests: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                /** @description Search requestId, patient, hospital */
+                search?: string;
+                origin?: "hospital" | "direct";
+                /** @description adminStatus list */
+                statuses?: string[];
+                /** @description Service category */
+                serviceCategory?: string;
+                dateRange?: "today" | "7d" | "30d" | "custom";
+                /** @description ISO date (dateRange=custom) */
+                dateFrom?: string;
+                /** @description ISO date (dateRange=custom) */
+                dateTo?: string;
+                /** @description City or region */
+                location?: string;
+                sort?: "newest" | "oldest" | "earliest_submitted" | "latest_updated";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_listRequests: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                /** @description Search requestId, patient, hospital */
+                search?: string;
+                origin?: "hospital" | "direct";
+                /** @description adminStatus list */
+                statuses?: string[];
+                /** @description Service category */
+                serviceCategory?: string;
+                dateRange?: "today" | "7d" | "30d" | "custom";
+                /** @description ISO date (dateRange=custom) */
+                dateFrom?: string;
+                /** @description ISO date (dateRange=custom) */
+                dateTo?: string;
+                /** @description City or region */
+                location?: string;
+                sort?: "newest" | "oldest" | "earliest_submitted" | "latest_updated";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated request rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getRequestDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request detail payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProviderMatches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scored provider candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getPaymentSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payment summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getRequestDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document metadata + preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getAssignmentOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preselected provider status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_holdRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminHomeCareHoldDto"];
+            };
+        };
+        responses: {
+            /** @description Request held */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_cancelRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminHomeCareCancelDto"];
+            };
+        };
+        responses: {
+            /** @description Request cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_selectProvisionalProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminQuoteProvisionalProviderDto"];
+            };
+        };
+        responses: {
+            /** @description Provisional provider saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_createQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminQuoteDto"];
+            };
+        };
+        responses: {
+            /** @description Quote created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid payload / clinician-ordered request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_sendQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Quote sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_resendQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminQuoteResendDto"];
+            };
+        };
+        responses: {
+            /** @description New quote version issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_cancelQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminQuoteCancelDto"];
+            };
+        };
+        responses: {
+            /** @description Quote cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_confirmAssignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAssignmentConfirmDto"];
+            };
+        };
+        responses: {
+            /** @description Assignment confirmed; active visit created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider unavailable / payment pending */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_changeProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminAssignmentChangeProviderDto"];
+            };
+        };
+        responses: {
+            /** @description Provisional provider changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProvidersOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider summary counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProviderFormOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Form option values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_exportProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_listProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated provider rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_createProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminProviderCreateDto"];
+            };
+        };
+        responses: {
+            /** @description Provider created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_saveProviderDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminProviderDraftDto"];
+            };
+        };
+        responses: {
+            /** @description Draft saved */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_uploadProviderFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    /** @description profile_photo | license | government_id | passport_photo | practice_certificate | additional */
+                    docType?: string;
+                    /** @description Optional — attaches the document to an existing provider */
+                    providerId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description File uploaded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing file or docType */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProviderDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider detail payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_updateProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminProviderUpdateDto"];
+            };
+        };
+        responses: {
+            /** @description Provider updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProviderAssignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assignment rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getProviderDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document metadata + preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getVisitCancellationReasons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation reason enum */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_exportVisits: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                /** @description Search visitId, patient, provider */
+                search?: string;
+                statuses?: ("scheduled" | "provider_en_route" | "provider_arrived" | "in_progress" | "completed" | "cancelled")[];
+                /** @description Service category */
+                serviceCategory?: string;
+                /** @description Provider id */
+                providerId?: string;
+                origin?: "hospital" | "direct";
+                /** @description City or region */
+                location?: string;
+                sort?: "scheduledTime" | "patientName" | "providerName" | "status" | "latest_updated";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_listVisits: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                /** @description Search visitId, patient, provider */
+                search?: string;
+                statuses?: ("scheduled" | "provider_en_route" | "provider_arrived" | "in_progress" | "completed" | "cancelled")[];
+                /** @description Service category */
+                serviceCategory?: string;
+                /** @description Provider id */
+                providerId?: string;
+                origin?: "hospital" | "direct";
+                /** @description City or region */
+                location?: string;
+                sort?: "scheduledTime" | "patientName" | "providerName" | "status" | "latest_updated";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated visit rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_getVisitDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visit detail payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Visit not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminHomeCareController_cancelVisit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminVisitCancelDto"];
+            };
+        };
+        responses: {
+            /** @description Visit cancelled */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

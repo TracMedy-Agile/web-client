@@ -81,15 +81,15 @@ function StatCard({
   isLoading?: boolean;
 }) {
   return (
-    <Card className="rounded-xl border-border bg-white shadow-sm">
-      <CardContent className="p-4 sm:p-5">
+    <Card className="h-[157px] rounded-xl border-border bg-white shadow-sm">
+      <CardContent className="flex h-full flex-col p-4 sm:p-5">
         <div className="flex items-start justify-between">
-          <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-          <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
-            <Icon className="h-4.5 w-4.5" />
+          <p className="text-sm font-bold uppercase tracking-[0.05em] text-slate-500">{label}</p>
+          <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", iconClassName)}>
+            <Icon className="h-4 w-4" />
           </span>
         </div>
-        <p className="mt-3 text-2xl font-bold text-slate-900 sm:text-3xl">
+        <p className="mt-3 text-3xl font-bold text-slate-900">
           {isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-100" /> : value}
         </p>
         {note ? (
@@ -350,6 +350,8 @@ export default function ConnectedPatientsPage() {
         <StatCard
           label="TOTAL CONNECTED"
           value={totalConnected.toLocaleString()}
+          note="+4% vs Last Month"
+          noteClassName="bg-emerald-50 text-emerald-600"
           icon={Users}
           iconClassName="bg-blue-50 text-primary"
           isLoading={isLoadingStats}
@@ -357,7 +359,7 @@ export default function ConnectedPatientsPage() {
         <StatCard
           label="NEW CONNECTIONS"
           value={String(newConnections)}
-          note="Last 7 days"
+          note="+8% vs Last Week"
           noteClassName="bg-emerald-50 text-emerald-600"
           icon={UserPlus}
           iconClassName="bg-blue-50 text-primary"
@@ -366,7 +368,7 @@ export default function ConnectedPatientsPage() {
         <StatCard
           label="DISCONNECTED"
           value={String(disconnectedTotal)}
-          note={disconnectedTotal > 0 ? "Needs immediate Review" : undefined}
+          note="Needs immediate Review"
           noteClassName="bg-emerald-50 text-emerald-600"
           icon={UserX}
           iconClassName="bg-red-50 text-red-500"
@@ -462,7 +464,7 @@ export default function ConnectedPatientsPage() {
                 <TableHeader className="bg-blue-50">
                   <TableRow className="border-0 hover:bg-blue-50">
                     {["PATIENT NAME", "TRACMEDY ID", "HOSPITAL ID", "STATUS", "CONNECTED SINCE", "ACTION"].map((heading) => (
-                      <TableHead key={heading} className="h-14 px-4 text-xs font-bold text-slate-500 sm:px-6">
+                      <TableHead key={heading} className="h-14 px-4 text-left text-xs font-bold text-slate-500 sm:px-6">
                         {heading}
                       </TableHead>
                     ))}
@@ -472,7 +474,7 @@ export default function ConnectedPatientsPage() {
                   {isLoadingPatients ? (
                     Array.from({ length: 3 }).map((_, index) => (
                       <TableRow key={index} className="border-0 hover:bg-transparent">
-                        <TableCell colSpan={6} className="px-4 py-5 sm:px-6">
+                        <TableCell colSpan={6} className="px-4 py-5 text-left sm:px-6">
                           <div className="h-5 w-full animate-pulse rounded bg-slate-100" />
                         </TableCell>
                       </TableRow>
@@ -483,7 +485,7 @@ export default function ConnectedPatientsPage() {
                         <TableCell className="px-4 py-5 font-bold text-slate-900 sm:px-6">{record.name || "Unknown Patient"}</TableCell>
                         <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{record.tracmedyPatientId || "--"}</TableCell>
                         <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{record.externalPatientId || "N/A"}</TableCell>
-                        <TableCell className="px-4 py-5 sm:px-6">
+                        <TableCell className="px-4 py-5 text-left sm:px-6">
                           <span
                             className={cn(
                               "inline-flex rounded-full px-3 py-1 text-xs font-bold",
@@ -494,7 +496,7 @@ export default function ConnectedPatientsPage() {
                           </span>
                         </TableCell>
                         <TableCell className="px-4 py-5 text-slate-700 sm:px-6">{formatDate(record.connectedAt)}</TableCell>
-                        <TableCell className="px-4 py-5 sm:px-6">
+                        <TableCell className="px-4 py-5 text-left sm:px-6">
                           <Link
                             href={`/dashboard/connected-patients/${encodeURIComponent(record.patientId)}`}
                             className="inline-flex items-center text-sm font-bold text-primary"

@@ -72,6 +72,15 @@ const DISCHARGE_STATUS_VALUES: Record<DischargeStatus, "PLANNED" | "IN_PROGRESS"
 const SEARCH_MIN_CHARS = 3;
 const SEARCH_DEBOUNCE_MS = 300;
 
+function formatReasonSummary(reasons: CareEpisodeReason[]) {
+  const labels = reasons.map((reason) => reason.toLowerCase());
+  if (labels.length === 0) return "the selected care needs";
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return labels.join(" and ");
+  const last = labels[labels.length - 1];
+  return `${labels.slice(0, -1).join(", ")}, and ${last}`;
+}
+
 function getLocalDateInputValue() {
   const now = new Date();
   const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
@@ -654,7 +663,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                 </div>
               </div>
 
-              <div className="mt-8 grid items-start gap-6 sm:grid-cols-2">
+              <div className="mt-8 grid items-start gap-x-6 gap-y-5 sm:grid-cols-2">
                 <fieldset>
                   <legend className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">
                     Reason For Care Episode
@@ -682,14 +691,17 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
                   </div>
                 </fieldset>
 
-                <div className="min-w-0 space-y-7">
+                <div className="min-w-0 space-y-7 sm:pt-6">
                   <div className="w-full min-w-0 rounded-xl border border-blue-200 bg-blue-50 p-4 text-primary">
                     <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-900">Quick Summary</p>
                     <p className="mt-2 text-sm leading-5">
-                      Patient will be added to the <strong>pending review</strong> queue for a{" "}
-                      <strong>{formData.encounterType}</strong> encounter with a{" "}
-                      <strong>{formData.clinicalConcern} concern</strong> flag. Expected follow-up is{" "}
-                      <strong>{formData.followUpDuration} from today.</strong>
+                      The patient will be added to the <strong>Pending Review</strong> queue for an{" "}
+                      <strong>{formData.encounterType}</strong> care episode with a diagnosis of{" "}
+                      <strong>{formData.diagnosis.trim() || "not yet entered"}</strong>. Their condition is currently{" "}
+                      classified as <strong>{formData.conditionSeverity}</strong>, with a{" "}
+                      <strong>{formData.clinicalConcern} clinical concern</strong> flag. The episode will focus on{" "}
+                      <strong>{formatReasonSummary(formData.reasons)}</strong>, with expected follow-up scheduled for{" "}
+                      <strong>{formData.followUpDuration.toLowerCase()} from today.</strong>
                     </p>
                   </div>
                 </div>

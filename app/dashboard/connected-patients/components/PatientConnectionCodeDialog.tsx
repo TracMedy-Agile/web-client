@@ -8,8 +8,6 @@ import {
   Copy,
   KeyRound,
   LockKeyhole,
-  Mail,
-  MessageSquare,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -51,11 +49,7 @@ const EMPTY_FORM: InviteForm = {
   email: "",
 };
 
-function hoursUntil(expiresAt: string) {
-  const expiry = Date.parse(expiresAt);
-  if (!Number.isFinite(expiry)) return 72;
-  return Math.max(1, Math.ceil((expiry - Date.now()) / (60 * 60 * 1000)));
-}
+const INVITE_VALIDITY_HOURS = 72;
 
 function formatGeneratedAt(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
@@ -147,30 +141,6 @@ export function PatientConnectionCodeDialog({
     }
   };
 
-  const shareBySms = () => {
-    if (!invite || !form.phone.trim()) {
-      toast.error("Add a phone number to send this code by SMS.");
-      return;
-    }
-    const message = encodeURIComponent(
-      facilityName + " invited you to connect on Tracmedy. Your one-time connection code is " +
-        invite.code + ". It expires in " + hoursUntil(invite.expiresAt) + " hours.",
-    );
-    capturePostHogEvent("connection_code_sent_sms");
-    window.location.href = "sms:" + form.phone.trim() + "?body=" + message;
-  };
-
-  const shareByEmail = () => {
-    if (!invite) return;
-    const subject = encodeURIComponent("Your " + facilityName + " Tracmedy connection code");
-    const body = encodeURIComponent(
-      "Use the one-time code " + invite.code + " to connect your Tracmedy mobile app to " +
-        facilityName + ". This code expires in " + hoursUntil(invite.expiresAt) + " hours.",
-    );
-    capturePostHogEvent("connection_code_sent_email");
-    window.location.href = "mailto:" + invite.email + "?subject=" + subject + "&body=" + body;
-  };
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[92vh] w-[calc(100%-2rem)] max-w-2xl gap-0 overflow-y-auto border-0 bg-white p-0 shadow-2xl sm:rounded-2xl">
@@ -242,7 +212,7 @@ export function PatientConnectionCodeDialog({
                     </span>
                     <div>
                       <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Valid for</dt>
-                      <dd className="text-sm font-semibold text-slate-900">{hoursUntil(invite.expiresAt)} Hours</dd>
+                      <dd className="text-sm font-semibold text-slate-900">{INVITE_VALIDITY_HOURS} Hours</dd>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -259,21 +229,16 @@ export function PatientConnectionCodeDialog({
                 </dl>
               </section>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Button type="button" onClick={shareBySms} className="h-12 font-bold">
-                  <MessageSquare />
-                  Send via SMS
-                </Button>
-                <Button type="button" onClick={shareByEmail} className="h-12 font-bold">
-                  <Mail />
-                  Send via Email
-                </Button>
+              <div className="space-y-3">
+                <p className="text-sm font-medium leading-6 text-slate-500">
+                  The connection code is sent automatically after generation. Generate a new code to invalidate the previous code.
+                </p>
                 <Button
                   type="button"
                   variant="outline"
                   disabled={isSubmitting}
                   onClick={generateInvite}
-                  className="h-12 border-primary font-bold text-primary hover:bg-blue-50 sm:col-span-2"
+                  className="h-12 w-full border-primary font-bold text-primary hover:bg-blue-50"
                 >
                   <RefreshCw className={isSubmitting ? "animate-spin" : ""} />
                   {isSubmitting ? "Generating..." : "Generate New Code"}
@@ -284,7 +249,7 @@ export function PatientConnectionCodeDialog({
                 <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0" />
                 <p>
                   This connection code can only be used once, expires automatically after{" "}
-                  {hoursUntil(invite.expiresAt)} hours, and becomes invalid immediately after
+                  {INVITE_VALIDITY_HOURS} hours, and becomes invalid immediately after
                   successful use or when a new code is generated.
                 </p>
               </div>
@@ -362,11 +327,14 @@ export function PatientConnectionCodeDialog({
                 </div>
               </fieldset>
 
-              <div className="grid gap-3 rounded-xl border border-blue-200 bg-blue-50 p-5 text-sm font-medium text-primary sm:grid-cols-2">
-                <p className="flex items-center gap-3"><ShieldCheck className="h-5 w-5" />One-time use only</p>
-                <p className="flex items-center gap-3"><span aria-hidden="true">•</span>Valid for 72 hours</p>
-                <p className="flex items-center gap-3"><span aria-hidden="true">•</span>Linked to this hospital only</p>
-                <p className="flex items-center gap-3"><span aria-hidden="true">•</span>New codes invalidate previous</p>
+              <div className="flex gap-4 rounded-xl border border-blue-200 bg-blue-50 p-5 text-sm font-medium text-primary">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                <div className="grid flex-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+                  <p className="flex items-center gap-2"><span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />One-time use only</p>
+                  <p className="flex items-center gap-2"><span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />Valid for 72 hours</p>
+                  <p className="flex items-center gap-2"><span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />Linked to this hospital only</p>
+                  <p className="flex items-center gap-2"><span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />New codes invalidate previous</p>
+                </div>
               </div>
             </div>
 

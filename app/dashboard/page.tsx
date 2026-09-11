@@ -76,14 +76,13 @@ export default function DashboardPage() {
 
       <DashboardMetricCards />
 
-      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-3 lg:items-start">
+        <div className="space-y-4 md:space-y-6 lg:col-span-2">
           <RecoveryTrend data={recoveryTrend} range={recoveryRange} isLoading={isRecoveryTrendLoading} onRangeChange={setRecoveryRange} />
+          <WorkloadStatus clinicians={clinicianWorkload} isLoading={isPanelsLoading} />
         </div>
         <LiveAlerts alerts={liveAlerts} isLoading={isPanelsLoading} />
       </div>
-
-      <WorkloadStatus clinicians={clinicianWorkload} isLoading={isPanelsLoading} />
     </div>
   );
 }

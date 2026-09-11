@@ -37,11 +37,9 @@ export type ClosedEpisodeOverview = {
 
 export type ClosureRecord = {
   closedBy: string;
-  closedByRole: string;
   closureDateTime: string;
   closureReason: ClosureReason;
   finalNotes: string;
-  auditRef: string;
 };
 
 export type AIClosureSummary = {
@@ -50,8 +48,8 @@ export type AIClosureSummary = {
   narrative: string;
   medicationAdherencePercent: number | null;
   checkInCompletionPercent: number | null;
-  emergencyEscalations: number;
-  monitoringDays: { completed: number; total: number };
+  emergencyEscalations: number | null;
+  monitoringDays: { completed: number | null; total: number | null };
 };
 
 export type RiskTrendSummary = {
@@ -72,7 +70,7 @@ export type ClinicalActivitySummary = {
   assessments: number;
   carePlanAdjustments: number;
   specialistEscalations: number;
-  emergencyEscalations: number;
+  emergencyEscalations: number | null;
   interventionsLogged: number;
 };
 
@@ -90,6 +88,8 @@ export type ClosureCarePlanVersion = {
   status: ClosureCarePlanVersionStatus;
   date: string;
   author: string;
+  clinicianId: string | null;
+  clinicianName: string | null;
   description: string;
 };
 
