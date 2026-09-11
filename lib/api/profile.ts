@@ -94,6 +94,13 @@ export async function updateMyProfile(name: string): Promise<MyProfile> {
   }));
 }
 
+export async function updateMyAvatarUrl(avatarUrl: string): Promise<MyProfile> {
+  return normalizeProfile(await request("/profile/me", {
+    method: "PATCH",
+    body: JSON.stringify({ avatarUrl }),
+  }));
+}
+
 export async function uploadMyAvatar(file: File): Promise<MyProfile> {
   const formData = new FormData();
   formData.append("file", file);

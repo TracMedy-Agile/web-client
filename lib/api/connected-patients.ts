@@ -99,6 +99,7 @@ async function request(path: string, init?: RequestInit, query?: URLSearchParams
 
   const res = await fetch(url, {
     ...init,
+    cache: "no-store",
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),

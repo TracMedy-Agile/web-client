@@ -21,12 +21,22 @@ type AddClinicianModalProps = {
 };
 
 function clinicianRoleLabel(clinician: ClinicianDirectoryEntry) {
-  const department = clinician.department ?? "";
-  const lowered = department.toLowerCase();
+  const profileFields = [clinician.department, clinician.specialty].filter(Boolean).join(" ");
+  const lowered = profileFields.toLowerCase();
   if (lowered.includes("nurse")) return "Nurse";
   return "Doctor";
 }
 
+function clinicianProfileLabel(clinician: ClinicianDirectoryEntry) {
+  const fields = [clinician.specialty, clinician.department]
+    .map((field) => field?.trim())
+    .filter((field): field is string => Boolean(field));
+  const uniqueFields = Array.from(new Set(fields.map((field) => field.toLowerCase())))
+    .map((field) => fields.find((candidate) => candidate.toLowerCase() === field) ?? field);
+  return uniqueFields.length > 0
+    ? uniqueFields.map((field) => humanizeSlug(field)).join(" · ")
+    : "Department not specified";
+}
 function roleBadgeClass(role: string) {
   return role.toLowerCase().includes("nurse") ? "bg-violet-50 text-violet-600" : "bg-blue-50 text-primary";
 }
@@ -46,7 +56,7 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
       setIsLoading(true);
       setError("");
       try {
-        const clinicians = await getFacilityClinicians({ q: query, limit: 100 });
+        const clinicians = await getFacilityClinicians({ limit: 100 });
         if (!ignore) setResults(clinicians.filter((item) => !existingClinicianIds.includes(item.id)));
       } catch (requestError) {
         if (!ignore) setError(requestError instanceof Error ? requestError.message : "Unable to load clinicians.");
@@ -55,16 +65,22 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
       }
     })();
     return () => { ignore = true; };
-  }, [open, query, existingClinicianIds]);
+  }, [open, existingClinicianIds]);
 
   const roleOptions = useMemo(
     () => Array.from(new Set(results.map(clinicianRoleLabel))).sort(),
     [results],
   );
 
-  const filteredResults = roleFilter === "all"
-    ? results
-    : results.filter((item) => clinicianRoleLabel(item) === roleFilter);
+  const filteredResults = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return results.filter((item) => {
+      const matchesQuery = !normalizedQuery || [item.name, item.specialty, item.department]
+        .some((field) => field?.toLowerCase().includes(normalizedQuery));
+      const matchesRole = roleFilter === "all" || clinicianRoleLabel(item) === roleFilter;
+      return matchesQuery && matchesRole;
+    });
+  }, [query, results, roleFilter]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -143,7 +159,7 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
               <div className="space-y-2.5">
                 {filteredResults.map((clinician) => {
                   const role = clinicianRoleLabel(clinician);
-                  const department = clinician.department || "Department not specified";
+                  const profileLabel = clinicianProfileLabel(clinician);
                   return (
                     <article key={clinician.id} className="flex flex-col gap-4 rounded-xl border border-border bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex min-w-0 items-center gap-4">
@@ -158,7 +174,7 @@ export function AddClinicianModal({ open, onOpenChange, episodeId, existingClini
                             <h3 className="truncate text-lg font-bold text-slate-900">{clinician.name || "Unnamed clinician"}</h3>
                             <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", roleBadgeClass(role))}>{role}</span>
                           </div>
-                          <p className="mt-1 text-sm font-medium text-slate-600">{humanizeSlug(department)}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-600">{profileLabel}</p>
                           <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary"><Mail className="h-3.5 w-3.5" />{clinician.email}</p>
                         </div>
                       </div>

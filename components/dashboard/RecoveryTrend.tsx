@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "@/lib/utils";
@@ -19,11 +19,25 @@ interface RecoveryTrendProps {
 }
 
 const RANGES = ["7d", "30d"] as const;
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"] as const;
+const FALLBACK_WEEKDAY_LABELS = ["Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun"] as const;
+
+function weekdayLabel(value: string, index: number) {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return FALLBACK_WEEKDAY_LABELS[index % FALLBACK_WEEKDAY_LABELS.length];
+  return WEEKDAY_LABELS[date.getUTCDay()];
+}
 
 export default function RecoveryTrend({ data = [], range = "7d", isLoading = false, onRangeChange }: RecoveryTrendProps) {
   const [mounted, setMounted] = useState(false);
   const hasData = data.length > 0;
-
+  const chartData = useMemo(
+    () => data.map((point, index) => ({
+      ...point,
+      dayLabel: range === "7d" ? weekdayLabel(point.day, index) : point.day,
+    })),
+    [data, range],
+  );
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
@@ -34,12 +48,12 @@ export default function RecoveryTrend({ data = [], range = "7d", isLoading = fal
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-base font-bold text-foreground">Recovery Trend</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Patient recovery score movement over time</p>
+          <p className="mt-1 text-sm text-muted-foreground">Patient recovery trends over time</p>
         </div>
 
         {hasData ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-4 rounded-full bg-primary" />
                 Active patients
@@ -49,7 +63,7 @@ export default function RecoveryTrend({ data = [], range = "7d", isLoading = fal
                 Mean
               </span>
             </div>
-            <div className="flex w-fit rounded-xl bg-muted p-1 text-xs font-bold">
+            <div className="flex w-fit gap-1 rounded-xl bg-primary p-1 text-xs font-bold">
               {RANGES.map((r) => (
                 <button
                   key={r}
@@ -57,7 +71,7 @@ export default function RecoveryTrend({ data = [], range = "7d", isLoading = fal
                   onClick={() => onRangeChange?.(r)}
                   className={cn(
                     "rounded-lg px-3 py-1.5 transition-colors",
-                    range === r ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    range === r ? "bg-card text-primary shadow-sm" : "bg-card text-primary/60 hover:text-primary",
                   )}
                 >
                   {r}
@@ -74,10 +88,10 @@ export default function RecoveryTrend({ data = [], range = "7d", isLoading = fal
         <div className="mt-6 h-72 w-full rounded-2xl bg-background/50 p-3">
           {mounted ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ left: 10, right: 8, top: 10, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--color-border)" strokeDasharray="4 4" />
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
-                <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} axisLine={false} tickLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} width={32} />
+                <XAxis dataKey="dayLabel" axisLine={false} tickLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} />
+                <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} axisLine={false} tickLine={false} tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }} width={52} label={{ value: "Recovery Score", angle: -90, position: "insideLeft", offset: 0, style: { fill: "var(--color-muted-foreground)", fontSize: 12, fontWeight: 600 } }} />
                 <Tooltip
                   contentStyle={{ borderRadius: 12, border: "1px solid var(--color-border)", boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)" }}
                   labelStyle={{ color: "var(--color-foreground)", fontWeight: 700 }}

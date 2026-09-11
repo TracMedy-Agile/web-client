@@ -17,6 +17,17 @@ import { SaveConfirmationModal } from "./components/SaveConfirmationModal";
 import { useCarePlanForm } from "./hooks/useCarePlanForm";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 
+function versionStatus(item: { version: number; isActive: boolean }, index: number, total: number) {
+  if (item.isActive) return "ACTIVE";
+  if (item.version === 1 || index === total - 1) return "INITIAL";
+  return "PREVIOUS";
+}
+
+function versionSummary(changeReason: string | undefined, version: number) {
+  const summary = changeReason?.trim();
+  if (summary && !["none", "null", "undefined"].includes(summary.toLowerCase())) return summary;
+  return version === 1 ? "Initial care plan created." : "Care plan update recorded.";
+}
 function projectedDate(startDate: string, days: number) {
   if (!startDate || days < 1) return "";
   const date = new Date(`${startDate}T00:00:00`);
@@ -39,6 +50,7 @@ export default function AdjustCarePlanPage() {
   // The backend always auto-creates a stub v1 care plan when the episode opens, so `versions`
   // is never empty — the real "first save" signal is that only that untouched stub exists.
   const isFirstCarePlanSetup = !form.id || (versions.length <= 1 && form.version <= 1);
+  const versionHistory = [...versions].sort((left, right) => right.version - left.version);
 
   useEffect(() => {
     if (episodeId) capturePostHogEvent("care_plan_adjust_viewed", { episode_id: episodeId });
@@ -105,15 +117,49 @@ export default function AdjustCarePlanPage() {
           <MonitoringScheduleSection items={form.monitoring} onChange={(items) => updateForm("monitoring", items)} />
           <HomeCareSection items={form.homeCare} clinicians={clinicians} services={services} onChange={(items) => updateForm("homeCare", items)} />
           <LifestyleSection items={form.lifestyle} onChange={(items) => updateForm("lifestyle", items)} />
-          <SectionFrame icon={<CalendarDays className="h-4 w-4" />} title="Episode Duration" subtitle="Extend or shorten the active episode">
-            <div className="grid gap-4 sm:grid-cols-3"><label><FieldLabel>Total duration (days)</FieldLabel><input type="number" min={1} className={fieldClass} value={form.episodeDuration} onChange={(event) => updateForm("episodeDuration", Number(event.target.value))} /></label><label><FieldLabel>Start date</FieldLabel><input type="date" className={fieldClass} value={form.startDate} onChange={(event) => updateForm("startDate", event.target.value)} /></label><label><FieldLabel>Projected end date</FieldLabel><input type="date" className={`${fieldClass} bg-muted/40`} readOnly value={endDate} /></label></div>
+          <SectionFrame icon={<CalendarDays className="h-4 w-4" />} title="Episode Duration" subtitle="Duration of the active care episode">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label><FieldLabel>Total duration (days)</FieldLabel><input type="text" readOnly aria-readonly="true" className={fieldClass + " cursor-not-allowed bg-muted/40"} value={String(form.episodeDuration)} /></label>
+              <label><FieldLabel>Start date</FieldLabel><input type="text" readOnly aria-readonly="true" className={fieldClass + " cursor-not-allowed bg-muted/40"} value={form.startDate || "--"} /></label>
+              <label><FieldLabel>Projected end date</FieldLabel><input type="text" readOnly aria-readonly="true" className={fieldClass + " cursor-not-allowed bg-muted/40"} value={endDate || "--"} /></label>
+            </div>
           </SectionFrame>
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-4">
           <Card className="rounded-xl border-border bg-card shadow-none"><CardContent className="p-5"><h2 className="text-base font-bold text-foreground">Plan summary</h2><dl className="mt-4 text-[11px] text-muted-foreground">{[["Medications", form.medications.length], ["Lab & diagnostic tests", form.labTests.length], ["Home care orders", form.homeCare.length], ["Monitoring schedule", form.monitoring.length], ["Lifestyle recommendations", form.lifestyle.length]].map(([label, count]) => <div key={String(label)} className="flex justify-between border-b border-border py-2.5 first:pt-0"><dt>{label}</dt><dd className="font-bold text-foreground">{count}</dd></div>)}<div className="flex justify-between pt-3"><dt>Duration</dt><dd className="font-bold text-foreground">{form.episodeDuration} days</dd></div></dl></CardContent></Card>
-          <Card className="rounded-xl border-border bg-card shadow-none"><CardContent className="p-5"><h2 className="flex items-center gap-2 text-base font-bold text-foreground"><History className="h-4 w-4 text-primary" />Version history</h2><div className="mt-5 max-h-80 space-y-3 overflow-y-auto">{versions.map((item) => <div key={item.id} className={item.isActive ? "rounded-xl border border-primary/50 bg-primary/10 p-4" : "rounded-xl border border-border p-4"}><div className="flex items-center justify-between"><strong className="text-xs text-foreground">Version {item.version}.0</strong>{item.isActive ? <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[8px] font-bold text-emerald-600">ACTIVE</span> : null}</div><p className="mt-3 text-[10px] leading-4 text-muted-foreground">{item.changeReason || "Care plan updated."}</p><p className="mt-3 text-right text-[9px] font-bold uppercase text-muted-foreground">{item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Date unavailable"}</p></div>)}</div></CardContent></Card>
-          <Card className="rounded-xl border-border bg-card shadow-none"><CardContent className="p-5"><h2 className="flex items-center gap-2 text-sm font-bold text-foreground"><Bell className="h-4 w-4 text-primary" />Patient notification</h2><p className="mt-3 text-[10px] leading-4 text-muted-foreground">The backend automatically notifies the patient after the care plan is saved.</p></CardContent></Card>
+          <Card className="rounded-xl border-border bg-card shadow-none">
+            <CardContent className="p-5">
+              <h2 className="flex items-center gap-2 text-base font-bold text-foreground"><History className="h-4 w-4 text-primary" />Version history</h2>
+              {versionHistory.length === 0 ? (
+                <p className="mt-4 text-xs text-muted-foreground">No care-plan versions recorded.</p>
+              ) : (
+                <div className="mt-5">
+                  {versionHistory.map((item, index) => {
+                    const status = versionStatus(item, index, versionHistory.length);
+                    const isActive = item.isActive;
+                    return (
+                      <div key={item.id} className="relative pb-3 pl-5 last:pb-0">
+                        {index < versionHistory.length - 1 ? <span aria-hidden="true" className="absolute bottom-0 left-1.5 top-0.5 w-px bg-border" /> : null}
+                        <span aria-hidden="true" className={isActive ? "absolute left-0 top-3 h-3.5 w-3.5 rounded-full border-2 border-primary bg-primary" : "absolute left-0 top-3 h-3.5 w-3.5 rounded-full border-2 border-border bg-card"} />
+                        <div className={isActive ? "rounded-lg border border-primary/30 bg-primary/5 p-3" : "rounded-lg border border-transparent bg-card p-3"}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-foreground">Version {item.version}.0</p>
+                              <p className="mt-1 text-[10px] font-medium text-muted-foreground">{item.createdAt ? new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Date unavailable"}</p>
+                            </div>
+                            <span className={status === "ACTIVE" ? "shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[8px] font-bold text-emerald-700" : status === "INITIAL" ? "shrink-0 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[8px] font-bold text-primary" : "shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[8px] font-bold text-muted-foreground"}>{status}</span>
+                          </div>
+                          <p className="mt-2 text-[10px] leading-4 text-muted-foreground">{versionSummary(item.changeReason, item.version)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="rounded-xl border-border bg-card shadow-none"><CardContent className="p-5"><h2 className="flex items-center gap-2 text-sm font-bold text-foreground"><Bell className="h-4 w-4 text-primary" />Patient notification</h2><p className="mt-3 text-[11px] leading-5 text-muted-foreground">On save, the patient will receive an in-app notification summarising the changes to their care tasks and schedule.</p></CardContent></Card>
         </aside>
       </div>
 

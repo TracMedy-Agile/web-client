@@ -2,8 +2,27 @@
 
 import { useState } from "react";
 import { Pill, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Medication } from "../types";
 import { AddRowButton, areaClass, DeleteDialog, fieldClass, SectionFrame } from "./SectionFrame";
+
+const FREQUENCY_OPTIONS = [
+  "Once daily",
+  "Twice daily",
+  "Three times daily",
+  "Four times daily",
+  "Five times daily",
+  "Six times daily",
+  "Every 4 hours",
+  "Every 6 hours",
+  "Every 8 hours",
+  "Every 12 hours",
+  "Every other day",
+  "Once weekly",
+  "Twice weekly",
+  "Three times weekly",
+  "Other/Custom",
+];
 
 const MEDICATION_FIELDS = [
   { key: "name", label: "Medication", placeholder: "Medication name" },
@@ -23,13 +42,27 @@ export function MedicationSection({ items, onChange }: { items: Medication[]; on
             {MEDICATION_FIELDS.map((field) => (
               <label key={field.key} className="space-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{field.label}</span>
-                <input
-                  aria-label={field.label}
-                  placeholder={field.placeholder}
-                  className={fieldClass}
-                  value={item[field.key]}
-                  onChange={(event) => update(index, { [field.key]: event.target.value })}
-                />
+                {field.key === "frequency" ? (
+                  <Select
+                    value={FREQUENCY_OPTIONS.includes(item.frequency) ? item.frequency : item.frequency ? "Other/Custom" : undefined}
+                    onValueChange={(value) => update(index, { frequency: value })}
+                  >
+                    <SelectTrigger aria-label={field.label} className={fieldClass}>
+                      <SelectValue placeholder="Select frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FREQUENCY_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <input
+                    aria-label={field.label}
+                    placeholder={field.placeholder}
+                    className={fieldClass}
+                    value={item[field.key]}
+                    onChange={(event) => update(index, { [field.key]: event.target.value })}
+                  />
+                )}
               </label>
             ))}
             <button type="button" aria-label={`Delete ${item.name || "medication"}`} onClick={() => setDeleting(item)} className="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded-md text-red-400 hover:bg-red-50 md:col-span-1 md:mt-5"><Trash2 className="h-4 w-4" /></button>

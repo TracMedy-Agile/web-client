@@ -70,7 +70,7 @@ export default function WorkloadStatus({ clinicians = [], isLoading = false }: W
             <Activity className="h-5 w-5 text-primary" />
             Clinician Workload Status
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">Resource utilization and alert load across care teams</p>
+          <p className="mt-1 text-sm text-muted-foreground">Real-time resource utilization & capacity tracking</p>
         </div>
         {hasData ? (
           <Link href="/dashboard/team" className="inline-flex w-fit items-center gap-1 text-sm font-bold text-primary hover:underline">

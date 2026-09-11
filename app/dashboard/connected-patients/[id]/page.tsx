@@ -60,11 +60,27 @@ const historyToneClasses: Record<HistoryTone, string> = {
   neutral: "bg-slate-500 ring-slate-100",
 };
 
+function displayValue(value: unknown, depth = 0): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (depth >= 2 || !value || typeof value !== "object" || Array.isArray(value)) return "";
+
+  const nested = value as Record<string, unknown>;
+  const preferredKeys = ["name", "fullName", "displayName", "label", "title", "text", "value", "clinician", "staff", "user", "profile"];
+  for (const key of preferredKeys) {
+    const result = displayValue(nested[key], depth + 1);
+    if (result) return result;
+  }
+
+  const firstName = displayValue(nested.firstName, depth + 1);
+  const lastName = displayValue(nested.lastName, depth + 1);
+  return [firstName, lastName].filter(Boolean).join(" ");
+}
+
 function getString(record: ApiRecord, keys: string[], fallback = "--") {
   for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number") return String(value);
+    const value = displayValue(record[key]);
+    if (value) return value;
   }
   return fallback;
 }
@@ -256,6 +272,7 @@ export default function ConnectedPatientProfilePage() {
   const { patient, connection, connectionHistory } = profile;
   const name = patient.name || "Unknown Patient";
   const isConnected = connection.status === "active";
+
   return (
     <div className="space-y-8">
       <Link
@@ -296,130 +313,79 @@ export default function ConnectedPatientProfilePage() {
         </div>
 
         {isConnected ? (
-
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 self-start rounded-lg px-6 font-bold sm:self-center"
-              disabled={isConnectionActionRunning}
-              onClick={() => setIsDisconnectDialogOpen(true)}
-            >
-              <UserRoundMinus className="h-5 w-5" />
-              Disconnect Patient
-            </Button>
-
+          <Button
+            type="button"
+            size="lg"
+            className="h-12 self-start rounded-lg px-6 font-bold sm:self-center"
+            disabled={isConnectionActionRunning}
+            onClick={() => setIsDisconnectDialogOpen(true)}
+          >
+            <UserRoundMinus className="h-5 w-5" />
+            Disconnect Patient
+          </Button>
         ) : (
-
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 self-start rounded-lg px-6 font-bold sm:self-center"
-              disabled={isConnectionActionRunning}
-              onClick={() => void (async () => {
-                setIsConnectionActionRunning(true);
-                try {
-                  await reconnectConnectedPatient(facilityId, patientId);
-                  capturePostHogEvent("connected_patient_reconnected", { patient_id: patientId });
-                  await loadProfile(false);
-                  toast.success("Patient reconnected successfully.");
-                } catch (requestError) {
-                  toast.error(requestError instanceof Error ? requestError.message : "Failed to reconnect patient.");
-                } finally {
-                  setIsConnectionActionRunning(false);
-                }
-              })()}
-            >
-              {isConnectionActionRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundCheck className="h-5 w-5" />}
-              Reconnect Patient
-            </Button>
-
+          <Button
+            type="button"
+            size="lg"
+            className="h-12 self-start rounded-lg px-6 font-bold sm:self-center"
+            disabled={isConnectionActionRunning}
+            onClick={() => void (async () => {
+              setIsConnectionActionRunning(true);
+              try {
+                await reconnectConnectedPatient(facilityId, patientId);
+                capturePostHogEvent("connected_patient_reconnected", { patient_id: patientId });
+                await loadProfile(false);
+                toast.success("Patient reconnected successfully.");
+              } catch (requestError) {
+                toast.error(requestError instanceof Error ? requestError.message : "Failed to reconnect patient.");
+              } finally {
+                setIsConnectionActionRunning(false);
+              }
+            })()}
+          >
+            {isConnectionActionRunning ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundCheck className="h-5 w-5" />}
+            Reconnect Patient
+          </Button>
         )}
       </header>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-6">
-          <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-5 sm:px-6">
-              <h2 className="text-lg font-bold text-foreground">Patient Information</h2>
-
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setIsEditDialogOpen(true)}
-                >
-                  <PencilLine className="h-4 w-4" />
-                  Edit
-                </button>
-
+      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm xl:h-[20rem]">
+          <div className="flex flex-none items-center justify-between border-b border-border px-5 py-5 sm:px-6">
+            <h2 className="text-lg font-bold text-foreground">Patient Information</h2>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setIsEditDialogOpen(true)}
+            >
+              <PencilLine className="h-4 w-4" />
+              Edit
+            </button>
+          </div>
+          <CardContent className="min-h-0 flex-1 overflow-hidden p-5 sm:p-6">
+            <div className="grid grid-cols-1 gap-x-12 gap-y-8 sm:grid-cols-2">
+              <InfoField label="TRACMEDY ID" value={patient.tracmedyPatientId || "--"} />
+              <InfoField label="HOSPITAL ID" value={connection.externalPatientId || "--"} />
+              <InfoField label="AGE" value={patient.age !== null ? `${patient.age} Years` : "--"} />
+              <InfoField label="GENDER" value={patient.gender || "--"} />
+              <InfoField label="PHONE NUMBER" value={patient.phone || "--"} />
+              <InfoField label="EMAIL ADDRESS" value={patient.email || "--"} />
             </div>
-            <CardContent className="p-5 sm:p-6">
-              <div className="grid grid-cols-1 gap-x-12 gap-y-9 sm:grid-cols-2">
-                <InfoField label="TRACMEDY ID" value={patient.tracmedyPatientId || "--"} />
-                <InfoField label="HOSPITAL ID" value={connection.externalPatientId || "--"} />
-                <InfoField label="AGE" value={patient.age !== null ? `${patient.age} Years` : "--"} />
-                <InfoField label="GENDER" value={patient.gender || "--"} />
-                <InfoField label="PHONE NUMBER" value={patient.phone || "--"} />
-                <InfoField label="EMAIL ADDRESS" value={patient.email || "--"} />
-              </div>
-            </CardContent>
-          </Card>
+          </CardContent>
+        </Card>
 
-          <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
-            <div className="border-b border-border px-5 py-5 sm:px-6">
-              <h2 className="text-lg font-bold text-foreground">Care Episodes</h2>
-            </div>
-            <CardContent className="p-0">
-              {careEpisodes.length === 0 ? (
-                <p className="px-6 py-12 text-center text-sm font-medium text-muted-foreground">No care episodes found for this patient.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-170 border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-primary/5 text-left">
-                        <th className="px-6 py-4 text-xs font-bold text-muted-foreground">EPISODE NAME</th>
-                        <th className="px-6 py-4 text-xs font-bold text-muted-foreground">CLINICIAN</th>
-                        <th className="px-6 py-4 text-xs font-bold text-muted-foreground">START DATE</th>
-                        <th className="px-6 py-4 text-xs font-bold text-muted-foreground">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {careEpisodes.map((episode) => (
-                        <tr key={episode.id} className="border-b border-border last:border-0">
-                          <td className="px-6 py-5 font-bold text-foreground">{episode.name}</td>
-                          <td className="px-6 py-5 text-foreground/80">{episode.clinician}</td>
-                          <td className="px-6 py-5 text-foreground/80">{formatLongDate(episode.startDate || null)}</td>
-                          <td className="px-6 py-5">
-                            <span
-                              className={cn(
-                                "inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase",
-                                episodeStatusClasses[episode.status],
-                              )}
-                            >
-                              {episode.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card className="rounded-xl border-border bg-card shadow-sm">
-            <CardContent className="p-5 sm:p-6">
-              <h2 className="mb-7 text-lg font-bold text-foreground">Connection History</h2>
-              {connectionHistory.length === 0 ? (
-                <p className="text-sm font-medium text-muted-foreground">No connection history available.</p>
-              ) : (
-                <ol className="space-y-8">
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm xl:h-[20rem]">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-5 sm:p-6">
+            <h2 className="mb-7 flex-none text-lg font-bold text-foreground">Connection History</h2>
+            {connectionHistory.length === 0 ? (
+              <p className="text-sm font-medium text-muted-foreground">No connection history available.</p>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <ol className="space-y-6">
                   {connectionHistory.map((event, index) => (
                     <li key={event.id || index} className="relative flex gap-4 pl-1">
                       {index < connectionHistory.length - 1 ? (
-                        <span className="absolute left-[9px] top-5 h-[calc(100%+2rem)] w-px bg-border" />
+                        <span className="absolute left-[9px] top-5 h-[calc(100%+1.5rem)] w-px bg-border" />
                       ) : null}
                       <span
                         className={cn(
@@ -435,54 +401,95 @@ export default function ConnectedPatientProfilePage() {
                     </li>
                   ))}
                 </ol>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-5 sm:px-6">
-                <h2 className="text-lg font-bold text-foreground">Appointments</h2>
-                <Link
-                  href={"/dashboard/appointments?patientId=" + encodeURIComponent(patient.id)}
-                  className="text-sm font-semibold text-primary hover:underline"
-                >
-                  See All
-                </Link>
-            </div>
-            <CardContent className="p-0">
-              <div>
-                {appointments.length === 0 ? (
-                  <p className="px-6 py-10 text-sm font-medium text-muted-foreground">No appointments found for this patient.</p>
-                ) : (
-                  appointments.slice(0, 3).map((appointment) => (
-                    <div key={appointment.id} className="border-b border-border px-5 py-5 last:border-0 sm:px-6">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-bold text-foreground">{appointment.type}</p>
-                        <span
-                          className={cn(
-                            "inline-flex shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold uppercase",
-                            appointmentStatusClasses[appointment.status],
-                          )}
-                        >
-                          {appointment.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs font-bold text-primary">{formatAppointmentDateTime(appointment.dateTime)}</p>
-                      {appointment.clinicianName !== "--" ? (
-                        <div className="mt-3 flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary/40 text-[10px] font-bold text-foreground">
-                            {getInitials(appointment.clinicianName)}
-                          </span>
-                          <p className="text-xs font-medium text-muted-foreground">{appointment.clinicianName}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm xl:h-[24rem]">
+          <div className="flex-none border-b border-border px-5 py-5 sm:px-6">
+            <h2 className="text-lg font-bold text-foreground">Care Episodes</h2>
+          </div>
+          <CardContent className="min-h-0 flex-1 overflow-hidden p-0">
+            {careEpisodes.length === 0 ? (
+              <p className="px-6 py-12 text-center text-sm font-medium text-muted-foreground">No care episodes found for this patient.</p>
+            ) : (
+              <div className="h-full overflow-auto">
+                <table className="w-full min-w-170 border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-primary/5 text-left">
+                      <th className="px-6 py-4 text-xs font-bold text-muted-foreground">EPISODE NAME</th>
+                      <th className="px-6 py-4 text-xs font-bold text-muted-foreground">CLINICIAN</th>
+                      <th className="px-6 py-4 text-xs font-bold text-muted-foreground">START DATE</th>
+                      <th className="px-6 py-4 text-xs font-bold text-muted-foreground">STATUS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {careEpisodes.map((episode) => (
+                      <tr key={episode.id} className="border-b border-border last:border-0">
+                        <td className="px-6 py-5 font-bold text-foreground">{episode.name}</td>
+                        <td className="px-6 py-5 text-foreground/80">{episode.clinician === "--" ? "Not assigned" : episode.clinician}</td>
+                        <td className="px-6 py-5 text-foreground/80">{formatLongDate(episode.startDate || null)}</td>
+                        <td className="px-6 py-5">
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase",
+                              episodeStatusClasses[episode.status],
+                            )}
+                          >
+                            {episode.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="flex min-h-0 flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm xl:h-[24rem]">
+          <div className="flex flex-none items-center justify-between border-b border-border px-5 py-5 sm:px-6">
+            <h2 className="text-lg font-bold text-foreground">Appointments</h2>
+            <Link
+              href={`/dashboard/appointments?patientId=${encodeURIComponent(patient.id)}`}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              See All
+            </Link>
+          </div>
+          <CardContent className="min-h-0 flex-1 overflow-y-auto p-0">
+            {appointments.length === 0 ? (
+              <p className="px-6 py-10 text-sm font-medium text-muted-foreground">No appointments found for this patient.</p>
+            ) : (
+              appointments.map((appointment) => (
+                <div key={appointment.id} className="border-b border-border px-5 py-5 last:border-0 sm:px-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-bold text-foreground">{appointment.type}</p>
+                    <span
+                      className={cn(
+                        "inline-flex shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold uppercase",
+                        appointmentStatusClasses[appointment.status],
+                      )}
+                    >
+                      {appointment.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-bold text-primary">{formatAppointmentDateTime(appointment.dateTime)}</p>
+                  {appointment.clinicianName !== "--" ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary/40 text-[10px] font-bold text-foreground">
+                        {getInitials(appointment.clinicianName)}
+                      </span>
+                      <p className="text-xs font-medium text-muted-foreground">{appointment.clinicianName}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <DisconnectPatientDialog

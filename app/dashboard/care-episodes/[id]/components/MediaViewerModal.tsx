@@ -105,7 +105,7 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
 
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-blue-50 p-5 lg:flex-row">
             <div className="relative flex min-h-96 flex-1 items-center justify-center overflow-auto rounded-xl bg-slate-900 p-6">
-              <span className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-900">
+              <span className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-slate-900">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                 CURRENT: {media.currentLabel.toUpperCase()}
               </span>
@@ -117,7 +117,7 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={media.imageUrl} alt={media.title} className="h-full w-full object-contain" />
                 ) : media.kind === "pdf" ? (
-                  <FileText className="h-16 w-16 text-white/70" />
+                  <iframe src={media.imageUrl} title={media.title} className="h-full w-full rounded-lg border-0 bg-white" />
                 ) : (
                   <ImageIcon className="h-16 w-16 text-white/50" />
                 )}
@@ -128,7 +128,7 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
               <section className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">{media.title}</h2>
-                <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", STATUS_BADGE[media.status])}>
+                <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold", STATUS_BADGE[media.status])}>
                   {media.status}
                 </span>
               </div>
@@ -140,20 +140,20 @@ export function MediaViewerModal({ open, media, onOpenChange }: MediaViewerModal
 
               <dl className="mt-5 space-y-3 border-t border-slate-200 pt-5">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Capture Context</dt>
-                  <dd className="text-sm font-bold text-slate-900">{media.captureContext}</dd>
+                  <dt className="text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500">Capture Context</dt>
+                  <dd className="text-right text-xs font-bold text-slate-900">{media.captureContext}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Date Captured</dt>
-                  <dd className="text-sm font-bold text-slate-900">{media.dateCaptured}</dd>
+                  <dt className="text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500">Date Captured</dt>
+                  <dd className="text-right text-xs font-bold text-slate-900">{media.dateCaptured}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Upload Timestamp</dt>
-                  <dd className="text-sm font-bold text-slate-900">{media.uploadTimestamp}</dd>
+                  <dt className="text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500">Upload Timestamp</dt>
+                  <dd className="text-right text-xs font-bold text-slate-900">{media.uploadTimestamp}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Patient ID</dt>
-                  <dd className="text-sm font-bold text-primary">{media.patientId}</dd>
+                  <dt className="text-[10px] font-bold uppercase tracking-[0.04em] text-slate-500">Patient ID</dt>
+                  <dd className="text-right text-xs font-bold text-primary">{media.patientId}</dd>
                 </div>
               </dl>
               </section>

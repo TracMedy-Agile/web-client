@@ -59,6 +59,7 @@ async function request(path: string, query?: URLSearchParams): Promise<unknown> 
   const tokenPayload = await tokenResponse.json().catch(() => null);
   const accessToken = stringValue(asRecord(tokenPayload)?.accessToken);
   const response = await fetch(`${BASE}${path}${query?.toString() ? `?${query}` : ""}`, {
+    cache: "no-store",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
   const payload = await response.json().catch(() => null);

@@ -62,6 +62,7 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   const accessToken = await getAccessToken();
   const response = await fetch(`${BASE}${path}`, {
     ...init,
+    cache: "no-store",
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),

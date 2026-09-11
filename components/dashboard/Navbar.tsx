@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout } from "@/lib/api/auth";
@@ -55,6 +55,9 @@ interface NavbarProps {
   title?: string;
 }
 
+const NOTIFICATION_PREVIEW_LIMIT = 4;
+const NOTIFICATIONS_CHANGED_EVENT = "tracmedy:notifications-changed";
+
 const DASHBOARD_ROUTE_TITLES = [
   { href: "/dashboard/profile", title: "Profile" },
   { href: "/dashboard/notifications", title: "Notifications" },
@@ -94,13 +97,46 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
     let active = true;
     getUnreadNotificationCount()
       .then((count) => {
-        if (active) setUnreadCount(count);
+        if (!active) return;
+        setUnreadCount(count);
+        if (count === 0) setNotifications([]);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
   }, []);
+
+  const loadNotifications = useCallback(async () => {
+    setIsLoadingNotifications(true);
+    setNotificationsError('');
+    try {
+      const [page, count] = await Promise.all([
+        getNotifications(1, 20),
+        getUnreadNotificationCount(),
+      ]);
+      setUnreadCount(count);
+      const unreadItems = page.items.filter((item) => item.readAt === null).slice(0, NOTIFICATION_PREVIEW_LIMIT);
+      setNotifications(count > 0 ? unreadItems : []);
+    } catch (error) {
+      setNotificationsError(error instanceof Error ? error.message : 'Unable to load notifications.');
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  }, []);
+  useEffect(() => {
+    function handleNotificationsChanged(event: Event) {
+      const detail = event instanceof CustomEvent ? event.detail as { unreadCount?: unknown } : null;
+      if (typeof detail?.unreadCount === 'number') {
+        setUnreadCount(detail.unreadCount);
+        if (detail.unreadCount === 0) setNotifications([]);
+      }
+      if (isNotificationsOpen) void loadNotifications();
+    }
+
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+  }, [isNotificationsOpen, loadNotifications]);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -131,19 +167,6 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   const avatarUrl = user?.avatarUrl || undefined;
   const resolvedTitle = title === "Dashboard" ? getDashboardRouteTitle(pathname) : title;
 
-  async function loadNotifications() {
-    setIsLoadingNotifications(true);
-    setNotificationsError('');
-    try {
-      const page = await getNotifications(1, 10);
-      setNotifications(page.items);
-    } catch (error) {
-      setNotificationsError(error instanceof Error ? error.message : 'Unable to load notifications.');
-    } finally {
-      setIsLoadingNotifications(false);
-    }
-  }
-
   function handleNotificationsToggle() {
     const nextOpen = !isNotificationsOpen;
     setIsNotificationsOpen(nextOpen);
@@ -155,9 +178,10 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
     if (notification.readAt === null) {
       try {
         await markNotificationAsRead(notification.id);
-        const readAt = new Date().toISOString();
-        setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
-        setUnreadCount((count) => Math.max(0, count - 1));
+        const nextUnreadCount = Math.max(0, unreadCount - 1);
+        setNotifications((current) => current.filter((item) => item.id !== notification.id));
+        setUnreadCount(nextUnreadCount);
+        window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT, { detail: { unreadCount: nextUnreadCount } }));
       } catch (error) {
         setNotificationsError(error instanceof Error ? error.message : 'Unable to mark notification as read.');
         return;
@@ -171,9 +195,9 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
   async function handleMarkAllRead() {
     try {
       await markAllNotificationsAsRead();
-      const readAt = new Date().toISOString();
-      setNotifications((current) => current.map((item) => ({ ...item, readAt: item.readAt ?? readAt })));
+      setNotifications([]);
       setUnreadCount(0);
+      window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT, { detail: { unreadCount: 0 } }));
     } catch (error) {
       setNotificationsError(error instanceof Error ? error.message : 'Unable to mark notifications as read.');
     }
@@ -236,21 +260,26 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
                   <p className={'text-sm text-destructive'}>{notificationsError}</p>
                   <button type={'button'} onClick={() => void loadNotifications()} className={'mt-3 text-xs font-bold text-primary hover:underline'}>Try again</button>
                 </div>
+              ) : unreadCount === 0 ? (
+                <div className={'px-4 py-10 text-center'}>
+                  <p className={'text-sm font-bold text-foreground'}>All notifications have been read</p>
+                  <Link href="/dashboard/notifications" onClick={() => setIsNotificationsOpen(false)} className={'mt-3 inline-flex items-center text-sm font-bold text-primary hover:underline'}>View all notifications &rarr;</Link>
+                </div>
               ) : notifications.length === 0 ? (
-                <p className={'px-4 py-10 text-center text-sm text-muted-foreground'}>No notifications yet.</p>
+                <p className={'px-4 py-10 text-center text-sm text-muted-foreground'}>No unread notifications found.</p>
               ) : notifications.map((notification) => (
                 <button
                   key={notification.id}
                   type={'button'}
                   onClick={() => void handleNotificationClick(notification)}
-                  className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/60 ${notification.readAt === null ? 'bg-primary/5' : 'bg-card'}`}
+                  className="block w-full border-b border-primary/20 bg-primary px-4 py-3 text-left text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <span className={'flex items-start gap-3'}>
-                    <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.readAt === null ? 'bg-primary' : 'bg-transparent'}`} />
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-white" />
                     <span className={'min-w-0 flex-1'}>
-                      <span className={'block text-sm font-semibold text-foreground'}>{notification.title}</span>
-                      <span className={'mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground'}>{notification.body}</span>
-                      <span className={'mt-1.5 block text-[11px] text-muted-foreground'}>{formatNotificationTime(notification.createdAt)}</span>
+                      <span className={'block text-sm font-semibold text-white'}>{notification.title}</span>
+                      <span className={'mt-1 line-clamp-2 block text-xs leading-5 text-white/85'}>{notification.body}</span>
+                      <span className={'mt-1.5 block text-[11px] text-white/70'}>{formatNotificationTime(notification.createdAt)}</span>
                     </span>
                   </span>
                 </button>
@@ -261,7 +290,7 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
               onClick={() => setIsNotificationsOpen(false)}
               className={'block border-t border-border px-4 py-3 text-center text-sm font-bold text-primary hover:bg-muted/60 hover:underline'}
             >
-              View all notifications
+              View all notifications &rarr;
             </Link>
           </div>
         ) : null}

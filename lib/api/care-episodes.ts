@@ -33,6 +33,7 @@ type CreateTimelineEventPayload = Omit<components["schemas"]["CreateTimelineEven
 
 export type CareEpisodeRecord = {
   id: ApiCareEpisodeSummary["id"];
+  reference: ApiCareEpisodeSummary["reference"];
   patientId: ApiCareEpisodeSummary["patientId"];
   facilityId: ApiCareEpisodeSummary["facilityId"];
   clinicianId: string;
@@ -40,6 +41,8 @@ export type CareEpisodeRecord = {
   status: ApiCareEpisodeSummary["status"];
   carePhase: string | null;
   dayStart: number | null;
+  currentDay: number | null;
+  dayProgress: number | null;
   expectedDurationDays: number | null;
   riskScore: number | null;
   riskCategory: string | null;
@@ -49,6 +52,7 @@ export type CareEpisodeRecord = {
   finalNotes?: string | null;
   encounterType: string | null;
   conditionSeverity: string | null;
+  dischargeStatus: NonNullable<ApiCareEpisodeSummary["dischargeStatus"]> | null;
   tracmedyPatientId?: string | null;
   clinicalConcern?: string | null;
   clinicianNotes?: string | null;
@@ -69,6 +73,12 @@ export type CareEpisodesResponse = {
   closedCount: number;
   highRiskCount: number;
   todayCheckinsPending: number;
+  activeCountDeltaPct: number | null;
+  metricsComparedTo: string | null;
+  pendingUrgentCount: number | null;
+  highRiskActionRequiredDeltaPct: number | null;
+  closedMonthSatisfactionPct: number | null;
+  closedMonthOutcomeRate: number | null;
 };
 
 export type CareEpisodesQueryParams = {
@@ -112,6 +122,7 @@ export type CareEpisodePatient = {
   age: number | null;
   gender: string;
   hospitalId: string;
+  avatarUrl: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
 };
@@ -142,6 +153,7 @@ export type CareEpisodeDetail = CareEpisodeRecord & {
     dischargeStatus: ApiClosureInfo["dischargeStatus"] | null;
     followUp: ApiRecord | null;
     closedAt: ApiClosureInfo["closedAt"] | null;
+    closedBy: { id: string | null; name: string | null } | null;
   } | null;
 };
 
@@ -163,6 +175,9 @@ async function request(path: string, init?: RequestInit, query?: URLSearchParams
 
   const res = await fetch(url, {
     ...init,
+    // Clinical data must never be served stale from an HTTP/browser cache — e.g. a check-in
+    // submitted from the mobile app must show up here immediately, not on the next hard reload.
+    cache: "no-store",
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -218,6 +233,7 @@ export function getNumber(record: ApiRecord | null, keys: string[]): number | nu
 function normalizeCareEpisodeSummary(record: ApiRecord): CareEpisodeRecord {
   return {
     id: getString(record, ["id"]),
+    reference: getString(record, ["reference"]) || null,
     patientId: getString(record, ["patientId"]),
     facilityId: getString(record, ["facilityId"]),
     clinicianId: getString(record, ["clinicianId"]),
@@ -225,6 +241,8 @@ function normalizeCareEpisodeSummary(record: ApiRecord): CareEpisodeRecord {
     status: getString(record, ["status"]),
     carePhase: getString(record, ["carePhase"]) || null,
     dayStart: getNumber(record, ["dayStart"]),
+    currentDay: getNumber(record, ["currentDay"]),
+    dayProgress: getNumber(record, ["dayProgress"]),
     expectedDurationDays: getNumber(record, ["expectedDurationDays"]),
     riskScore: getNumber(record, ["riskScore"]),
     riskCategory: getString(record, ["riskCategory"]) || null,
@@ -234,6 +252,12 @@ function normalizeCareEpisodeSummary(record: ApiRecord): CareEpisodeRecord {
     finalNotes: getString(record, ["finalNotes"]) || null,
     encounterType: getString(record, ["encounterType"]) || null,
     conditionSeverity: getString(record, ["conditionSeverity"]) || null,
+    dischargeStatus: (() => {
+      const value = getString(record, ["dischargeStatus"]).toUpperCase();
+      return value === "PLANNED" || value === "IN_PROGRESS" || value === "COMPLETED" || value === "NOT_APPLICABLE"
+        ? (value as NonNullable<ApiCareEpisodeSummary["dischargeStatus"]>)
+        : null;
+    })(),
     tracmedyPatientId: getString(record, ["tracmedyPatientId"]) || null,
     clinicalConcern: getString(record, ["clinicalConcern"]) || null,
     clinicianNotes: getString(record, ["clinicianNotes"]) || null,
@@ -292,6 +316,12 @@ export async function getCareEpisodes(params?: CareEpisodesQueryParams): Promise
     closedCount: getNumber(source, ["closedCount"]) ?? 0,
     highRiskCount: getNumber(source, ["highRiskCount"]) ?? 0,
     todayCheckinsPending: getNumber(source, ["todayCheckinsPending"]) ?? 0,
+    activeCountDeltaPct: getNumber(source, ["activeCountDeltaPct"]),
+    metricsComparedTo: getString(source, ["metricsComparedTo"]) || null,
+    pendingUrgentCount: getNumber(source, ["pendingUrgentCount"]),
+    highRiskActionRequiredDeltaPct: getNumber(source, ["highRiskActionRequiredDeltaPct"]),
+    closedMonthSatisfactionPct: getNumber(source, ["closedMonthSatisfactionPct"]),
+    closedMonthOutcomeRate: getNumber(source, ["closedMonthOutcomeRate"]),
   };
 }
 
@@ -438,6 +468,7 @@ function normalizePatientIdentity(record: ApiRecord | null): CareEpisodePatient 
     age: getNumber(record, ["age"]),
     gender: getString(record, ["gender"]),
     hospitalId: getString(record, ["tracmedyPatientId", "hospitalId"]),
+    avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
     emergencyContactName: "",
     emergencyContactPhone: "",
   };
@@ -497,6 +528,10 @@ function normalizeCareEpisodeDetail(payload: unknown): CareEpisodeDetail {
         dischargeStatus: getString(closureRecord, ["dischargeStatus"]) || null,
         followUp: asRecord(closureRecord.followUp),
         closedAt: getString(closureRecord, ["closedAt"]) || null,
+        closedBy: (() => {
+          const actor = asRecord(closureRecord.closedBy);
+          return actor ? { id: getString(actor, ["id"]) || null, name: getString(actor, ["name", "actorName"]) || null } : null;
+        })(),
       }
     : null;
 
@@ -513,7 +548,7 @@ function normalizeCareEpisodeDetail(payload: unknown): CareEpisodeDetail {
     recentTimeline: getRecordArray(body, ["recentTimelineEvents", "recentTimeline"]),
     riskData: asRecord(body.riskData),
     riskHistory: [],
-    dayProgress: getNumber(body, ["dayProgress"]),
+    dayProgress: getNumber(body, ["dayProgress"]) ?? summary.dayProgress,
     facility: (() => {
       const facility = asRecord(body.facility);
       return facility ? { id: getString(facility, ["id"]), name: getString(facility, ["name"]), tracId: getString(facility, ["tracId"]) } : null;
@@ -654,6 +689,7 @@ export async function uploadCareEpisodeImage(episodeId: string, file: File): Pro
 function normalizeLabResult(record: ApiRecord): EpisodeLabResult {
   return {
     id: getString(record, ["id"]),
+    reference: getString(record, ["reference"]) || null,
     episodeId: getString(record, ["episodeId"]),
     patientId: getString(record, ["patientId"]),
     facilityId: getString(record, ["facilityId"]) || null,
@@ -889,21 +925,48 @@ export type DailyVitalsRecord = {
   hasEntry: boolean;
 };
 
+function getNumericValue(record: ApiRecord | null, keys: string[]): number | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
 function normalizeDailyVitals(record: ApiRecord): DailyVitalsRecord {
   const vitals = asRecord(record.vitals);
   return {
     date: getString(record, ["date"]),
     hasEntry: record.hasEntry === true,
     vitals: {
-      bloodPressureSystolic: getNumber(vitals, ["bp_systolic"]),
-      bloodPressureDiastolic: getNumber(vitals, ["bp_diastolic"]),
-      heartRate: getNumber(vitals, ["heart_rate"]),
-      temperature: getNumber(vitals, ["temperature"]),
-      spo2: getNumber(vitals, ["spo2"]),
-      weight: getNumber(vitals, ["weight"]),
-      bloodSugar: getNumber(vitals, ["blood_sugar"]),
+      bloodPressureSystolic: getNumericValue(vitals, ["bp_systolic", "bpSystolic", "bloodPressureSystolic"]),
+      bloodPressureDiastolic: getNumericValue(vitals, ["bp_diastolic", "bpDiastolic", "bloodPressureDiastolic"]),
+      heartRate: getNumericValue(vitals, ["heart_rate", "heartRate"]),
+      temperature: getNumericValue(vitals, ["temperature", "bodyTemperature"]),
+      spo2: getNumericValue(vitals, ["spo2", "SpO2", "oxygen_saturation", "oxygenSaturation"]),
+      weight: getNumericValue(vitals, ["weight"]),
+      bloodSugar: getNumericValue(vitals, ["blood_sugar", "bloodSugar", "glucose"]),
     },
   };
+}
+
+export function buildDailyVitalsFromCheckins(checkins: CheckInHistoryRecord[], days = 30): DailyVitalsRecord[] {
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  since.setDate(since.getDate() - (Math.max(1, Math.min(Math.trunc(days), 30)) - 1));
+  const byDate = new Map<string, DailyVitalsRecord>();
+  for (const checkin of checkins) {
+    const submittedAt = Date.parse(checkin.submittedAt);
+    if (!Number.isFinite(submittedAt) || submittedAt < since.getTime()) continue;
+    const date = new Date(submittedAt).toISOString().slice(0, 10);
+    byDate.set(date, normalizeDailyVitals({ date, vitals: checkin.vitals, hasEntry: true }));
+  }
+  return Array.from(byDate.values()).sort((left, right) => left.date.localeCompare(right.date));
 }
 
 export async function getCareEpisodeDailyVitals(id: string, days = 7): Promise<DailyVitalsRecord[]> {

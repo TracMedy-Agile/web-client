@@ -60,7 +60,10 @@ export type ClinicianSearchResult = {
   avatarUrl: string;
 };
 
-export type ClinicianDirectoryEntry = ApiClinicianListItem;
+export type ClinicianDirectoryEntry = ApiClinicianListItem & {
+  /** Some backend responses expose specialty separately; department remains the generated contract field. */
+  specialty?: string | null;
+};
 
 export type TeamMemberActivityEntry = {
   id: string;
@@ -95,6 +98,7 @@ export async function getFacilityClinicians(params?: {
     name: value(item, ["name"], "Unnamed clinician"),
     email: value(item, ["email"]),
     department: value(item, ["department"]) || null,
+    specialty: value(item, ["specialty"]) || null,
     schedule: value(item, ["schedule"], "Schedule not configured"),
     dailyCapacity: numberValue(item, "dailyCapacity"),
     assignedAppointments: numberValue(item, "assignedAppointments"),

@@ -4,6 +4,7 @@ import { getRecordArray, getString, type ApiRecord, type CareEpisodeDetail, type
 export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
   return {
     id: episodeId,
+    reference: null,
     patientId: "",
     facilityId: "",
     clinicianId: "",
@@ -11,6 +12,7 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     status: "",
     carePhase: null,
     dayStart: null,
+    currentDay: null,
     expectedDurationDays: null,
     riskScore: null,
     riskCategory: null,
@@ -19,6 +21,7 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     outcomeStatus: null,
     encounterType: null,
     conditionSeverity: null,
+    dischargeStatus: null,
     createdAt: "",
     updatedAt: "",
     currentCarePlan: null,
@@ -158,6 +161,8 @@ export type BiometricPoint = {
   date: string;
   value: number;
   abnormal: boolean;
+  secondaryValue?: number;
+  secondaryAbnormal?: boolean;
 };
 
 export const BIOMETRIC_METRICS: { label: BiometricMetric; unit: string }[] = [
@@ -178,11 +183,18 @@ export const BIOMETRIC_RANGES: { key: BiometricRange; days: number }[] = [
 export function buildBiometricData(metric: BiometricMetric, records: DailyVitalsRecord[]): BiometricPoint[] {
   return records.flatMap((record) => {
     let value: number | null = null;
+    let secondaryValue: number | null = null;
     let abnormal = false;
+    let secondaryAbnormal = false;
 
     if (metric === "Blood Pressure") {
-      value = record.vitals.bloodPressureSystolic;
-      abnormal = value !== null && (value < 90 || value >= 130);
+      const systolic = record.vitals.bloodPressureSystolic;
+      const diastolic = record.vitals.bloodPressureDiastolic;
+      value = systolic ?? diastolic;
+      secondaryValue = systolic !== null && diastolic !== null ? diastolic : null;
+      abnormal = systolic !== null && (systolic < 90 || systolic >= 130);
+      secondaryAbnormal = diastolic !== null && (diastolic < 60 || diastolic >= 80);
+      abnormal = abnormal || secondaryAbnormal;
     } else if (metric === "Heart Rate") {
       value = record.vitals.heartRate;
       abnormal = value !== null && (value < 60 || value > 100);
@@ -194,7 +206,6 @@ export function buildBiometricData(metric: BiometricMetric, records: DailyVitals
       abnormal = value !== null && (value < 36.1 || value > 37.5);
     } else if (metric === "Weight") {
       value = record.vitals.weight;
-      abnormal = false;
     } else {
       value = record.vitals.bloodSugar;
       abnormal = value !== null && (value < 70 || value > 140);
@@ -205,6 +216,11 @@ export function buildBiometricData(metric: BiometricMetric, records: DailyVitals
     const date = Number.isFinite(parsed)
       ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(parsed)).toUpperCase()
       : record.date;
-    return [{ date, value, abnormal }];
+    return [{
+      date,
+      value,
+      abnormal,
+      ...(secondaryValue !== null ? { secondaryValue, secondaryAbnormal } : {}),
+    }];
   });
 }

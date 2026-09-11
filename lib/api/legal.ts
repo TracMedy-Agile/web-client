@@ -84,6 +84,7 @@ export async function getPrivacySummary(): Promise<PrivacySummary> {
   if (!BASE) throw new Error("API base URL is not configured.");
 
   const response = await fetch(`${BASE}/legal/privacy-summary`, {
+    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload: unknown = await response.json().catch(() => null);
@@ -108,6 +109,7 @@ export async function getTermsOfService(): Promise<TermsOfService> {
   if (!BASE) throw new Error("API base URL is not configured.");
 
   const response = await fetch(`${BASE}/legal/terms`, {
+    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload: unknown = await response.json().catch(() => null);

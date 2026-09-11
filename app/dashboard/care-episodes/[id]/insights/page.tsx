@@ -27,10 +27,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
-  generateBiometricsInsight,
   generateEpisodeInsight,
   getLatestRecoverySummary,
-  type BiometricsInsightPayload,
   type EpisodeInsightPayload,
 } from "@/lib/api/ai";
 import { cn } from "@/lib/utils";
@@ -44,6 +42,7 @@ import {
   getCareEpisodeMedicationAdherence,
   getCareEpisodeMedicationLogs,
   getCareEpisodeTimelinePage,
+  updateLabResultStatus,
   getNumber,
   getString,
   type ApiRecord,
@@ -116,7 +115,7 @@ const VITAL_DEFS: VitalDef[] = [
   },
   {
     key: "spo2",
-    label: "SpO2",
+    label: "SpO₂",
     Icon: TestTube2,
     unit: "%",
     resolve: (vitals) => {
@@ -129,7 +128,7 @@ const VITAL_DEFS: VitalDef[] = [
     key: "temperature",
     label: "Temperature",
     Icon: Thermometer,
-    unit: "deg C",
+    unit: "°C",
     resolve: (vitals) => {
       const value = getNumber(vitals, ["temperature", "temp"]);
       if (value === null) return null;
@@ -187,6 +186,13 @@ const VITAL_STATUS_BADGE: Record<VitalStatus, string> = {
   ELEVATED: "bg-red-50 text-red-500",
   LOW: "bg-blue-50 text-primary",
   "--": "bg-slate-100 text-slate-500",
+};
+
+const VITAL_STATUS_LABEL: Record<VitalStatus, string> = {
+  NORMAL: "Normal",
+  ELEVATED: "Elevated",
+  LOW: "Low",
+  "--": "--",
 };
 
 const VITAL_STATUS_DESCRIPTION: Record<VitalStatus, string> = {
@@ -287,6 +293,8 @@ type ClinicalMediaItem = {
   title: string;
   type: string;
   status: "Reviewed" | "Pending review";
+  source: "checkin" | "lab";
+  sourceId: string | null;
   priority: string | null;
   uploadedAt: string;
   kind: "image" | "pdf";
@@ -304,12 +312,6 @@ const MEDIA_STATUS_BADGE: Record<ClinicalMediaItem["status"], string> = {
   "Pending review": "bg-amber-50 text-amber-500",
 };
 
-const LAB_RESULT_STATUS_BADGE: Record<EpisodeLabResult["status"], string> = {
-  pending: "bg-amber-50 text-amber-600",
-  received: "bg-blue-50 text-primary",
-  reviewed: "bg-emerald-50 text-emerald-600",
-  flagged: "bg-red-50 text-red-500",
-};
 
 function formatDateTimeLabel(value: string) {
   const parsed = value ? Date.parse(value) : NaN;
@@ -323,11 +325,6 @@ function formatLabResultTitle(result: EpisodeLabResult) {
   return result.testName || result.labName || "Uploaded lab result";
 }
 
-function formatLabResultMeta(result: EpisodeLabResult) {
-  const labName = result.labName && result.labName !== result.testName ? result.labName : "";
-  const observedAt = formatDateTimeLabel(result.observedAt);
-  return [labName, observedAt !== "--" ? `Observed ${observedAt}` : ""].filter(Boolean).join(" - ");
-}
 
 // The care-episode API only exposes images attached to the patient's latest check-in
   // (PatientCheckInDto.images) - there is no dedicated "list all clinical media" endpoint.
@@ -343,14 +340,16 @@ function buildClinicalMedia(checkin: ApiRecord | null, patientCode: string): Cli
     .filter((url): url is string => typeof url === "string" && url.length > 0)
     .map((url, index) => ({
       id: `${submittedAt || "checkin"}-${index}`,
+      source: "checkin" as const,
+      sourceId: null,
       title: `Check-in Upload ${index + 1}`,
       type: "Check-in Image",
       status: "Pending review" as const,
       priority: null,
-      uploadedAt: formatDateTimeLabel(submittedAt),
+      uploadedAt: formatUploadedAt(submittedAt),
       kind: "image" as const,
       captureContext: "Check-in Image",
-      dateCaptured: formatDateTimeLabel(submittedAt),
+      dateCaptured: formatDateOnly(submittedAt),
       capturedAt: submittedAt,
       uploadTimestamp: submittedAt ? formatTime(submittedAt) : "--",
       patientId: patientCode,
@@ -364,14 +363,16 @@ function buildMediaHistory(items: EpisodeMediaItem[], patientCode: string): Clin
     .filter((item) => Boolean(item.url))
     .map((item, index) => ({
       id: `${item.checkInId}-${index}`,
+      source: "checkin" as const,
+      sourceId: item.checkInId,
       title: item.caption || `Check-in Upload ${index + 1}`,
       type: item.type || "Check-in Image",
       status: "Pending review" as const,
       priority: null,
-      uploadedAt: formatDateTimeLabel(item.submittedAt),
+      uploadedAt: formatUploadedAt(item.submittedAt),
       kind: "image" as const,
       captureContext: item.type || "Check-in Image",
-      dateCaptured: formatDateTimeLabel(item.submittedAt),
+      dateCaptured: formatDateOnly(item.submittedAt),
       capturedAt: item.submittedAt,
       uploadTimestamp: formatTime(item.submittedAt),
       patientId: patientCode,
@@ -380,6 +381,40 @@ function buildMediaHistory(items: EpisodeMediaItem[], patientCode: string): Clin
     }));
 }
 
+function formatDateOnly(value: string) {
+  const parsed = value ? Date.parse(value) : NaN;
+  if (!Number.isFinite(parsed)) return "--";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(parsed));
+}
+function formatUploadedAt(value: string) {
+  const parsed = value ? Date.parse(value) : NaN;
+  if (!Number.isFinite(parsed)) return "Uploaded --";
+  const date = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(parsed));
+  return `Uploaded ${date} • ${formatTime(value)}`;
+}
+
+function buildLabMedia(results: EpisodeLabResult[], patientCode: string): ClinicalMediaItem[] {
+  return results
+    .filter((result) => Boolean(result.fileUrl))
+    .map((result) => ({
+      id: `lab-${result.id}`,
+      source: "lab" as const,
+      sourceId: result.id,
+      title: formatLabResultTitle(result),
+      type: "Laboratory PDF",
+      status: result.status === "reviewed" || result.status === "flagged" ? "Reviewed" as const : "Pending review" as const,
+      priority: null,
+      uploadedAt: formatUploadedAt(result.createdAt),
+      kind: "pdf" as const,
+      captureContext: result.labName || "Laboratory result",
+      dateCaptured: formatDateOnly(result.observedAt || result.createdAt),
+      capturedAt: result.observedAt || result.createdAt,
+      uploadTimestamp: result.createdAt ? formatTime(result.createdAt) : "--",
+      patientId: patientCode,
+      patientDescription: result.notes || "No description provided by patient.",
+      imageUrl: result.fileUrl ?? "",
+    }));
+}
 function formatCurrentLabel(capturedAt: string): string {
   const parsed = capturedAt ? Date.parse(capturedAt) : NaN;
   if (!Number.isFinite(parsed)) return "--";
@@ -418,18 +453,26 @@ const NOTE_TYPE_BADGE: Record<NoteType, string> = {
 
 type PatientNote = { id: string; type: NoteType; text: string; linked: string; time: string };
 
-// Patient Notes combines patient check-in notes with patient-authored timeline note events.
+function noteTypeFromValue(value: string): NoteType {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("symptom")) return "Symptom";
+  if (normalized.includes("concern") || normalized.includes("warning") || normalized.includes("alert")) return "Concern";
+  return "Observation";
+}
+
 function buildPatientNotes(checkin: ApiRecord | null): PatientNote[] {
   if (!checkin) return [];
-  const notes = getString(checkin, ["notes"]);
+  const notes = getString(checkin, ["notes", "patientNotes", "patientNote", "note", "content", "text"]);
   if (!notes) return [];
 
-  const submittedAt = getString(checkin, ["submittedAt"]);
+  const submittedAt = getString(checkin, ["submittedAt", "createdAt", "timestamp"]);
+  const noteId = getString(checkin, ["id"]) || submittedAt || "latest-note";
+  const category = getString(checkin, ["noteType", "noteCategory", "category", "type"]);
   return [
     {
-      id: submittedAt || "latest-note",
-      type: "Observation",
-      text: `"${notes}"`,
+      id: `checkin-note-${noteId}`,
+      type: noteTypeFromValue(category),
+      text: notes.startsWith("\"") ? notes : `"${notes}"`,
       linked: "LATEST CHECK-IN",
       time: submittedAt ? formatRelativeTime(submittedAt) : "--",
     },
@@ -438,6 +481,8 @@ function buildPatientNotes(checkin: ApiRecord | null): PatientNote[] {
 
 function noteTypeFromTimelineEvent(event: TimelineEventRecord): NoteType {
   const eventType = event.eventType.toLowerCase();
+  const category = getString(event.payload, ["noteType", "noteCategory", "category", "type"]);
+  if (category) return noteTypeFromValue(category);
   if (eventType.includes("symptom")) return "Symptom";
   if (eventType.includes("concern") || eventType.includes("alert")) return "Concern";
   return "Observation";
@@ -446,21 +491,24 @@ function noteTypeFromTimelineEvent(event: TimelineEventRecord): NoteType {
 function buildTimelinePatientNote(event: TimelineEventRecord): PatientNote | null {
   const eventType = event.eventType.toLowerCase();
   const source = event.source.toLowerCase();
-  const isPatientSource = source.includes("patient");
-  if (!isPatientSource) return null;
+  const isPatientNoteEvent = eventType.includes("patient_note") || eventType.includes("patient-note") || eventType === "patient note";
+  const isPatientSource = source.includes("patient") || source.includes("mobile") || source.includes("app");
+  if (!isPatientSource && !isPatientNoteEvent) return null;
 
-  const note = getString(event.payload, ["notes", "patientNotes", "patientNote", "note"]);
+  const nestedPayload = asRecord(event.payload.data);
+  const payload = nestedPayload ?? event.payload;
+  const note = getString(payload, ["notes", "patientNotes", "patientNote", "note", "content", "text"])
+    || (isPatientNoteEvent ? getString(payload, ["message", "description"]) : "");
   if (!note) return null;
 
   return {
     id: `timeline-${event.id}`,
-    type: noteTypeFromTimelineEvent(event),
-    text: `"${note}"`,
-    linked: eventType.includes("check") ? "CHECK-IN TIMELINE" : "CARE TIMELINE",
+    type: noteTypeFromTimelineEvent({ ...event, payload }),
+    text: note.startsWith("\"") ? note : `"${note}"`,
+    linked: isPatientNoteEvent ? "PATIENT NOTE" : eventType.includes("check") ? "CHECK-IN TIMELINE" : "CARE TIMELINE",
     time: event.timestamp ? formatRelativeTime(event.timestamp) : "--",
   };
 }
-
 function dedupePatientNotes(notes: PatientNote[]) {
   const seen = new Set<string>();
   return notes.filter((note) => {
@@ -507,16 +555,6 @@ function formatAiConfidence(value?: number) {
   return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}% confidence` : "Confidence unavailable";
 }
 
-function biometricAliases(metric: BiometricMetric) {
-  if (metric === "Blood Pressure") return ["blood_pressure", "bp", "bp_systolic", "bp_diastolic", "bloodPressure", "bloodPressureSystolic", "bloodPressureDiastolic"];
-  if (metric === "Heart Rate") return ["heart_rate", "heartRate", "hr", "pulse"];
-  if (metric === "SpO2") return ["spo2", "sp_o2", "oxygen", "oxygenSaturation"];
-  if (metric === "Temperature") return ["temperature", "temp", "fever"];
-  if (metric === "Weight") return ["weight", "weight_kg", "weightKg"];
-  return ["blood_sugar", "bloodSugar", "bloodGlucose", "glucose"];
-}
-
-
 function aiDataNoticeForInsight(insight: EpisodeInsightPayload | null | undefined) {
   if (!insight) return "AI needs more patient check-ins, vitals, medication logs, or timeline activity before it can create a reviewable suggestion.";
   if (insight.dataSufficiency === "insufficient") {
@@ -526,11 +564,6 @@ function aiDataNoticeForInsight(insight: EpisodeInsightPayload | null | undefine
     return "AI generated this with partial episode data. More check-ins and clinical activity will improve the recommendation quality.";
   }
   return "";
-}
-function findBiometricMetric(insight: BiometricsInsightPayload | null, metric: BiometricMetric) {
-  if (!insight) return null;
-  const aliases = biometricAliases(metric).map((item) => item.toLowerCase());
-  return insight.metrics.find((item) => aliases.includes(item.type.toLowerCase())) ?? null;
 }
 export default function CareEpisodeInsightsPage() {
   const params = useParams<{ id: string }>();
@@ -548,7 +581,7 @@ export default function CareEpisodeInsightsPage() {
   const [checkins, setCheckins] = useState<CheckInHistoryRecord[]>([]);
   const [mediaHistory, setMediaHistory] = useState<EpisodeMediaItem[]>([]);
   const [labResults, setLabResults] = useState<EpisodeLabResult[]>([]);
-  const [labResultsLoading, setLabResultsLoading] = useState(true);
+
   const [timelineEvents, setTimelineEvents] = useState<TimelineEventRecord[]>([]);
 
   const [biometricMetric, setBiometricMetric] = useState<BiometricMetric>("Blood Pressure");
@@ -559,15 +592,14 @@ export default function CareEpisodeInsightsPage() {
   const [medicationLogs, setMedicationLogs] = useState<Record<string, MedicationLogHistory | "loading" | "error">>({});
   const [notesTab, setNotesTab] = useState<"All" | NoteType>("All");
   const [activeMedia, setActiveMedia] = useState<ClinicalMediaItem | null>(null);
+  const [mediaStatusOverrides, setMediaStatusOverrides] = useState<Record<string, ClinicalMediaItem["status"]>>({});
+  const [mediaReviewError, setMediaReviewError] = useState("");
   const [aiSummary, setAiSummary] = useState<EpisodeInsightPayload | null>(null);
   const [aiGeneratedAt, setAiGeneratedAt] = useState("");
   const [aiSuggestionId, setAiSuggestionId] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "generating" | "error">("idle");
   const [aiError, setAiError] = useState("");
   const [aiDataNotice, setAiDataNotice] = useState("");
-  const [biometricsInsight, setBiometricsInsight] = useState<BiometricsInsightPayload | null>(null);
-  const [biometricsAiStatus, setBiometricsAiStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [biometricsAiError, setBiometricsAiError] = useState("");
 
   function toggleMedication(medicationId: string) {
     const nextExpanded = expandedMedicationId === medicationId ? null : medicationId;
@@ -581,6 +613,25 @@ export default function CareEpisodeInsightsPage() {
   }
 
 
+  async function openClinicalMedia(media: ClinicalMediaItem) {
+    setMediaReviewError("");
+    if (media.status === "Pending review" && media.source === "lab" && media.sourceId) {
+      try {
+        const reviewed = await updateLabResultStatus(media.sourceId, { status: "reviewed" });
+        setLabResults((current) => current.map((result) => result.id === reviewed.id ? reviewed : result));
+      } catch (requestError) {
+        setMediaReviewError(requestError instanceof Error ? requestError.message : "Unable to mark this document as reviewed.");
+        return;
+      }
+    }
+
+    if (media.status === "Pending review") {
+      setMediaStatusOverrides((current) => ({ ...current, [media.id]: "Reviewed" }));
+      setActiveMedia({ ...media, status: "Reviewed" });
+      return;
+    }
+    setActiveMedia(media);
+  }
   async function generateSummary() {
     if (!episodeId) return;
     setAiStatus("generating");
@@ -647,38 +698,6 @@ export default function CareEpisodeInsightsPage() {
   useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
-    const days = BIOMETRIC_RANGES.find((range) => range.key === biometricRange)?.days ?? 14;
-
-    (async () => {
-      setBiometricsAiStatus("loading");
-      setBiometricsAiError("");
-      try {
-        const response = await generateBiometricsInsight(episodeId, days);
-        if (ignore) return;
-        if (response.status === "success" && response.insight) {
-          setBiometricsInsight(response.insight);
-          capturePostHogEvent("ai_insight_viewed", { source: "biometrics", episode_id: episodeId, days });
-        } else {
-          setBiometricsInsight(null);
-          setBiometricsAiError("AI could not interpret the current biometric data yet.");
-        }
-      } catch (requestError) {
-        if (!ignore) {
-          setBiometricsInsight(null);
-          setBiometricsAiError(requestError instanceof Error ? requestError.message : "Unable to load biometric AI interpretation.");
-        }
-      } finally {
-        if (!ignore) setBiometricsAiStatus("idle");
-      }
-    })();
-
-    return () => {
-      ignore = true;
-    };
-  }, [biometricRange, episodeId, refreshKey]);
-  useEffect(() => {
-    if (!episodeId) return;
-    let ignore = false;
 
     (async () => {
       setIsLoading(true);
@@ -706,7 +725,6 @@ export default function CareEpisodeInsightsPage() {
     let ignore = false;
 
     (async () => {
-      setLabResultsLoading(true);
       const [checkinResult, mediaResult, labResultsResult, timelineResult] = await Promise.allSettled([
         getCareEpisodeCheckins(episodeId),
         getCareEpisodeMedia(episodeId),
@@ -718,7 +736,6 @@ export default function CareEpisodeInsightsPage() {
       setMediaHistory(mediaResult.status === "fulfilled" ? mediaResult.value : []);
       setLabResults(labResultsResult.status === "fulfilled" ? labResultsResult.value : []);
       setTimelineEvents(timelineResult.status === "fulfilled" ? timelineResult.value.data : []);
-      setLabResultsLoading(false);
     })();
 
     return () => {
@@ -777,18 +794,21 @@ export default function CareEpisodeInsightsPage() {
     getString(episode?.latestCheckin ?? null, ["submittedAt", "recordedAt", "timestamp", "createdAt"]),
   );
 
-  const clinicalMedia = useMemo(
-    () => mediaHistory.length
+  const clinicalMedia = useMemo(() => {
+    const patientMedia = mediaHistory.length
       ? buildMediaHistory(mediaHistory, episode?.patient?.hospitalId ?? "")
-      : buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? ""),
-    [episode, mediaHistory],
-  );
+      : buildClinicalMedia(episode?.latestCheckin ?? null, episode?.patient?.hospitalId ?? "");
+    const combined = [...patientMedia, ...buildLabMedia(labResults, episode?.patient?.hospitalId ?? "")];
+    return combined.map((media) => {
+      const override = mediaStatusOverrides[media.id];
+      return override ? { ...media, status: override } : media;
+    });
+  }, [episode, labResults, mediaHistory, mediaStatusOverrides]);
   const patientNotes = useMemo(() => {
-    const checkinNotes = checkins.length
-      ? checkins.flatMap((checkin) => buildPatientNotes(checkin as unknown as ApiRecord))
-      : buildPatientNotes(episode?.latestCheckin ?? null);
+    const checkinNotes = checkins.flatMap((checkin) => buildPatientNotes(checkin as unknown as ApiRecord));
+    const latestCheckinNotes = buildPatientNotes(episode?.latestCheckin ?? null);
     const timelineNotes = timelineEvents.map(buildTimelinePatientNote).filter((note): note is PatientNote => note !== null);
-    return dedupePatientNotes([...checkinNotes, ...timelineNotes]);
+    return dedupePatientNotes([...checkinNotes, ...latestCheckinNotes, ...timelineNotes]);
   }, [checkins, episode, timelineEvents]);
   const filteredNotes = notesTab === "All" ? patientNotes : patientNotes.filter((note) => note.type === notesTab);
   const symptoms = useMemo(
@@ -806,7 +826,7 @@ export default function CareEpisodeInsightsPage() {
     vitalCards.some((vital) => vital.display !== "--") ? "Vitals" : null,
     medications.length > 0 ? "Medication" : null,
     clinicalMedia.length > 0 ? "Clinical Media" : null,
-    labResults.length > 0 ? "Lab Results" : null,
+
     symptoms.length > 0 ? "Symptoms" : null,
     patientNotes.length > 0 ? "Patient Notes" : null,
   ].filter((source): source is string => Boolean(source));
@@ -826,7 +846,6 @@ export default function CareEpisodeInsightsPage() {
       ].filter(Boolean).join(" ")
     : "";
   const aiDisplaySummary = aiSummary?.summary || clinicalSummary;
-  const selectedBiometricInsight = findBiometricMetric(biometricsInsight, biometricMetric);
   const aiKeyDrivers = aiSummary?.keyDrivers ?? [];
   const aiReviewAreas = aiSummary?.suggestedReview ?? [];
 
@@ -926,41 +945,43 @@ export default function CareEpisodeInsightsPage() {
           </div>
         </CardContent>
       </Card>
-      <section>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Latest Recorded Vitals</h2>
-            <p className="text-sm font-medium text-slate-500">Logged via patient mobile app</p>
+      <Card className="rounded-xl border-border bg-white shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold leading-6 text-slate-900">Latest Recorded Vitals</h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">Logged via patient mobile app.</p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 pt-0.5 text-xs font-medium text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Last updated {checkinRelativeTime}
+            </span>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Last updated {checkinRelativeTime}
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {vitalCards.map((vital) => (
-            <Card key={vital.key} className="rounded-xl border-border bg-white shadow-sm">
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex items-start justify-between">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-primary">
-                    <vital.Icon className="h-4.5 w-4.5" />
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {vitalCards.map((vital) => (
+              <div key={vital.key} className="flex min-h-[158px] flex-col rounded-lg border border-border bg-white p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-primary">
+                    <vital.Icon className="h-4 w-4" />
                   </span>
-                  <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold", VITAL_STATUS_BADGE[vital.status])}>
-                    {vital.status}
+                  <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold leading-4", VITAL_STATUS_BADGE[vital.status])}>
+                    {VITAL_STATUS_LABEL[vital.status]}
                   </span>
                 </div>
-                <p className="mt-3 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">{vital.label}</p>
-                <p className="mt-1 text-2xl font-bold text-slate-900">
-                  {vital.display} <span className="text-sm font-medium text-slate-500">{vital.unit}</span>
+                <p className="mt-3 text-sm font-semibold leading-5 text-slate-700">{vital.label}</p>
+                <p className="mt-0.5 text-2xl font-bold leading-8 text-slate-900">
+                  {vital.display} <span className="text-xs font-medium text-slate-500">{vital.unit}</span>
                 </p>
-                <p className="mt-2 text-xs font-medium text-slate-500">{vital.time}</p>
-                <p className="mt-1 text-xs font-medium text-slate-500">{VITAL_STATUS_DESCRIPTION[vital.status]}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
+                <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+                  <p className="text-[11px] font-medium italic text-slate-500">{VITAL_STATUS_DESCRIPTION[vital.status]}</p>
+                  <p className="shrink-0 text-right text-[11px] font-medium text-slate-500">{vital.time}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
@@ -1082,21 +1103,6 @@ export default function CareEpisodeInsightsPage() {
           </div>
           ) : null}
 
-          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">AI biometric interpretation</p>
-              <span className="text-xs font-medium text-slate-500">{biometricsInsight ? `${biometricsInsight.timeRange.days} days analyzed` : "No AI range yet"}</span>
-            </div>
-            {biometricsAiStatus === "loading" ? <p className="mt-2 text-sm font-medium text-slate-600">Generating biometric interpretation...</p> : null}
-            {biometricsAiError ? <p className="mt-2 text-sm font-semibold text-red-500">{biometricsAiError}</p> : null}
-            {selectedBiometricInsight ? (
-              <div className="mt-2">
-                <p className="text-sm font-semibold capitalize text-slate-900">{selectedBiometricInsight.direction.replaceAll("_", " ")}</p>
-                <p className="mt-1 text-sm font-medium leading-6 text-slate-700">{selectedBiometricInsight.interpretation}</p>
-                <p className="mt-2 text-xs font-medium text-slate-500">Source time range: {formatAiTimestamp(biometricsInsight?.timeRange.from)} to {formatAiTimestamp(biometricsInsight?.timeRange.to)}. Clinician review is required.</p>
-              </div>
-            ) : biometricsInsight && biometricsAiStatus !== "loading" ? <p className="mt-2 text-sm font-medium text-slate-600">No AI interpretation was returned for {biometricMetric.toLowerCase()} in this window.</p> : null}
-          </div>
         </CardContent>
       </Card>
 
@@ -1267,57 +1273,9 @@ export default function CareEpisodeInsightsPage() {
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <h2 className="text-base font-bold text-slate-900">Laboratory Results</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Patient-uploaded results linked to this care episode</p>
-          <div className="mt-4 space-y-3">
-            {labResultsLoading ? (
-              Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="h-20 animate-pulse rounded-lg bg-slate-100" />
-              ))
-            ) : labResults.length === 0 ? (
-              <p className="py-8 text-center text-sm font-medium text-slate-500">No lab results uploaded yet.</p>
-            ) : (
-              labResults.map((result) => (
-                <div key={result.id} className="rounded-lg border border-slate-200 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-primary">
-                        <FlaskConical className="h-5 w-5" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">{formatLabResultTitle(result)}</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500">{formatLabResultMeta(result) || "Date not provided"}</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500">Uploaded {formatDateTimeLabel(result.createdAt)}</p>
-                        {result.notes ? <p className="mt-2 text-sm font-medium italic text-slate-600">{result.notes}</p> : null}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold uppercase", LAB_RESULT_STATUS_BADGE[result.status])}>
-                        {result.status.replaceAll("_", " ")}
-                      </span>
-                      {result.fileUrl ? (
-                        <a
-                          href={result.fileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-label={`Open ${formatLabResultTitle(result)}`}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-slate-500 hover:bg-slate-50"
-                        >
-                          <Download className="h-4 w-4" />
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-xl border-border bg-white shadow-sm">
-        <CardContent className="p-4 sm:p-6">
           <h2 className="text-base font-bold text-slate-900">Clinical Media</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Images attached to the patient&apos;s latest check-in</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">Patient-uploaded images and laboratory documents for this care episode.</p>
+          {mediaReviewError ? <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">{mediaReviewError}</p> : null}
           {clinicalMedia.length === 0 ? (
             <p className="py-8 text-center text-sm font-medium text-slate-500">No clinical media uploaded yet.</p>
           ) : (
@@ -1336,12 +1294,12 @@ export default function CareEpisodeInsightsPage() {
                     </span>
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-bold text-slate-900">{media.title}</p>
-                    <p className="text-xs font-medium text-slate-500">UPLOADED {media.uploadedAt}</p>
+                    <p className="text-sm font-semibold text-slate-900">{media.title}</p>
+                    <p className="whitespace-nowrap text-[10px] font-medium text-slate-500">{media.uploadedAt}</p>
                     <div className="mt-3 flex items-center gap-2">
                       <Button
                         type="button"
-                        onClick={() => setActiveMedia(media)}
+                        onClick={() => { void openClinicalMedia(media); }}
                         className="h-9 flex-1 rounded-lg bg-primary text-xs font-bold text-white hover:bg-primary/90"
                       >
                         View Details

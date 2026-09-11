@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronLeft,
   Mail,
-  MessageSquare,
   Minus,
   Phone,
   Pill,
@@ -26,6 +25,7 @@ import {
 import {
   Area,
   AreaChart,
+  Line,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -34,18 +34,14 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   asRecord,
   closeCareEpisode,
+  buildDailyVitalsFromCheckins,
   getCareEpisodeById,
+  getCareEpisodeCheckins,
   getCareEpisodeDailyVitals,
   getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
@@ -53,10 +49,10 @@ import {
   getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
   getNumber,
-  getRecordArray,
   getString,
   type ApiRecord,
   type CareEpisodeDetail,
+  type CheckInHistoryRecord,
   type DailyVitalsRecord,
   type EpisodeForecast,
   type MedicationAdherenceRecord,
@@ -101,11 +97,27 @@ function getInitials(name: string) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
-function getProgressPercent(dayStart: number | null, expectedDurationDays: number | null) {
-  if (!dayStart || !expectedDurationDays) return 0;
-  return clamp(Math.round((dayStart / expectedDurationDays) * 100));
+function formatPatientGender(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return "--";
+  if (normalized === "prefer_not_to_say" || normalized === "prefer not to say") return "Prefer not to say";
+  return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function getProgressPercent(recoveryDay: number | null, expectedDurationDays: number | null) {
+  if (!recoveryDay || !expectedDurationDays) return 0;
+  return clamp(Math.round((recoveryDay / expectedDurationDays) * 100));
+}
+
+function getCurrentRecoveryDay(currentDay: number | null, createdAt: string, expectedDurationDays: number | null) {
+  const apiDay = currentDay != null && Number.isFinite(currentDay) ? Math.max(1, Math.round(currentDay)) : null;
+  if (apiDay != null) return expectedDurationDays == null ? apiDay : Math.min(apiDay, Math.max(1, Math.round(expectedDurationDays)));
+
+  const startedAt = Date.parse(createdAt);
+  if (!Number.isFinite(startedAt)) return null;
+  const elapsedDays = Math.floor(Math.max(0, Date.now() - startedAt) / 86_400_000) + 1;
+  return expectedDurationDays == null ? elapsedDays : Math.min(elapsedDays, Math.max(1, Math.round(expectedDurationDays)));
+}
 function getHeaderRiskBadge(riskCategory: string | null) {
   const value = (riskCategory ?? "").toLowerCase();
   if (value === "critical") return { label: "Critical", className: "bg-red-50 text-red-700" };
@@ -140,12 +152,6 @@ function getTrendMeta(trend: string | null) {
   return { label: "Stable", className: "bg-blue-50 text-primary", Icon: Minus };
 }
 
-function isMedicationAdherent(medication: ApiRecord) {
-  const status = getString(medication, ["status", "adherenceStatus"]).toLowerCase();
-  if (status) return status === "taken" || status === "adherent" || status === "completed";
-  return medication.adherent === true || medication.taken === true;
-}
-
 function getTimelineCategory(event: ApiRecord): TimelineEntry["category"] {
   const status = getString(event, ["status"]).toLowerCase();
   const type = getString(event, ["eventType", "type", "category"]).toLowerCase();
@@ -157,13 +163,62 @@ function getTimelineCategory(event: ApiRecord): TimelineEntry["category"] {
   return "completed";
 }
 
+function hasMeaningfulTimelineValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasMeaningfulTimelineValue);
+  if (value && typeof value === "object") {
+    return Object.values(value as ApiRecord).some(hasMeaningfulTimelineValue);
+  }
+  if (typeof value === "number") return Number.isFinite(value) && value > 0;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return Boolean(normalized) && !["0", "false", "none", "null", "n/a", "na"].includes(normalized);
+  }
+  return false;
+}
+
+function hasPositiveSummaryCount(summary: string, terms: string[]) {
+  for (const term of terms) {
+    const match = summary.match(new RegExp("(\\d+)\\s+" + term));
+    if (match) return Number(match[1]) > 0;
+  }
+  return null;
+}
+
+function normalizeCheckinTitle(payload: ApiRecord, summary: string) {
+  const symptomsFromPayload = ["symptoms", "symptomCount", "symptomsCount"].some((key) => hasMeaningfulTimelineValue(payload[key]));
+  const vitalsFromPayload = ["vitals", "vitalCount", "vitalsCount"].some((key) => hasMeaningfulTimelineValue(payload[key]));
+  const symptomsFromSummary = hasPositiveSummaryCount(summary, ["symptoms?", "symptom"]);
+  const vitalsFromSummary = hasPositiveSummaryCount(summary, ["vitals?", "vital"]);
+  const hasSymptoms = symptomsFromPayload || symptomsFromSummary === true ||
+    (symptomsFromSummary === null && summary.includes("symptom") && !summary.includes("no symptom"));
+  const hasVitals = vitalsFromPayload || vitalsFromSummary === true ||
+    (vitalsFromSummary === null && summary.includes("vital") && !summary.includes("no vital"));
+
+  if (hasSymptoms && hasVitals) return "Symptom and vitals check-in submitted";
+  if (hasSymptoms) return "Symptom check-in submitted";
+  if (hasVitals) return "Vitals submitted";
+  return "Daily check-in submitted";
+}
+
 function normalizeTimelineEntry(event: ApiRecord, index: number): TimelineEntry {
   const eventType = getString(event, ["eventType", "type"], "update");
   const payload = asRecord(event.payload) ?? {};
+  const payloadSummary = getString(payload, ["message", "title", "details", "description", "summary"]);
+  const eventKey = eventType.toLowerCase().replace(/[\s-]+/g, "_");
+  const summary = `${eventKey} ${payloadSummary}`.toLowerCase();
+  const isPatientNote = eventKey.includes("patient_note") || summary.includes("patient note");
+  const isCheckin = eventKey.includes("checkin") || eventKey.includes("check_in") ||
+    summary.includes("daily check-in") || summary.includes("daily check in");
+  const title = isPatientNote
+    ? "Patient note added"
+    : isCheckin
+      ? normalizeCheckinTitle(payload, summary)
+      : getString(payload, ["message", "title"]) || humanizeSlug(eventType) || "Update";
   return {
     id: getString(event, ["id", "_id"]) || `event-${index}`,
-    title: getString(payload, ["message", "title"]) || humanizeSlug(eventType) || "Update",
-    description: getString(payload, ["details", "description", "note", "summary"]),
+    title,
+    description: isPatientNote || isCheckin ? "" : getString(payload, ["details", "description", "note", "summary"]),
     status: getString(event, ["status"], "Completed"),
     type: humanizeSlug(eventType) || "Update",
     source: getString(event, ["source"], "System"),
@@ -255,21 +310,21 @@ function MetricCard({
   children?: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-xl border-border bg-white shadow-sm">
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-start justify-between">
-          <p className="text-xs font-bold uppercase tracking-[0.04em] text-slate-500">{label}</p>
+    <Card className="h-full rounded-xl border-border bg-white shadow-sm">
+      <CardContent className="flex h-full min-h-[132px] flex-col p-4">
+        <div className="flex min-h-8 items-start justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.04em] text-slate-500">{label}</p>
           {trend ? (
-            <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold", trend.className)}>
+            <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold", trend.className)}>
               <trend.Icon className="h-3 w-3" />
               {trend.label}
             </span>
           ) : null}
         </div>
-        <p className="mt-3 text-2xl font-bold text-slate-900 sm:text-3xl">
+        <p className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
           {isLoading ? <span className="inline-block h-7 w-16 animate-pulse rounded bg-slate-100" /> : value}
         </p>
-        {children}
+        {children ? <div className="mt-auto pt-3">{children}</div> : null}
       </CardContent>
     </Card>
   );
@@ -321,6 +376,7 @@ export default function CareEpisodeDetailPage() {
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
   const [episodeForecast, setEpisodeForecast] = useState<EpisodeForecast | null>(null);
   const [forecastError, setForecastError] = useState("");
+  const [checkinHistory, setCheckinHistory] = useState<CheckInHistoryRecord[]>([]);
   const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
   const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
   const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
@@ -348,9 +404,13 @@ export default function CareEpisodeDetailPage() {
       setIsLoading(true);
       setError("");
       try {
-        const detail = await getCareEpisodeById(episodeId);
+        const [detail, history] = await Promise.all([
+          getCareEpisodeById(episodeId),
+          getCareEpisodeCheckins(episodeId, { page: 1, limit: 500 }).catch(() => []),
+        ]);
         if (ignore) return;
         setEpisode(detail);
+        setCheckinHistory(history);
 
         try {
           const timelinePage = await getCareEpisodeTimelinePage(episodeId, { limit: 100 });
@@ -456,10 +516,17 @@ export default function CareEpisodeDetailPage() {
       ignore = true;
     };
   }, [episodeId, refreshKey]);
-  const biometricData = useMemo(
-    () => buildBiometricData(biometricMetric, dailyVitals),
-    [biometricMetric, dailyVitals],
+  const biometricDays = BIOMETRIC_RANGES.find((range) => range.key === biometricRange)?.days ?? 14;
+  const fallbackVitals = useMemo(
+    () => buildDailyVitalsFromCheckins(checkinHistory, biometricDays),
+    [biometricDays, checkinHistory],
   );
+  const biometricData = useMemo(() => {
+    const currentData = buildBiometricData(biometricMetric, dailyVitals);
+    return currentData.length > 0 || fallbackVitals.length === 0
+      ? currentData
+      : buildBiometricData(biometricMetric, fallbackVitals);
+  }, [biometricMetric, dailyVitals, fallbackVitals]);
   const biometricUnit = BIOMETRIC_METRICS.find((item) => item.label === biometricMetric)?.unit ?? "";
   const todayKey = localDateKey(new Date());
   const careTaskRows = useMemo(
@@ -470,16 +537,24 @@ export default function CareEpisodeDetailPage() {
   const monitoring = useMemo(() => {
     if (!episode) return null;
 
-    const checkin = episode.latestCheckin;
-    const checkInConsistency = getPercentField(checkin, ["consistency", "checkInConsistency", "consistencyScore", "score", "rate"]) ?? 0;
-    const checkInTrend = getTrendMeta(getString(checkin, ["trend", "consistencyTrend"]));
+    const latestCheckin = episode.latestCheckin;
+    const checkinDates = new Set([
+      ...checkinHistory.map((checkin) => checkin.submittedAt),
+      ...(checkinHistory.length === 0 ? [getString(latestCheckin, ["submittedAt"])] : []),
+    ].map((submittedAt) => {
+      const parsed = Date.parse(submittedAt);
+      return Number.isFinite(parsed) ? localDateKey(new Date(parsed)) : "";
+    }).filter(Boolean));
+    const currentRecoveryDay = getCurrentRecoveryDay(episode.currentDay ?? episode.dayStart, episode.createdAt, episode.expectedDurationDays);
+    const expectedCheckins = Math.max(1, currentRecoveryDay ?? checkinDates.size);
+    const checkInConsistency = clamp(Math.round((Math.min(checkinDates.size, expectedCheckins) / expectedCheckins) * 100));
+    const checkInTrend = getTrendMeta(getString(latestCheckin, ["trend", "consistencyTrend"]));
 
-    const medications = getRecordArray(episode.currentCarePlan, ["medications"]);
-    const fallbackAdherentCount = medications.filter(isMedicationAdherent).length;
-    const fallbackAdherence = medications.length > 0 ? clamp(Math.round((fallbackAdherentCount / medications.length) * 100)) : 0;
-    const medicationAdherence = medicationRecords.length > 0
-      ? clamp(Math.round(medicationRecords.reduce((total, medication) => total + medication.adherencePercentage, 0) / medicationRecords.length))
-      : fallbackAdherence;
+    const totalMedicationDoses = medicationRecords.reduce((total, medication) => total + medication.totalDoses, 0);
+    const takenMedicationDoses = medicationRecords.reduce((total, medication) => total + medication.takenCount, 0);
+    const medicationAdherence = totalMedicationDoses > 0
+      ? clamp(Math.round((takenMedicationDoses / totalMedicationDoses) * 100))
+      : null;
     const medicationTrend = getTrendMeta(getString(episode.currentCarePlan, ["medicationTrend", "adherenceTrend"]));
 
     const missedTasks = careTaskRows.filter((task) => task.missed && !task.done);
@@ -487,8 +562,8 @@ export default function CareEpisodeDetailPage() {
     const lastMissedLabel = lastMissed?.label ?? "";
 
     const completedTasks = taskCompletion?.completed ?? careTaskRows.filter((task) => task.done).length;
-    const engagementScore = clamp(Math.round((checkInConsistency + medicationAdherence) / 2));
-    const engagementTier = engagementScore >= 75 ? "High" : engagementScore >= 45 ? "Moderate" : "Low";
+    const engagementScore = getPercentField(episode.riskData, ["engagementScore", "engagement", "engagementRate"]);
+    const engagementTier = engagementScore === null ? "Unavailable" : engagementScore >= 75 ? "High" : engagementScore >= 45 ? "Moderate" : "Low";
     const engagementTrend = getTrendMeta(getString(episode.riskData, ["engagementTrend"]));
 
     return {
@@ -503,7 +578,7 @@ export default function CareEpisodeDetailPage() {
       engagementTier,
       engagementTrend,
     };
-  }, [careTaskRows, episode, medicationRecords, taskCompletion]);
+  }, [careTaskRows, checkinHistory, episode, medicationRecords, taskCompletion]);
 
   const medicationCompletionTimeline = useMemo(() => {
     if (!episode) return [];
@@ -517,15 +592,14 @@ export default function CareEpisodeDetailPage() {
 
 
   const outcomes = useMemo(() => {
-    const riskScore = episode?.riskScore ?? null;
-    const fallbackDeteriorationRisk = riskScore === null ? null : clamp(Math.round(riskScore));
-    const fallbackRecoveryProbability = fallbackDeteriorationRisk === null ? null : clamp(100 - fallbackDeteriorationRisk);
-    const recoveryProbability = episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? fallbackRecoveryProbability;
-    const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? fallbackDeteriorationRisk;
+    const recoveryProbability = episodeForecast?.recoveryForecast.dataSufficiency === "insufficient"
+      ? null
+      : episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
+    const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
     const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
 
     return { recoveryProbability, deteriorationRisk, relapseRisk };
-  }, [episode, episodeForecast]);
+  }, [episodeForecast]);
 
   const closureSummary = useMemo<EpisodeOutcomeSummary>(() => {
     if (!episode) return { checkInCompletion: null, goalAchievementPercent: null, missedTasksCount: null };
@@ -589,13 +663,15 @@ export default function CareEpisodeDetailPage() {
 
   const patient = episode.patient;
   const patientName = patient?.name || "Unknown Patient";
+  const patientGender = formatPatientGender(patient?.gender);
   const riskBadge = getHeaderRiskBadge(episode.riskCategory);
-  const progressPercent = episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays);
+  const recoveryDay = getCurrentRecoveryDay(episode.currentDay, episode.createdAt, episode.expectedDurationDays);
+  const progressPercent = getProgressPercent(recoveryDay, episode.expectedDurationDays);
   const visibleCareTeam = episode.careTeam.slice(0, 3);
   const extraCareTeamCount = Math.max(episode.careTeam.length - visibleCareTeam.length, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Link
         href="/dashboard/care-episodes"
         className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900"
@@ -609,15 +685,19 @@ export default function CareEpisodeDetailPage() {
       ) : null}
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex flex-1 items-start gap-4">
-              <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-primary text-2xl font-bold text-white">
-                {getInitials(patientName)}
+              <span
+                aria-label={`${patientName} profile picture`}
+                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary bg-cover bg-center text-xl font-bold text-white"
+                style={patient?.avatarUrl ? { backgroundImage: `url(${patient.avatarUrl})` } : undefined}
+              >
+                {patient?.avatarUrl ? null : getInitials(patientName)}
               </span>
-              <div className="min-w-0 flex-1 space-y-2">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-bold text-slate-900 md:text-xl">{patientName}</h1>
+                  <h1 className="text-base font-bold text-slate-900 md:text-lg">{patientName}</h1>
                   <span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>
                     {riskBadge.label}
                   </span>
@@ -651,15 +731,11 @@ export default function CareEpisodeDetailPage() {
                   </Link>
                 </div>
 
-                <p className="text-sm font-medium text-slate-500">
-                  Hospital ID: {patient?.hospitalId || "--"} - Age: {patient?.age ?? "--"} - {patient?.gender || "--"}
-                </p>
-                <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Episode started {formatLongDate(episode.createdAt)}
+                <p className="text-xs font-medium text-slate-500">
+                  Hospital ID: {patient?.hospitalId || "--"} <span className="mx-2 text-slate-400">•</span> Age: {patient?.age ?? "--"} <span className="mx-2 text-slate-400">•</span> {patientGender}
                 </p>
 
-                <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-slate-500">
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
                   <span className="font-bold text-slate-700">Contact Information:</span>
                   <span className="inline-flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5" />
@@ -671,8 +747,13 @@ export default function CareEpisodeDetailPage() {
                   </span>
                 </p>
 
+                <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Episode started {formatLongDate(episode.createdAt)}
+                </p>
+
                 {patient?.emergencyContactName || patient?.emergencyContactPhone ? (
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-500">
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
                     <span className="font-bold text-slate-700">Emergency Contact:</span>
                     {patient?.emergencyContactName || "--"}
                     {patient?.emergencyContactPhone ? (
@@ -686,80 +767,52 @@ export default function CareEpisodeDetailPage() {
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col">
+            <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row lg:items-end lg:flex-col">
 
                 <Button
                   asChild
                   variant="outline"
                   onClick={() => capturePostHogEvent("patient_insights_opened", { episode_id: episode.id })}
-                  className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  className="h-10 w-full gap-1.5 rounded-lg border-border bg-white px-3 text-xs font-semibold text-slate-900 hover:bg-slate-50 sm:w-auto"
                 >
                   <Link href={`/dashboard/care-episodes/${episode.id}/insights`}>
-                    <TrendingUp className="h-4 w-4" />
-                    Patients Insights
+                    <Stethoscope className="h-3.5 w-3.5" />
+                    Patient Insights
                   </Link>
                 </Button>
 
               <Button
                 asChild
                 variant="outline"
-                className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                className="h-10 w-full gap-1.5 rounded-lg border-border bg-white px-3 text-xs font-semibold text-slate-900 hover:bg-slate-50 sm:w-auto"
               >
                 <Link href={`/dashboard/care-episodes/${episode.id}/recovery`}>
-                  <TrendingUp className="h-4 w-4" />
+                  <TrendingUp className="h-3.5 w-3.5" />
                   Recovery
                 </Link>
               </Button>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 gap-2 rounded-xl border-border bg-white px-5 text-sm font-bold text-slate-900 hover:bg-slate-50"
-                  >
-                    Actions
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 rounded-lg border-border p-1.5">
-                  <DropdownMenuItem
-                    asChild
-                    onSelect={() => capturePostHogEvent("care_episode_message_opened", { episode_id: episode.id })}
-                    className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-900"
-                  >
-                    <Link
-                      href={`/dashboard/messages?${new URLSearchParams({
-                        episodeId: episode.id,
-                        patientId: episode.patientId,
-                        patientName,
-                      })}`}
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                      Send Message
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      capturePostHogEvent("care_episode_close_opened", { episode_id: episode.id });
-                      setCloseDialogOpen(true);
-                    }}
-                    className="cursor-pointer gap-2 rounded-md px-3 py-2 text-sm font-medium text-red-600 focus:bg-red-50 focus:text-red-600"
-                  >
-                    <X className="h-4 w-4" />
-                    Close Care Episode
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  capturePostHogEvent("care_episode_close_opened", { episode_id: episode.id });
+                  setCloseDialogOpen(true);
+                }}
+                className="h-10 w-full gap-1.5 rounded-lg border-red-200 bg-white px-3 text-xs font-semibold text-red-600 hover:bg-red-50 sm:w-auto"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close Episode
+              </Button>
 
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 rounded-lg bg-blue-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-slate-700">
-              <span className="font-bold text-primary">CARE EPISODE:</span> {episode.carePhase || episode.diagnosis || "--"}
+          <div className="mt-4 flex flex-col gap-2.5 rounded-lg bg-blue-50 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-medium text-slate-700">
+              <span className="font-bold text-primary">CARE EPISODE:</span> {episode.diagnosis || "--"}
               <span className="mx-3 text-slate-500">|</span>
-              Recovery Day {episode.dayStart ?? 0} of {episode.expectedDurationDays ?? 0}
+              Recovery Day {recoveryDay ?? "--"} of {episode.expectedDurationDays ?? "--"}
             </p>
             <div className="flex flex-1 items-center gap-3 sm:max-w-xs">
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-white">
@@ -771,34 +824,35 @@ export default function CareEpisodeDetailPage() {
         </CardContent>
       </Card>
 
-      <section>
-        <h2 className="mb-4 text-base font-bold text-slate-900">Monitoring &amp; Analytics</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Card className="rounded-xl border-border bg-white shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <h2 className="mb-4 text-base font-bold text-slate-900">Monitoring &amp; Analytics</h2>
+        <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             label="Check-in Consistency"
             value={`${monitoring?.checkInConsistency ?? 0}%`}
             trend={monitoring?.checkInTrend}
             isLoading={isLoading}
           >
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${monitoring?.checkInConsistency ?? 0}%` }} />
             </div>
           </MetricCard>
 
           <MetricCard
             label="Medication Adherence"
-            value={`${monitoring?.medicationAdherence ?? 0}%`}
+            value={monitoring?.medicationAdherence == null ? "--" : `${monitoring.medicationAdherence}%`}
             trend={monitoring?.medicationTrend}
             isLoading={isLoading}
           >
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
               <div className="h-full rounded-full bg-primary" style={{ width: `${monitoring?.medicationAdherence ?? 0}%` }} />
             </div>
           </MetricCard>
 
           <MetricCard
             label="Missed Tasks"
-            value={String(monitoring?.missedTasksCount ?? 0).padStart(2, "0")}
+            value={String(monitoring?.missedTasksCount ?? 0)}
             trend={
               (monitoring?.missedTasksCount ?? 0) > 0
                 ? { label: "Warning", className: "bg-red-50 text-red-500", Icon: AlertTriangle }
@@ -806,21 +860,22 @@ export default function CareEpisodeDetailPage() {
             }
             isLoading={isLoading}
           >
-            <p className="mt-3 text-xs font-medium text-slate-500">
+            <p className="text-xs font-medium text-slate-500">
               {monitoring?.lastMissedLabel ? `Last missed: ${monitoring.lastMissedLabel}` : "No missed tasks recorded"}
             </p>
           </MetricCard>
 
           <MetricCard
             label="Engagement Score"
-            value={`${monitoring?.engagementScore ?? 0}%`}
+            value={monitoring?.engagementScore == null ? "--" : `${monitoring.engagementScore}%`}
             trend={monitoring?.engagementTrend}
             isLoading={isLoading}
           >
-            <p className="mt-3 text-xs font-medium text-slate-500">{monitoring?.engagementTier ?? "Moderate"} engagement last week</p>
+            <p className="text-xs font-medium text-slate-500">{monitoring?.engagementScore == null ? "Engagement formula unavailable" : `${monitoring.engagementTier} engagement`}</p>
           </MetricCard>
         </div>
-      </section>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
@@ -831,6 +886,8 @@ export default function CareEpisodeDetailPage() {
                 <button
                   type="button"
                   onClick={() => setMetricMenuOpen((open) => !open)}
+                  aria-label="Select biometric"
+                  aria-expanded={metricMenuOpen}
                   className="flex h-10 items-center gap-2 rounded-lg border border-border bg-white px-4 text-sm font-medium text-slate-900 hover:bg-slate-50"
                 >
                   {biometricMetric}
@@ -863,6 +920,8 @@ export default function CareEpisodeDetailPage() {
                     key={range.key}
                     type="button"
                     onClick={() => setBiometricRange(range.key)}
+                    aria-label={`Show ${range.key} biometric range`}
+                    aria-pressed={biometricRange === range.key}
                     className={cn(
                       "rounded-md px-3 py-1.5 transition-colors",
                       biometricRange === range.key ? "bg-primary text-white" : "text-slate-500 hover:text-slate-900",
@@ -882,7 +941,7 @@ export default function CareEpisodeDetailPage() {
               <p className="text-sm font-medium text-slate-500">No {biometricMetric.toLowerCase()} readings are available for this period.</p>
             </div>
           ) : (
-          <div className="mt-6" style={{ width: "100%", height: 300 }}>
+          <div className="mt-6 h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={biometricData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
@@ -901,6 +960,30 @@ export default function CareEpisodeDetailPage() {
                   width={70}
                 />
                 <Tooltip formatter={(value) => [`${value} ${biometricUnit}`, biometricMetric]} />
+                {biometricMetric === "Blood Pressure" ? (
+                  <Line
+                    type="monotone"
+                    dataKey="secondaryValue"
+                    stroke="var(--color-sky-600)"
+                    strokeWidth={2}
+                    dot={(dotProps: { cx?: number; cy?: number; payload?: BiometricPoint; index?: number }) => {
+                      const { cx, cy, payload, index } = dotProps;
+                      if (cx === undefined || cy === undefined) return <g key={index} />;
+                      return (
+                        <circle
+                          key={index}
+                          cx={cx}
+                          cy={cy}
+                          r={payload?.secondaryAbnormal ? 5 : 3}
+                          fill={payload?.secondaryAbnormal ? "var(--color-red-500)" : "var(--color-sky-600)"}
+                          stroke="var(--color-card)"
+                          strokeWidth={1.5}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 5 }}
+                  />
+                ) : null}
                 <Area
                   type="monotone"
                   dataKey="value"
@@ -930,52 +1013,77 @@ export default function CareEpisodeDetailPage() {
           )}
 
           {biometricData.length > 0 ? (
-          <div className="mt-4 flex items-center gap-5 text-xs font-medium text-slate-500">
+          <div className="mt-4 flex flex-wrap items-center gap-5 text-xs font-medium text-slate-500">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-primary" />
-              Primary Metric
+              {biometricMetric === "Blood Pressure" ? "Systolic" : "Primary Metric"}
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              Abnormal Spike Detected
-            </span>
+            {biometricMetric === "Blood Pressure" ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-sky-600" />
+                Diastolic
+              </span>
+            ) : null}
+{biometricData.some((point) => point.abnormal || point.secondaryAbnormal) ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                Abnormal Spike Detected
+              </span>
+            ) : null}
           </div>
           ) : null}
         </CardContent>
       </Card>
 
-      <section>
-        <h2 className="mb-4 text-base font-bold text-slate-900">Recovery Outcomes</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Card className="rounded-xl border-border bg-white shadow-sm">
-            <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Recovery Probability</p>
-              <CircularProgress percent={outcomes.recoveryProbability} trackColor="var(--color-blue-50)" progressColor="var(--color-primary)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.recoveryForecast.confidence}% confidence` : forecastError || "Derived from current risk score"}</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl border-border bg-white shadow-sm">
-            <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Risk of Deterioration</p>
-              <CircularProgress percent={outcomes.deteriorationRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.deterioration.horizonDays}-day forecast` : forecastError || "Current episode risk score"}</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl border-border bg-white shadow-sm">
-            <CardContent className="flex flex-col items-center p-6 text-center">
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Relapse Risk Forecast</p>
-              <CircularProgress percent={outcomes.relapseRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
-              <p className="mt-4 text-xs font-medium text-slate-500">{episodeForecast ? `${episodeForecast.relapse.horizonDays}-day forecast` : forecastError || "Forecast unavailable"}</p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
+      <Card className="rounded-xl border-border bg-white shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <h2 className="mb-4 text-base font-bold text-slate-900">Recovery Outcomes</h2>
+          <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-3">
+            <Card className="h-full rounded-xl border-border bg-slate-50/60 shadow-none">
+              <CardContent className="flex h-full min-h-[220px] flex-col items-center p-6 text-center">
+                <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Recovery Probability</p>
+                <CircularProgress percent={outcomes.recoveryProbability} trackColor="var(--color-blue-50)" progressColor="var(--color-primary)" />
+                <p className="mt-4 text-xs font-medium text-slate-500">
+                  {!episodeForecast
+                    ? forecastError || "Forecast unavailable"
+                    : episodeForecast.recoveryForecast.dataSufficiency === "insufficient"
+                      ? "Insufficient data"
+                      : `${episodeForecast.recoveryForecast.confidence}% confidence`}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="h-full rounded-xl border-border bg-slate-50/60 shadow-none">
+              <CardContent className="flex h-full min-h-[220px] flex-col items-center p-6 text-center">
+                <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Risk of Deterioration</p>
+                <CircularProgress percent={outcomes.deteriorationRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
+                <p className="mt-4 text-xs font-medium text-slate-500">
+                  {!episodeForecast
+                    ? forecastError || "Forecast unavailable"
+                    : `${episodeForecast.deterioration.horizonDays}-day forecast · ${episodeForecast.deterioration.confidence}% confidence`}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="h-full rounded-xl border-border bg-slate-50/60 shadow-none">
+              <CardContent className="flex h-full min-h-[220px] flex-col items-center p-6 text-center">
+                <p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Relapse Risk Forecast</p>
+                <CircularProgress percent={outcomes.relapseRisk} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
+                <p className="mt-4 text-xs font-medium text-slate-500">
+                  {!episodeForecast
+                    ? forecastError || "Forecast unavailable"
+                    : outcomes.relapseRisk == null || episodeForecast.relapse.dataSufficiency === "insufficient"
+                      ? "Insufficient data"
+                      : `${episodeForecast.relapse.horizonDays}-day forecast · ${episodeForecast.relapse.confidence}% confidence`}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
       <Card className="rounded-xl border-border bg-white shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-bold text-slate-900">Unified Care Timeline</h2>
-            <Link href={`/dashboard/care-episodes/${episode.id}/timeline`} className="text-sm font-bold text-primary">
+            <Link href={`/dashboard/care-episodes/${episode.id}/timeline`} className="text-sm font-bold text-primary underline underline-offset-2">
               View full page
             </Link>
           </div>
@@ -985,11 +1093,11 @@ export default function CareEpisodeDetailPage() {
           ) : (
             <>
               <p className="mb-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Today</p>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {displayedTimeline.map((event) => {
                   const iconMeta = TIMELINE_ICON[event.category];
                   return (
-                    <div key={event.id} className="flex gap-3 rounded-lg border border-slate-200 p-4">
+                    <div key={event.id} className="flex gap-3 rounded-lg border border-slate-200 p-3">
                       <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", iconMeta.className)}>
                         <iconMeta.Icon className="h-4.5 w-4.5" />
                       </span>

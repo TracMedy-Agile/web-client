@@ -4,9 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
+  BrainCircuit,
   AlertTriangle,
   ArrowLeft,
+  CalendarCheck,
   CalendarClock,
+  ClipboardCheck,
+  HeartPulse,
   CalendarPlus,
   CheckCircle2,
   ChevronLeft,
@@ -15,7 +19,7 @@ import {
   Pencil,
   Plus,
   Send,
-  Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -71,12 +75,13 @@ type RecoveryAlert = {
   thresholdDetails: ClinicalAlert["thresholdDetails"];
 };
 
-function buildExpectedProgression(totalDays: number): ProgressionPoint[] {
+function buildRecoveryProgression(totalDays: number, currentDay: number | null, actualRecovery: number | null): ProgressionPoint[] {
   const total = Math.max(totalDays, 1);
+  const actualDay = currentDay == null ? null : Math.min(Math.max(Math.round(currentDay), 1), total);
   return Array.from({ length: total }, (_, index) => ({
-    day: `DAY ${index + 1}`,
+    day: "DAY " + (index + 1),
     expected: clamp(Math.round(((index + 1) / total) * 100)),
-    actual: null,
+    actual: actualRecovery != null && actualDay === index + 1 ? clamp(Math.round(actualRecovery)) : null,
   }));
 }
 
@@ -173,6 +178,14 @@ function latestVitalsSummary(records: DailyVitalsRecord[]) {
   return values.length > 0 ? values.join(" - ") : "Vitals entry has no supported measurements";
 }
 
+function formatPhaseLabel(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function coveragePercent(value: number, total: number | null) {
+  if (total == null || total <= 0) return null;
+  return clamp(Math.round((value / total) * 100));
+}
 export default function CareEpisodeRecoveryPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -300,6 +313,11 @@ export default function CareEpisodeRecoveryPage() {
   const forecastDaysRemaining = episodeForecast?.recoveryForecast.predictedTimelineDays ?? null;
   const assessmentCount = assessmentDates.length;
   const lastAssessment = assessmentDates.at(0) ?? assessmentDates.at(-1) ?? "";
+  const biometricEntryCount = dailyVitals.filter((item) => item.hasEntry).length;
+  const biometricCoverage = coveragePercent(biometricEntryCount, dailyVitals.length);
+  const elapsedDays = episode?.dayStart != null ? Math.max(episode.dayStart, 1) : null;
+  const clinicalInputCoverage = coveragePercent(assessmentCount, elapsedDays);
+  const interventionCoverage = coveragePercent(timeline.length, elapsedDays);
 
   if (isLoading && !episode) return <SubHeaderSkeleton episodeId={episodeId} />;
   if (error && !episode) {
@@ -309,7 +327,7 @@ export default function CareEpisodeRecoveryPage() {
 
   const patient = episode.patient;
   const riskBadge = getHeaderRiskBadge(episode.riskCategory);
-  const overallProgress = episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays);
+  const overallProgress = clamp(Math.round(episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays)));
   const expectedRecoveryDate = (() => {
     if (episodeForecast?.recoveryForecast.expectedRecoveryDate) return formatLongDate(episodeForecast.recoveryForecast.expectedRecoveryDate);
     if (!episode.createdAt || !episode.expectedDurationDays) return "--";
@@ -322,14 +340,25 @@ export default function CareEpisodeRecoveryPage() {
     ? null
     : Math.max(episode.expectedDurationDays - episode.dayStart, 0);
   const daysRemaining = forecastDaysRemaining ?? baselineDaysRemaining;
-  const progression = buildExpectedProgression(episode.expectedDurationDays ?? 1);
+  const actualRecovery = episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
+  const progression = buildRecoveryProgression(episode.expectedDurationDays ?? 1, episode.dayStart, actualRecovery);
+  const hasActualRecovery = progression.some((point) => point.actual != null);
   const latestVitals = latestVitalsSummary(dailyVitals);
-  const summary = [
-    episode.riskCategory ? `Current risk is ${episode.riskCategory.toLowerCase()}${episode.riskScore != null ? ` (${episode.riskScore})` : ""}.` : "No current risk classification is available.",
-    adherence != null ? `Medication adherence is ${adherence}% with ${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}.` : "No medication-adherence records are available.",
-    `${latestVitals}.`,
-  ].join(" ");
-
+  const recoveryPhaseLabel = episode.carePhase ? formatPhaseLabel(episode.carePhase) : "--";
+  const trajectorySummary = (() => {
+    const trajectory = recoveryProbability == null
+      ? "being monitored"
+      : recoveryProbability >= 70
+        ? "favorable"
+        : recoveryProbability >= 40
+          ? "steady and requiring continued monitoring"
+          : "at risk and requiring closer review";
+    const forecastText = recoveryProbability == null ? "" : ` Predicted recovery is ${recoveryProbability}%.`;
+    const adherenceText = adherence == null ? "" : ` Care-plan adherence is ${adherence}%.`;
+    const riskText = episode.riskCategory ? ` Current risk is ${formatPhaseLabel(episode.riskCategory).toLowerCase()}.` : "";
+    const timelineText = daysRemaining == null ? "" : ` The expected recovery window has ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining.`;
+    return `The patient's recovery trajectory is ${trajectory}.${forecastText}${adherenceText}${riskText}${timelineText}`;
+  })();
   const openAction = (action: string, href: string) => {
     capturePostHogEvent("recovery_action_opened", { episode_id: episodeId, action });
     router.push(href);
@@ -356,37 +385,36 @@ export default function CareEpisodeRecoveryPage() {
   };
   return (
     <div className="space-y-6 pb-8">
-      <button type="button" aria-label="Back to care episode" onClick={() => router.push(`/dashboard/care-episodes/${episodeId}`)} className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"><ArrowLeft className="h-4 w-4" /></button>
+      <button type="button" aria-label="Back to care episode" onClick={() => router.push(`/dashboard/care-episodes/${episodeId}`)} className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowLeft className="h-4 w-4" />Back to Care Episode</button>
 
       <div>
         <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold text-foreground">Recovery &amp; Outcomes</h1><span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>{riskBadge.label === "High" ? "AT RISK" : riskBadge.label.toUpperCase()}</span></div>
-        <p className="mt-1 text-sm font-medium text-muted-foreground">A comprehensive intelligence overview for patient {patient?.name || "Unknown Patient"} ({patient?.hospitalId || "--"})</p>
+        <p className="mt-1 text-sm font-medium text-muted-foreground">A comprehensive intelligence overview for patient <strong className="font-bold text-foreground">{patient?.name || "Unknown Patient"}</strong> (<strong className="font-bold text-foreground">{patient?.hospitalId || "--"}</strong>)</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Expected Recovery" value={expectedRecoveryDate} detail={daysRemaining == null ? "Duration unavailable" : `${daysRemaining} days remaining`} />
-        <MetricCard label="Recovery Phase" value={episode.carePhase || "--"} detail="Care phase from episode API" valueClassName="text-destructive" />
-        <MetricCard label="Care Plan Adherence" value={adherence == null ? "--" : `${adherence}%`} detail={adherence == null ? "No adherence records" : `${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}`} progress={adherence} />
-        <MetricCard label="Overall Progress" value={`${overallProgress}%`} detail="Elapsed episode duration" progress={overallProgress} />
+        <MetricCard icon={<CalendarCheck className="h-4 w-4" />} label="Expected Recovery" value={expectedRecoveryDate} detail={daysRemaining == null ? "Duration unavailable" : `${daysRemaining} days remaining`} />
+        <MetricCard icon={<HeartPulse className="h-4 w-4" />} label="Recovery Phase" value={recoveryPhaseLabel} detail="Current care phase" valueClassName="text-destructive" />
+        <MetricCard icon={<ClipboardCheck className="h-4 w-4" />} label="Care Plan Adherence" value={adherence == null ? "--" : `${adherence}%`} detail={adherence == null ? "No adherence records" : `${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}`} progress={adherence} />
+        <MetricCard icon={<TrendingUp className="h-4 w-4" />} label="Overall Progress" value={`${overallProgress}%`} detail={episode.expectedDurationDays ? `Day ${episode.dayStart ?? "--"} of ${episode.expectedDurationDays}` : "Duration unavailable"} progress={overallProgress} />
       </div>
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-6">
-            <div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" /><h2 className="text-base font-bold text-foreground">Recovery Intelligence</h2></div>
-            <p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">Episode data summary</p>
-            <div className="mt-4 rounded-lg bg-primary/5 p-4"><p className="mb-1 text-xs font-bold uppercase text-primary">Clinical data summary</p><p className="text-sm font-medium text-foreground/80">{summary}</p></div>
+            <div className="flex items-center gap-2"><BrainCircuit className="h-5 w-5 text-primary" /><h2 className="text-xl font-bold text-foreground">Recovery Intelligence</h2></div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">System-generated insights</p>
+            <div className="mt-4 rounded-lg border-l-4 border-primary bg-blue-50 p-4"><p className="mb-1 text-sm font-bold text-primary">Trajectory Summary</p><p className="text-sm font-medium leading-6 text-foreground/80">{trajectorySummary}</p></div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Recovery Progression Over Time</p><span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className="h-0.5 w-3 border-t-2 border-dashed border-muted-foreground" />Expected schedule</span></div>
-            <div className="mt-4 h-[260px] w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={progression}><CartesianGrid vertical={false} stroke="hsl(var(--border))" /><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={30} /><Tooltip /><Line type="monotone" dataKey="expected" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} /></LineChart></ResponsiveContainer></div>
-            <p className="mt-2 text-xs text-muted-foreground">The API does not provide an actual recovery trajectory, so only the expected schedule is shown.</p>
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Recovery Progression Over Time</p><div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 border-t-2 border-dashed border-muted-foreground" />Expected</span><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 bg-primary" />Actual</span></div></div>
+            <div className="mt-4 h-[260px] w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={progression} margin={{ top: 8, right: 12, left: -8, bottom: 2 }}><CartesianGrid vertical={false} stroke="hsl(var(--border))" /><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} /><YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={30} /><Tooltip /><Line type="monotone" dataKey="expected" name="Expected" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} /><Line type="monotone" dataKey="actual" name="Actual" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4, fill: "hsl(var(--primary))", strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls={false} /></LineChart></ResponsiveContainer></div>
+            <p className="mt-2 text-xs text-muted-foreground">{hasActualRecovery ? "Actual recovery is plotted from the latest forecast on day " + (episode.dayStart ?? "--") + "." : "Actual recovery data is not available for this episode yet."}</p>
 
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Contributing Factors</p>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FactorCard title="Care Plan Adherence" value={adherence == null ? "--" : `${adherence}%`} detail={adherence == null ? "No medication logs" : `${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}`} />
-              <FactorCard title="Biometric Trends" value={`${dailyVitals.filter((item) => item.hasEntry).length} entries`} detail={latestVitals} />
-              <FactorCard title="Clinical Inputs" value={`${assessmentCount} assessments`} detail={lastAssessment ? `Last ${formatLongDate(lastAssessment)}` : "No assessments recorded"} />
-              <FactorCard title="Recent Interventions" value={`${timeline.length} events`} detail="From the care-episode timeline" />
+              <FactorCard title="Care Plan Adherence" percent={adherence} detail={adherence == null ? "No medication logs available" : missedDoseCount + " missed dose" + (missedDoseCount === 1 ? "" : "s") + " recorded"} />
+              <FactorCard title="Biometric Trends" percent={biometricCoverage} detail={biometricCoverage == null ? "No daily vitals available" : biometricEntryCount + " of " + dailyVitals.length + " days with recorded vitals" + (latestVitals ? "; " + latestVitals : "")} />
+              <FactorCard title="Clinical Inputs" percent={clinicalInputCoverage} detail={clinicalInputCoverage == null ? "No assessments recorded" : assessmentCount + " assessment" + (assessmentCount === 1 ? "" : "s") + " across " + elapsedDays + " elapsed day" + (elapsedDays === 1 ? "" : "s")} />
+              <FactorCard title="Recent Interventions" percent={interventionCoverage} detail={interventionCoverage == null ? "No timeline interventions recorded" : timeline.length + " timeline event" + (timeline.length === 1 ? "" : "s") + " across " + elapsedDays + " elapsed day" + (elapsedDays === 1 ? "" : "s")} />
             </div>
           </CardContent></Card>
 
@@ -405,7 +433,7 @@ export default function CareEpisodeRecoveryPage() {
 
         <div className="space-y-6">
 
-          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><h2 className="text-base font-bold text-foreground">Clinical Action Workspace</h2><p className="mt-1 text-sm font-medium text-muted-foreground">Initiate interventions based on recovery insights.</p><div className="mt-4 space-y-3">
+          <Card className="rounded-xl border-primary/10 bg-blue-50 shadow-sm"><CardContent className="p-4 sm:p-5"><h2 className="text-base font-bold text-foreground">Clinical Action Workspace</h2><p className="mt-1 text-xs font-medium text-muted-foreground">Initiate interventions based on recovery insights.</p><div className="mt-4 space-y-3">
             <ActionButton icon={<Pencil className="h-4 w-4" />} title="Adjust Care Plan" detail="Open care plan editor" onClick={() => openAction("adjust_care_plan", `/dashboard/care-episodes/${episodeId}/recovery/adjust-plan`)} />
             <ActionButton icon={<CalendarPlus className="h-4 w-4" />} title="Schedule Follow-up" detail="Open appointment modal" onClick={openScheduleFollowUp} />
             <ActionButton icon={<Send className="h-4 w-4" />} title="Send Patient Instruction" detail="Open messaging module" onClick={() => openAction("send_instruction", `/dashboard/messages?${new URLSearchParams({ episodeId, patientId: episode.patientId, patientName: patient?.name || "Patient" })}`)} />
@@ -524,12 +552,35 @@ export default function CareEpisodeRecoveryPage() {
   );
 }
 
-function MetricCard({ label, value, detail, progress, valueClassName }: { label: string; value: string; detail: string; progress?: number | null; valueClassName?: string }) {
-  return <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p><p className={cn("mt-2 text-xl font-bold text-foreground", valueClassName)}>{value}</p>{progress != null ? <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div> : null}<p className="mt-1 text-xs font-medium text-muted-foreground">{detail}</p></CardContent></Card>;
+function MetricCard({ icon, label, value, detail, progress, valueClassName }: { icon: React.ReactNode; label: string; value: string; detail: string; progress?: number | null; valueClassName?: string }) {
+  return (
+    <Card className="rounded-xl border-border bg-card shadow-sm">
+      <CardContent className="min-h-[142px] p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">{icon}</span>
+        </div>
+        <p className={cn("mt-3 text-sm font-bold text-foreground", valueClassName)}>{value}</p>
+        {progress != null ? <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${clamp(progress)}%` }} /></div> : null}
+        <p className="mt-2 text-xs font-medium text-muted-foreground">{detail}</p>
+      </CardContent>
+    </Card>
+  );
 }
-
-function FactorCard({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return <div className="rounded-lg border border-border p-4"><div className="flex items-start justify-between gap-3"><p className="text-sm font-bold text-foreground">{title}</p><p className="shrink-0 text-sm font-bold text-primary">{value}</p></div><p className="mt-2 text-xs font-medium text-muted-foreground">{detail}</p></div>;
+function FactorCard({ title, percent, detail }: { title: string; percent: number | null; detail: string }) {
+  const displayPercent = percent == null ? "--" : String(percent) + "%";
+  return (
+    <div className="min-h-[132px] rounded-lg border border-border bg-muted/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-bold text-foreground">{title}</p>
+        <p className="shrink-0 text-sm font-bold text-primary">{displayPercent}</p>
+      </div>
+      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: (percent == null ? 0 : clamp(percent)) + "%" }} />
+      </div>
+      <p className="mt-3 text-xs font-medium leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  );
 }
 
 function OutcomeCard({ label, detail, percent }: { label: string; detail: string; percent: number | null }) {
@@ -537,7 +588,7 @@ function OutcomeCard({ label, detail, percent }: { label: string; detail: string
 }
 
 function ActionButton({ icon, title, detail, onClick }: { icon: React.ReactNode; title: string; detail: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-lg bg-muted/60 p-3 text-left hover:bg-muted"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{title}</span><span className="block text-xs font-medium text-muted-foreground">{detail}</span></span><ChevronRight className="h-4 w-4 text-muted-foreground" /></button>;
+  return <button type="button" onClick={onClick} className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-colors hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{title}</span><span className="block text-xs font-medium text-muted-foreground">{detail}</span></span><ChevronRight className="h-4 w-4 text-muted-foreground" /></button>;
 }
 
 
