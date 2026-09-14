@@ -263,7 +263,6 @@ export default function Navbar({ title = "Dashboard" }: NavbarProps) {
               ) : unreadCount === 0 ? (
                 <div className={'px-4 py-10 text-center'}>
                   <p className={'text-sm font-bold text-foreground'}>All notifications have been read</p>
-                  <Link href="/dashboard/notifications" onClick={() => setIsNotificationsOpen(false)} className={'mt-3 inline-flex items-center text-sm font-bold text-primary hover:underline'}>View all notifications &rarr;</Link>
                 </div>
               ) : notifications.length === 0 ? (
                 <p className={'px-4 py-10 text-center text-sm text-muted-foreground'}>No unread notifications found.</p>

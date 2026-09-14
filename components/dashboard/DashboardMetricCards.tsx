@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, HeartPulse, ShieldAlert, TrendingUp, Users } from "lucide-react";
 import MetricCard from "@/components/dashboard/MetricCard";
+
 import { getAlertsSnapshot } from "@/lib/api/alerts";
 import { getCareEpisodes, type CareEpisodeRecord } from "@/lib/api/care-episodes";
 import { getFacilityForecastSummary } from "@/lib/api/dashboard";
@@ -109,7 +110,9 @@ function buildMetrics(
   const alertCurrentStart = dateKeyForOffset(-6);
   const alertPreviousStart = dateKeyForOffset(-13);
   const alertPreviousEnd = dateKeyForOffset(-7);
-  const activeEpisodes = episodes.data.filter((episode) => episode.status.toLowerCase() === "active");
+  const episodeRows = episodes.data;
+  const activeAlerts = alerts.active;
+  const activeEpisodes = episodeRows.filter((episode) => episode.status.toLowerCase() === "active");
   const currentEpisodes = activeEpisodes.filter((episode) => inRange(episode.createdAt, currentStart, today));
   const previousEpisodes = activeEpisodes.filter((episode) => inRange(episode.createdAt, previousStart, previousEnd));
   const currentHighRisk = currentEpisodes.filter(isHighRiskEpisode).length;
@@ -117,7 +120,7 @@ function buildMetrics(
   const currentRecovery = currentEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
   const previousRecovery = previousEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
   const allRecovery = activeEpisodes.map(recoveryProgress).filter((value): value is number => value !== null);
-  const criticalAlerts = alerts.active.filter((alert) => alert.severity === "critical");
+  const criticalAlerts = activeAlerts.filter((alert) => alert.severity === "critical");
   const currentCriticalAlerts = criticalAlerts.filter((alert) => inRange(alert.timestamp, alertCurrentStart, today)).length;
   const previousCriticalAlerts = criticalAlerts.filter((alert) => inRange(alert.timestamp, alertPreviousStart, alertPreviousEnd)).length;
 
@@ -153,7 +156,10 @@ export default function DashboardMetricCards() {
           getReportsSnapshot(getReportsDateRange(30)).catch(() => null),
           getFacilityForecastSummary().catch(() => null),
         ]);
-        if (!ignore) setMetrics(buildMetrics(episodes, alerts, report, forecast));
+        if (!ignore) {
+          setMetrics(buildMetrics(episodes, alerts, report, forecast));
+          setHasError(false);
+        }
       } catch {
         if (!ignore) {
           setMetrics(emptyMetrics);
@@ -174,7 +180,8 @@ export default function DashboardMetricCards() {
 
   const change = (trend: Trend | null) => hasError ? "--" : trend?.change;
   const value = (metric: number | null, suffix = "") => {
-    if (hasError || metric === null) return "--";
+    if (hasError) return "--";
+    if (metric === null) return "--";
     return `${metric}${suffix}`;
   };
 

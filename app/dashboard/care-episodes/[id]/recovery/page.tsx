@@ -49,7 +49,7 @@ import { SubHeaderSkeleton } from "../_shared/SubHeader";
 import { CircularProgress } from "../_shared/CircularProgress";
 import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent, getSavedWarningSignsFromPlan } from "../_shared/utils";
 import { ReviewImpactModal, type ReviewImpactData } from "../components/ReviewImpactModal";
-import { buildCareTaskRows } from "../_shared/taskCompletion";
+import { buildCareTaskRows, type CareTaskRow } from "../_shared/taskCompletion";
 import ScheduleAppointmentModal, { type ScheduledAppointmentResult } from "@/app/dashboard/appointments/components/ScheduleAppointmentModal";
 
 type ProgressionPoint = { day: string; expected: number; actual: number | null };
@@ -72,6 +72,10 @@ type RecoveryAlert = {
   title: string;
   description: string;
   meta: string;
+  triggerSource: string;
+  status: ClinicalAlert["status"];
+  acknowledgedAt: string | null;
+  acknowledgedBy: string;
   thresholdDetails: ClinicalAlert["thresholdDetails"];
 };
 
@@ -92,9 +96,38 @@ function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
     title: alert.reason,
     description: `Triggered by ${alert.triggerSource}.`,
     meta: formatRelativeTime(alert.timestamp),
+    triggerSource: alert.triggerSource,
+    status: alert.status,
+    acknowledgedAt: alert.acknowledgedAt,
+    acknowledgedBy: alert.acknowledgedBy,
     thresholdDetails: alert.thresholdDetails,
   }));
 }
+
+function formatTaskClock(value: string) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return value;
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(parsed));
+}
+
+function taskDetailText(task: CareTaskRow) {
+  const completedAt = task.completedAt ? formatTaskClock(task.completedAt) : null;
+  const note = task.completion?.notes?.trim();
+  if (note) return `Logged ${note}${completedAt ? ` · ${completedAt}` : ""}`;
+  if (task.kind === "medication" && completedAt) return `Taken at: ${completedAt}${task.sub ? ` · Due ${task.sub}` : ""}`;
+  if (task.sub && completedAt) return `${task.sub} · Completed at ${completedAt}`;
+  if (task.sub) return task.sub;
+  if (completedAt) return `Completed at: ${completedAt}`;
+  return "Schedule not supplied";
+}
+
+function alertTone(alert: RecoveryAlert) {
+  if (alert.status !== "active") return { card: "border-emerald-200 bg-emerald-50/60", badge: "bg-emerald-100 text-emerald-700", label: "Acknowledged" };
+  if (alert.severity.toLowerCase() === "critical") return { card: "border-red-200 bg-red-50/70", badge: "bg-red-600 text-white", label: "Critical" };
+  if (alert.severity.toLowerCase() === "moderate") return { card: "border-amber-200 bg-amber-50/70", badge: "bg-amber-100 text-amber-800", label: "Moderate" };
+  return { card: "border-blue-200 bg-blue-50/70", badge: "bg-blue-100 text-blue-700", label: "Low" };
+}
+
 function vitalMetricForAlert(alert: RecoveryAlert, records: DailyVitalsRecord[]) {
   const text = `${alert.title} ${alert.description}`.toLowerCase();
   const candidates = text.includes("oxygen") || text.includes("spo2")
@@ -201,6 +234,7 @@ export default function CareEpisodeRecoveryPage() {
   const [taskDate, setTaskDate] = useState(() => localDateKey(new Date()));
   const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
   const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
+  const [lastTaskSyncAt, setLastTaskSyncAt] = useState<string | null>(null);
   const [reviewAlertId, setReviewAlertIdState] = useState<string | null>(null);
   const setReviewAlertId = (alertId: string | null) => setReviewAlertIdState(alertId);
   const [isLoading, setIsLoading] = useState(true);
@@ -284,6 +318,7 @@ export default function CareEpisodeRecoveryPage() {
       if (ignore) return;
       setTaskCompletion(completionResult.status === "fulfilled" ? completionResult.value : null);
       setTaskCompletionLog(logResult.status === "fulfilled" ? logResult.value : null);
+      if (completionResult.status === "fulfilled" || logResult.status === "fulfilled") setLastTaskSyncAt(new Date().toISOString());
     });
 
     return () => { ignore = true; };
@@ -305,8 +340,9 @@ export default function CareEpisodeRecoveryPage() {
   const displayedCompletedCount = taskCompletion?.completed ?? completedTaskCount;
   const displayedTaskCount = taskCompletion?.totalDue ?? dailyTasks.length;
   const taskCompletionPercent = taskCompletion
-    ? taskCompletion.completionRate * 100
-    : displayedTaskCount > 0 ? (displayedCompletedCount / displayedTaskCount) * 100 : 0;
+    ? clamp(taskCompletion.completionRate * 100)
+    : displayedTaskCount > 0 ? clamp((displayedCompletedCount / displayedTaskCount) * 100) : 0;
+  const lastTaskSyncLabel = lastTaskSyncAt ? formatRelativeTime(lastTaskSyncAt) : "awaiting sync";
   const recoveryProbability = episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
   const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
   const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
@@ -442,19 +478,19 @@ export default function CareEpisodeRecoveryPage() {
             <Card className="rounded-xl border-emerald-200 bg-emerald-50/70 shadow-sm">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                    <CheckCircle2 className="h-5 w-5" />
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-base font-bold text-foreground">Follow-up scheduled</h2>
-                    <p className="mt-1 text-sm font-medium text-muted-foreground">
+                    <h2 className="text-sm font-bold text-foreground">Follow-up scheduled</h2>
+                    <p className="mt-1 truncate whitespace-nowrap text-xs font-medium text-muted-foreground">
                       {appointmentTypeLabel(scheduledFollowUp.type)} on {formatLongDate(scheduledFollowUp.date)} at {scheduledFollowUp.time}
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => router.push(scheduledFollowUp.id ? `/dashboard/appointments/${encodeURIComponent(scheduledFollowUp.id)}` : "/dashboard/appointments")}
-                      className="mt-4 h-9 border-emerald-200 bg-white text-xs font-bold text-emerald-700 hover:bg-emerald-50"
+                      className="mt-3 h-8 border-emerald-200 bg-white px-3 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50"
                     >
                       Open in Appointments
                     </Button>
@@ -463,10 +499,10 @@ export default function CareEpisodeRecoveryPage() {
               </CardContent>
             </Card>
           ) : null}
-          <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} - Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
-            <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{displayedCompletedCount} / {displayedTaskCount} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${taskCompletionPercent}%` }} /></div>
-            <div className="mt-4 space-y-3">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-center gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className="block text-xs font-medium text-muted-foreground">{task.sub || "No schedule supplied"}</span></span></div>)}</div>
-            <p className="mt-4 flex items-center gap-1.5 text-xs font-medium text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Last synced {formatRelativeTime(episode.updatedAt)}</p>
+          <Card className="flex h-[480px] flex-col rounded-xl border-border bg-card shadow-sm"><CardContent className="flex min-h-0 flex-1 flex-col p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} - Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex shrink-0 items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
+            <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{displayedCompletedCount} / {displayedTaskCount} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${taskCompletionPercent}%` }} /></div>
+            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-start gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="mt-0.5 disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className={cn("block text-xs font-medium", task.missed ? "text-amber-700" : "text-muted-foreground")}>{taskDetailText(task)}</span></span></div>)}</div>
+            <div className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-[#BFE8F5] bg-[#E9F8FC] px-3 py-3 text-xs"><p className="flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Updating live</p><p className="font-medium text-muted-foreground">Last sync {lastTaskSyncLabel}</p></div>
           </CardContent></Card>
 
           <Card className="rounded-xl border-border bg-card shadow-sm">
@@ -479,31 +515,27 @@ export default function CareEpisodeRecoveryPage() {
                 <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span>
               </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
                 {alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : null}
                 {!alertsError && alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}
-                {alerts.map((alert) => (
-                  <div key={alert.id} className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase text-muted-foreground">{alert.severity}</span>
-                      <span className="rounded-full bg-destructive px-2.5 py-0.5 text-[10px] font-bold text-destructive-foreground">OPEN</span>
+                {alerts.map((alert) => {
+                  const tone = alertTone(alert);
+                  return (
+                    <div key={alert.id} className={cn("rounded-lg border p-3", tone.card)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{alert.severity}</span>
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", tone.badge)}>{tone.label}</span>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-medium text-muted-foreground">{alert.meta}</span>
+                      </div>
+                      <p className="mt-2 text-sm font-bold text-foreground">{alert.title}</p>
+                      <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">{alert.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-muted-foreground"><span>{alert.triggerSource}</span>{alert.acknowledgedBy ? <span>Acknowledged by {alert.acknowledgedBy}</span> : null}</div>
+                      <Button type="button" variant="outline" onClick={() => { setReviewAlertId(alert.id); capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id }); }} className="mt-3 h-8 w-full border-current/20 bg-white/70 text-xs font-bold text-foreground hover:bg-white">Review Impact</Button>
                     </div>
-                    <p className="mt-1.5 text-sm font-bold text-foreground">{alert.title}</p>
-                    <p className="mt-1 text-xs font-medium text-muted-foreground">{alert.description}</p>
-                    <p className="mt-2 text-xs font-medium text-muted-foreground">{alert.meta}</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setReviewAlertId(alert.id);
-                        capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id });
-                      }}
-                      className="mt-3 h-9 w-full border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10"
-                    >
-                      Review Impact
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {savedWarningSigns.length > 0 ? (
@@ -535,7 +567,7 @@ export default function CareEpisodeRecoveryPage() {
         initialPatient={{ id: episode.patientId, name: patient?.name || "Patient" }}
         initialAppointmentType="teleconsultation"
         initialCareEpisodeId={episodeId}
-        initialCareEpisodeLabel={`Care episode ${episode.id}`}
+        initialCareEpisodeLabel={episode.reference ? `Care episode ${episode.reference}` : "Current care episode"}
         initialReason="Recovery follow-up review"
         autoConfirm
       />
@@ -584,7 +616,7 @@ function FactorCard({ title, percent, detail }: { title: string; percent: number
 }
 
 function OutcomeCard({ label, detail, percent }: { label: string; detail: string; percent: number | null }) {
-  return <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="flex flex-col items-center p-6 text-center"><p className="mb-4 text-xs font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p><CircularProgress percent={percent} trackColor="hsl(var(--muted))" progressColor="hsl(var(--primary))" /><p className="mt-4 text-xs font-medium text-muted-foreground">{detail}</p></CardContent></Card>;
+  return <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="flex min-h-[224px] flex-col items-center p-4 text-center"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p><CircularProgress percent={percent} size={116} trackColor="hsl(var(--muted))" progressColor="hsl(var(--primary))" /><p className="mt-3 text-[10px] font-medium text-muted-foreground">{detail}</p></CardContent></Card>;
 }
 
 function ActionButton({ icon, title, detail, onClick }: { icon: React.ReactNode; title: string; detail: string; onClick: () => void }) {

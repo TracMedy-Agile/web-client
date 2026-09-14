@@ -25,27 +25,14 @@ type GuardedRoute = {
   permission: DashboardPermission;
 };
 
-// Only routes backed by real server-side enforcement are gated here. As of the Phase 12.6 backend
-// pass, TeamPermissionGuard is wired onto team.controller.ts (manage_team_members),
-// audit.controller.ts (audit_log), care-episodes.controller.ts (care_episode),
-// appointment.controller.ts (appointments), and analytics.controller.ts (view_all_reports) — and
-// the Team edit UI maps those five checkboxes directly to their matching backend values (no
-// collapsing), so they're both enforced AND satisfiable. connected_patients/alerts/messages are
-// NOT gated here: no facility/alerts/messaging route checks them, and the Team edit UI still
-// collapses all three of those checkboxes into the single `care_episode` value on save (see
-// TeamMemberActions.tsx), so the backend can never store those literal strings — gating those
-// pages would permanently lock clinicians out with no checkbox able to restore access.
-// Settings (`configure_settings`) is gated too, restoring a restriction that used to live in
-// middleware.ts and was dropped as a side effect of the login/session security-hardening rewrite —
-// Settings is meant to be hospital_admin-only. Nothing on the backend checks `configure_settings`
-// yet, and `/auth/me` doesn't return a clinician's actual granted permissions at all (see
-// docs/backend.md), so `canAccessDashboardPermission`'s fallback currently makes this behave as
-// blanket hospital_admin-only for every STRICT_PERMISSIONS entry, care_episode/appointments/
-// view_all_reports included — that's a real, separate backend bug, not something this route
-// addition causes. Once `/auth/me` is fixed to include a clinician's `FacilityStaffMember`
-// permissions, a clinician actually granted `configure_settings` will correctly gain access here
-// instead of this staying admin-only forever.
+// Routes with permission-backed screens are gated here. Connected Patients, Alerts, and
+// Messages share the care_episode value in the current Team Management contract; the provider
+// expands that bundle for the client so a removed care_episode grant becomes Access Restricted.
+// The backend response is still authoritative for the actual API request.
 const GUARDED_ROUTES: readonly GuardedRoute[] = [
+  { prefix: "/dashboard/connected-patients", permission: "connected_patients" },
+  { prefix: "/dashboard/alerts", permission: "alerts" },
+  { prefix: "/dashboard/messages", permission: "messages" },
   { prefix: "/dashboard/team", permission: "manage_team_members" },
   { prefix: "/dashboard/audit-logs", permission: "audit_log" },
   { prefix: "/dashboard/audit", permission: "audit_log" },
@@ -102,7 +89,8 @@ export default function DashboardPermissionGuard({ children }: { children: React
   const pathname = usePathname();
   const { status, user, refetch } = useDashboardUser();
   const [backendAccessDeniedPath, setBackendAccessDeniedPath] = useState<string | null>(null);
-  const backendAccessDenied = backendAccessDeniedPath === pathname;
+  const requiredPermission = requiredPermissionForPath(pathname);
+  const backendAccessDenied = requiredPermission ? backendAccessDeniedPath === pathname && !canAccessDashboardPermission(user, requiredPermission) : false;
 
   useEffect(() => {
     let active = true;
@@ -110,7 +98,7 @@ export default function DashboardPermissionGuard({ children }: { children: React
 
     const guardedFetch: typeof window.fetch = async (...args) => {
       const response = await originalFetch(...args);
-      if (active && response.status === 403 && isDashboardApiRequest(args[0])) {
+      if (active && response.status === 403 && isDashboardApiRequest(args[0]) && requiredPermissionForPath(window.location.pathname)) {
         setBackendAccessDeniedPath(window.location.pathname);
       }
       return response;
@@ -139,7 +127,6 @@ export default function DashboardPermissionGuard({ children }: { children: React
     return <AccessCheckError onRetry={refetch} />;
   }
 
-  const requiredPermission = requiredPermissionForPath(pathname);
   if (requiredPermission && !canAccessDashboardPermission(user, requiredPermission)) {
     return (
       <AccessDeniedState description="Your hospital has not granted your account permission to view this screen." />

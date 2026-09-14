@@ -4,18 +4,6 @@ Re-audited 2026-08-27, most recently against the `feat(phase-12.6): notify patie
 
 ---
 
-## `GET /auth/me` never returns a clinician's actual granted permissions — makes Care Episodes/Appointments/Reports effectively hospital_admin-only
-
-**What you'll see:** a clinician granted `care_episode`/`appointments`/`view_all_reports` in Team Management still gets "Access Restricted" on Care Episodes, Appointments, and Reports & Analytics — regardless of what was actually granted. Only hospital_admin accounts get through. Team and Audit Log are unaffected (see why below). Settings is intentionally hospital_admin-only regardless of this bug, so it's not listed here as an affected page — a clinician was never meant to reach it either way.
-
-**Why:** `permissions` and `accessProfile` live exclusively on `FacilityStaffMember` (`prisma/schema.prisma`), a separate model related to `User` via the `user.facilityStaffMember` relation — `User` itself has no such fields. But `AuthService.getMe()` (`auth.service.ts`) only does `this.prisma.user.findUnique({ where: { id: userId } })` with no `include` for `facilityStaffMember`, so the response the web-client uses to determine "what can I access" can never contain the clinician's actual granted permissions, no matter what Team Management saved.
-
-**Frontend status:** nothing to fix here — `DashboardUserProvider.tsx`'s parsing logic is already correctly written to consume `permissions`/`accessProfile` from `/auth/me` the moment the backend actually sends them; there's no other endpoint a limited-access clinician can call to self-fetch this (`team.controller.ts`'s routes all require `manage_team_members` themselves, so they can't even fetch their own staff record that way). Because the data never arrives, `canAccessDashboardPermission` falls back to a hardcoded default-deny list (`STRICT_PERMISSIONS`) for `connected_patients`/`care_episode`/`appointments`/`alerts`/`messages`/`configure_settings`/`view_all_reports` — which is why those pages currently behave as blanket hospital_admin-only regardless of what's actually granted. `manage_team_members` and `audit_log` aren't in that fallback list, so Team/Audit Log pass through instead of denying — that's why the symptom looks inconsistent ("some pages denied, some not") rather than uniformly broken.
-
-**Blocked on:** `getMe()` needs `include: { facilityStaffMember: true }` and to return `permissions`/`accessProfile` from it (alongside the existing `role`, etc.) in the `/auth/me` response.
-
----
-
 ## Care Episode → Insights: Patient Notes panel
 
 **What you'll see:** the panel correctly shows nothing for check-ins where the patient didn't type a note — don't mistake this for broken, it's accurate. But if a patient reports typing a note and it's still not showing:
@@ -30,14 +18,13 @@ Re-audited 2026-08-27, most recently against the `feat(phase-12.6): notify patie
 
 ## Team → Permissions: Connected Patients / Alerts / Messages checkboxes still do nothing
 
-**What you'll see:** unchecking "Manage Patients," "Alerts," or "Messages" for a staff member has no effect — they can still access those three areas regardless. (Care Episodes, Appointments, and Reports & Analytics are enforced by the backend and gated client-side too — but see the `/auth/me` entry above: none of them actually work correctly for a limited-access clinician yet, since the client never learns what was granted. This entry covers the three that additionally have no backend enforcement at all, even once `/auth/me` is fixed.)
+**What you'll see:** the current Team Management contract stores Connected Patients, Care Episodes, Alerts, and Messages as the shared `care_episode` permission. Removing that bundle removes access to the associated screens.
 
-**Why:** no route in `facility.controller.ts`, `alerts.controller.ts`, or `messaging.controller.ts` has `@TeamPermissionRequired(...)` — unlike `care-episodes`, `appointment`, and `analytics` controllers, which got it in the Phase 12.6 pass. Separately, even if those routes were guarded, the checkboxes couldn't satisfy them: the Team edit UI collapses "Connected patients," "Alerts," and "Messages" into the single `care_episode` value on save (`TeamMemberActions.tsx`), so the backend never stores those three literal strings.
+**Why:** no route in `facility.controller.ts`, `alerts.controller.ts`, or `messaging.controller.ts` has independent permission values for these screens. The Team edit UI therefore maps the four related checkboxes to `care_episode` until the backend publishes dedicated permissions.
 
-**Frontend status:** intentionally left ungated in `DashboardPermissionGuard.tsx` — blocking these pages client-side would lock clinicians out with no checkbox able to restore access, since backend enforcement doesn't exist yet either. Two related display/UX bugs fixed in the Edit Member modal and read-only Role & Access tab: (1) since these three collapse into `care_episode` on save, they were reading the literal never-stored `connected_patients`/`alerts`/`messages` keys and always showing unchecked even for a member who genuinely has `care_episode` access — both now treat them as checked whenever `care_episode` is present; (2) the four checkboxes (Connected patients/Care episodes/Alerts/Messages) are now toggled together as one linked group in the edit modal (`CARE_EPISODE_BUNDLE` in `TeamMemberActions.tsx`) — previously unchecking just one while the others stayed checked silently did nothing on save (since `care_episode` still got included via the sibling checkboxes), which looked like the uncheck reverted itself on reopen. This is the frontend's ceiling: it can make the four move honestly as a single unit, but it can't make them independently revocable — that still needs the backend to grant `care_episode` its own dedicated sub-permissions.
+**Frontend status:** Connected Patients, Alerts, and Messages are now guarded client-side and display the standard Access Restricted state when the clinician lacks the saved bundle permission. The auth parser reads the backend's `facilityStaffMember.permissions` response, and the permission guard maps `care_episode` to the bundled screens.
 
-**Blocked on:** backend adding `@TeamPermissionRequired(TeamPermission.CARE_EPISODE)` (or new dedicated permission values) to the facilities/alerts/messaging controllers, and deciding whether "Connected patients"/"Alerts"/"Messages" should keep collapsing into `care_episode` or become independently grantable.
-
+**Blocked on:** backend adding independent permission values and route enforcement if Connected Patients, Alerts, or Messages must be revocable separately rather than as one shared care-episode bundle.
 ---
 
 ## Settings -> Hospital Profile: address saves, but facility coordinates stay null

@@ -363,6 +363,7 @@ export default function ScheduleAppointmentModal({
   const [clinicians, setClinicians] = useState<ClinicianOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"patient" | "department" | "date" | "time", string>>>({});
   const [capacity, setCapacity] = useState<AppointmentCapacity | null>(null);
   const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
   const [isClinicianPickerOpen, setIsClinicianPickerOpen] = useState(false);
@@ -375,6 +376,7 @@ export default function ScheduleAppointmentModal({
       setSelectedPatientId(initialPatient?.id ?? "");
       setPatientResults([]);
       setApiError("");
+      setFieldErrors({});
       setCapacity(null);
     });
   }, [freshFormData, initialPatient?.id, open]);
@@ -496,6 +498,7 @@ export default function ScheduleAppointmentModal({
     setSelectedPatientId(initialPatient?.id ?? "");
     setPatientResults([]);
     setApiError("");
+    setFieldErrors({});
     setCapacity(null);
     onOpenChange(false);
   };
@@ -503,6 +506,7 @@ export default function ScheduleAppointmentModal({
   const selectPatient = (patient: PatientSearchResult) => {
     setSelectedPatientId(patient.id);
     setPatientResults([]);
+    setFieldErrors((current) => ({ ...current, patient: "" }));
     updateFormData("patient", patient.name);
   };
 
@@ -510,10 +514,16 @@ export default function ScheduleAppointmentModal({
     event.preventDefault();
     setApiError("");
 
-    if (!selectedPatientId) {
-      setApiError("Select a patient from the search results before adding an appointment.");
+    const nextFieldErrors: Partial<Record<"patient" | "department" | "date" | "time", string>> = {};
+    if (!selectedPatientId) nextFieldErrors.patient = "Select a patient from the search results.";
+    if (!formData.department.trim()) nextFieldErrors.department = "Select a department or service.";
+    if (!formData.date) nextFieldErrors.date = "Choose an appointment date.";
+    if (!formData.time) nextFieldErrors.time = "Choose an appointment time.";
+    if (Object.values(nextFieldErrors).some(Boolean)) {
+      setFieldErrors(nextFieldErrors);
       return;
     }
+    setFieldErrors({});
 
     if (!facilityId) {
       setApiError("Unable to determine your facility. Please sign in again and retry.");
@@ -577,7 +587,7 @@ export default function ScheduleAppointmentModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="max-h-[calc(100vh-232px)] overflow-y-auto px-4 sm:px-8 py-4 sm:py-7">
             <SectionHeader>Appointment Information</SectionHeader>
 
@@ -600,6 +610,7 @@ export default function ScheduleAppointmentModal({
                       setSelectedPatientId("");
                       setPatientResults([]);
                       setIsSearchingPatients(false);
+                      setFieldErrors((current) => ({ ...current, patient: "" }));
                       updateFormData("patient", event.target.value);
                     }}
                   />
@@ -623,6 +634,7 @@ export default function ScheduleAppointmentModal({
                   </div>
                 ) : null}
                 {selectedPatientId ? <span className="mt-2 block text-xs font-semibold text-emerald-600">Patient selected</span> : null}
+                {fieldErrors.patient ? <span className="mt-2 block text-xs font-semibold text-red-600">{fieldErrors.patient}</span> : null}
               </label>
 
               <label className="block">
@@ -631,8 +643,10 @@ export default function ScheduleAppointmentModal({
                   <select
                     className={cn(fieldClass, "appearance-none pr-10")}
                     value={formData.department}
-                    onChange={(event) => updateFormData("department", event.target.value)}
-                    required
+                    onChange={(event) => {
+                      setFieldErrors((current) => ({ ...current, department: "" }));
+                      updateFormData("department", event.target.value);
+                    }}
                   >
                     <option value="Cardiology">Cardiology</option>
                     <option value="Obstetrics">Obstetrics</option>
@@ -642,6 +656,7 @@ export default function ScheduleAppointmentModal({
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" />
                 </span>
+                {fieldErrors.department ? <span className="mt-2 block text-xs font-semibold text-red-600">{fieldErrors.department}</span> : null}
               </label>
             </div>
 
@@ -677,11 +692,12 @@ export default function ScheduleAppointmentModal({
                     onChange={(event) => {
                       setCapacity(null);
                       setIsCheckingCapacity(Boolean(event.target.value));
+                      setFieldErrors((current) => ({ ...current, date: "" }));
                       updateFormData("date", event.target.value);
                     }}
-                    required
                   />
                 </span>
+                {fieldErrors.date ? <span className="mt-2 block text-xs font-semibold text-red-600">{fieldErrors.date}</span> : null}
               </label>
 
               <label className="block">
@@ -693,10 +709,11 @@ export default function ScheduleAppointmentModal({
                   onChange={(event) => {
                     setCapacity(null);
                     setIsCheckingCapacity(Boolean(formData.date));
+                    setFieldErrors((current) => ({ ...current, time: "" }));
                     updateFormData("time", event.target.value);
                   }}
-                  required
                 />
+                {fieldErrors.time ? <span className="mt-2 block text-xs font-semibold text-red-600">{fieldErrors.time}</span> : null}
               </label>
 
               <label className="block">
