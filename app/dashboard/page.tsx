@@ -5,6 +5,7 @@ import DashboardMetricCards from "@/components/dashboard/DashboardMetricCards";
 import RecoveryTrend, { type RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import LiveAlerts, { type LiveAlert } from "@/components/dashboard/LiveAlerts";
 import WorkloadStatus, { type ClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
+import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import {
   getDashboardClinicianWorkload,
   getDashboardLiveAlerts,
@@ -15,6 +16,8 @@ import {
 const POLL_INTERVAL_MS = 60_000;
 
 export default function DashboardPage() {
+  const { user } = useDashboardUser();
+  const isClinician = [user?.role, user?.systemRole].some((role) => role?.toLowerCase() === "clinician");
   const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
   const [clinicianWorkload, setClinicianWorkload] = useState<ClinicianWorkload[]>([]);
   const [recoveryTrend, setRecoveryTrend] = useState<RecoveryTrendPoint[]>([]);
@@ -29,7 +32,7 @@ export default function DashboardPage() {
       if (showLoading) setIsPanelsLoading(true);
       const [alertsResult, workloadResult] = await Promise.allSettled([
         getDashboardLiveAlerts(),
-        getDashboardClinicianWorkload(),
+        getDashboardClinicianWorkload(4, isClinician ? user?.id : undefined, isClinician ? user?.name : undefined),
       ]);
 
       if (ignore) return;
@@ -44,7 +47,7 @@ export default function DashboardPage() {
       ignore = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [isClinician, user?.id, user?.name]);
 
 
   useEffect(() => {

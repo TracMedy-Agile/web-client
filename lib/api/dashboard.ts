@@ -3,6 +3,7 @@ import type { LiveAlert } from "@/components/dashboard/LiveAlerts";
 import type { RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import type { ClinicianWorkload as DashboardClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
 import { getAlertsSnapshot } from "@/lib/api/alerts";
+import { getCareEpisodes } from "@/lib/api/care-episodes";
 import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
 import { apiClient } from "@/lib/services/auth/api-client";
 
@@ -65,9 +66,16 @@ function relativeTime(value: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export async function getDashboardLiveAlerts(limit = 3): Promise<LiveAlert[]> {
+export async function getDashboardLiveAlerts(limit = 3, clinicianId?: string): Promise<LiveAlert[]> {
   const snapshot = await getAlertsSnapshot();
-  return snapshot.active.slice(0, limit).map((alert) => ({
+  let activeAlerts = snapshot.active;
+  if (clinicianId) {
+    const episodes = await getCareEpisodes({ page: 1, limit: 500 }).catch(() => null);
+    if (!episodes) return [];
+    const assignedEpisodeIds = new Set(episodes.data.filter((episode) => episode.clinicianId === clinicianId).map((episode) => episode.id));
+    activeAlerts = activeAlerts.filter((alert) => assignedEpisodeIds.has(alert.episodeId));
+  }
+  return activeAlerts.slice(0, limit).map((alert) => ({
     id: alert.id,
     patientName: alert.patientName,
     severity: alert.severity === "critical" ? "critical" : "moderate",
@@ -85,14 +93,39 @@ function normalizeLoad(value: string): DashboardClinicianWorkload["load"] {
   return "low";
 }
 
-export async function getDashboardClinicianWorkload(limit = 4): Promise<DashboardClinicianWorkload[]> {
-  const snapshot = await getReportsSnapshot(getReportsDateRange(30));
-  return snapshot.clinicians.slice(0, limit).map((clinician) => ({
-    id: clinician.id,
-    name: clinician.name,
-    load: normalizeLoad(clinician.status),
-    episodes: clinician.episodes,
-    alerts: clinician.alerts,
-    avgMinutes: clinician.responseMinutes ?? 0,
-  }));
+export async function getDashboardClinicianWorkload(limit = 4, clinicianId?: string, clinicianName?: string): Promise<DashboardClinicianWorkload[]> {
+  try {
+    const snapshot = await getReportsSnapshot(getReportsDateRange(30));
+    const clinicians = clinicianId ? snapshot.clinicians.filter((clinician) => clinician.id === clinicianId) : snapshot.clinicians;
+    if (clinicians.length > 0 || !clinicianId) {
+      return clinicians.slice(0, limit).map((clinician) => ({
+        id: clinician.id,
+        name: clinician.name,
+        load: normalizeLoad(clinician.status),
+        episodes: clinician.episodes,
+        alerts: clinician.alerts,
+        avgMinutes: clinician.responseMinutes ?? 0,
+      }));
+    }
+  } catch {
+    if (!clinicianId) throw new Error("Unable to load clinician workload.");
+  }
+
+  if (!clinicianId) return [];
+  const [episodes, alerts] = await Promise.all([
+    getCareEpisodes({ page: 1, limit: 500 }).catch(() => null),
+    getAlertsSnapshot().catch(() => null),
+  ]);
+  const assignedEpisodes = episodes?.data.filter((episode) => episode.clinicianId === clinicianId && episode.status.toLowerCase() === "active") ?? [];
+  const assignedEpisodeIds = new Set(assignedEpisodes.map((episode) => episode.id));
+  const openAlertCount = alerts?.active.filter((alert) => assignedEpisodeIds.has(alert.episodeId)).length ?? 0;
+  const load = openAlertCount >= 3 || assignedEpisodes.length >= 10 ? "high" : openAlertCount > 0 || assignedEpisodes.length >= 5 ? "moderate" : "low";
+  return [{
+    id: clinicianId,
+    name: clinicianName || "Current clinician",
+    load,
+    episodes: assignedEpisodes.length,
+    alerts: openAlertCount,
+    avgMinutes: 0,
+  }];
 }

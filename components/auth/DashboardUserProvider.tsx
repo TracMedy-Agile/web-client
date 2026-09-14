@@ -60,8 +60,9 @@ function ownValue(record: Record<string, unknown> | null, key: string) {
   return record[key];
 }
 
-const PERMISSION_KEYS = ["permissions", "permissionKeys", "grantedPermissions", "accessPermissions", "scopes"] as const;
+const PERMISSION_KEYS = ["permissions", "permissionKeys", "grantedPermissions", "accessPermissions", "scopes", "teamPermissions", "teamPermissionKeys"] as const;
 const STRICT_PERMISSIONS = new Set(["connected_patients", "care_episode", "appointments", "alerts", "messages", "configure_settings", "view_all_reports"]);
+const CARE_EPISODE_BUNDLE_PERMISSIONS = new Set(["connected_patients", "alerts", "messages"]);
 
 function permissionValues(record: Record<string, unknown> | null) {
   const key = PERMISSION_KEYS.find((permissionKey) => typeof ownValue(record, permissionKey) !== "undefined");
@@ -77,11 +78,15 @@ function permissionValues(record: Record<string, unknown> | null) {
 }
 
 function normalizePermissionKey(permission: string) {
-  const key = permission.trim().toLowerCase();
+  const key = permission.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (key === "view_connected_patients" || key === "manage_patients") return "connected_patients";
   if (key === "view_care_episodes" || key === "manage_care_episodes") return "care_episode";
   if (key === "view_alerts" || key === "acknowledge" || key === "acknowledge_alerts") return "alerts";
   if (key === "view_messages" || key === "send_messages") return "messages";
+  if (key === "view_team" || key === "manage_team") return "manage_team_members";
+  if (key === "view_audit_logs" || key === "view_audit_log") return "audit_log";
+  if (key === "view_reports_analytics" || key === "export_reports") return "view_all_reports";
+  if (key === "hospital_settings" || key === "manage_hospital_settings") return "configure_settings";
   return key;
 }
 
@@ -104,18 +109,21 @@ function unwrapAuthPayload(payload: unknown) {
 }
 
 function permissionRecords(payload: unknown) {
-  const root = asRecord(payload);
-  const outer = asRecord(root?.data) ?? root;
-  const data = unwrapAuthPayload(payload);
-  const records: Array<Record<string, unknown> | null> = [data, outer, root];
-  const nestedKeys = ["user", "staff", "clinician", "profile", "teamMember", "member", "access", "authorization"] as const;
+  const records: Array<Record<string, unknown>> = [];
+  const visited = new Set<Record<string, unknown>>();
+  const nestedKeys = new Set(["data", "result", "user", "staff", "clinician", "profile", "teamMember", "member", "facilityStaffMember", "facility_staff_member", "staffMember", "access", "authorization"]);
 
-  for (const record of [data, outer, root]) {
-    for (const key of nestedKeys) {
-      records.push(asRecord(record?.[key]));
+  function visit(value: unknown, depth: number) {
+    const record = asRecord(value);
+    if (!record || visited.has(record) || depth > 5) return;
+    visited.add(record);
+    records.push(record);
+    for (const [key, child] of Object.entries(record)) {
+      if (nestedKeys.has(key)) visit(child, depth + 1);
     }
   }
 
+  visit(payload, 0);
   return records;
 }
 
@@ -146,7 +154,9 @@ export function canAccessDashboardPermission(user: DashboardUser | null, permiss
   if (!user) return false;
   if (isDashboardAdmin(user)) return true;
   if (!user.permissionsLoaded) return !STRICT_PERMISSIONS.has(permission);
-  return user.accessProfile === "full_access" || user.permissions.includes("full_system_access") || user.permissions.includes(permission);
+  if (user.accessProfile === "full_access" || user.permissions.includes("full_system_access")) return true;
+  if (CARE_EPISODE_BUNDLE_PERMISSIONS.has(permission) && user.permissions.includes("care_episode")) return true;
+  return user.permissions.includes(permission);
 }
 
 function parseUser(payload: unknown): DashboardUser | null {
@@ -158,6 +168,10 @@ function parseUser(payload: unknown): DashboardUser | null {
   const role = firstString(data, ["role", "userRole", "accountRole"]) || firstString(outer, ["role", "userRole", "accountRole"]);
   const systemRole = firstString(data, ["systemRole", "roleType"]) || firstString(outer, ["systemRole", "roleType"]);
   const resolvedPermissions = resolvePermissions(payload);
+  const permissionRecordList = permissionRecords(payload);
+  const staffAccess = permissionRecordList.find((record) =>
+    typeof ownValue(record, "accessProfile") !== "undefined" || typeof ownValue(record, "accessLevel") !== "undefined",
+  ) ?? permissionRecordList.find((record) => permissionValues(record) !== null);
 
   const facility = asRecord(data.facility) ?? asRecord(outer?.facility) ?? asRecord(data.hospital) ?? asRecord(outer?.hospital);
   const facilityName = firstString(facility, ["name", "facilityName", "hospitalName"]);
@@ -176,7 +190,7 @@ function parseUser(payload: unknown): DashboardUser | null {
     facilityId: firstString(data, ["facilityId"]) || firstString(facility, ["id", "facilityId"]),
     hospitalId: firstString(data, ["hospitalId"]) || firstString(facility, ["hospitalId", "tracId"]),
     avatarUrl: firstString(data, ["avatarUrl", "photoUrl"]),
-    accessProfile: firstString(data, ["accessProfile", "accessLevel"]) || firstString(outer, ["accessProfile", "accessLevel"]),
+    accessProfile: (firstString(data, ["accessProfile", "accessLevel"]) || firstString(outer, ["accessProfile", "accessLevel"]) || firstString(staffAccess ?? null, ["accessProfile", "accessLevel"])).toLowerCase(),
     permissions: resolvedPermissions.permissions,
     permissionsLoaded: resolvedPermissions.permissionsLoaded,
   };
