@@ -206,7 +206,7 @@ export async function getClosedEpisodeSummary(episodeId: string): Promise<Closed
     episodeId,
     patient: {
       name: patientName,
-      patientCode: episode.patient?.hospitalId || episode.tracmedyPatientId || episode.patientId,
+      patientCode: episode.facility?.tracId || episode.patient?.hospitalId || episode.tracmedyPatientId || episode.patientId,
       age: episode.patient?.age ?? null,
       gender: episode.patient?.gender || "Not available",
       episodeCode: episode.reference || "Not available",

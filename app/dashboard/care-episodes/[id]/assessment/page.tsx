@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -12,21 +12,27 @@ import {
   Loader2,
   Sparkles,
   Stethoscope,
+  UserRound,
   X as XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getCareEpisodeById, getCurrentUserIdentity, type CareEpisodeDetail } from "@/lib/api/care-episodes";
 import { getAssessmentWorkspace, saveAssessment } from "@/lib/api/careTeamAndPlan.api";
+import { getLatestRecoverySummary, type EpisodeInsightPayload } from "@/lib/api/ai";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { createPlaceholderEpisode } from "../_shared/utils";
 import type { AssessmentOutcome, AssessmentWorkspaceEntry } from "../_shared/careTeamTypes";
 
+const SYMPTOM_STATUS_OPTIONS = ["Improving", "Stable", "Worsening", "Resolved", "New Symptoms", "Fluctuating", "Unable to Assess"] as const;
+const TREATMENT_RESPONSE_OPTIONS = ["Good Response", "Partial Response", "No Response", "Worsening Despite Treatment", "Adverse Reaction", "Treatment Not Yet Started", "Unable to Assess"] as const;
+const MAX_CLINICAL_NOTES_LENGTH = 2000;
 const OUTCOME_DOT_CLASSNAME: Record<AssessmentOutcome, string> = {
   Improving: "bg-emerald-500",
   Stable: "bg-primary",
@@ -78,7 +84,7 @@ function IntelligenceCard({
             onClick={() => setExpanded((current) => !current)}
             className="flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-500"
           >
-            {confidencePercent == null ? "LIVE DATA" : `${confidencePercent}% CONFIDENCE`}
+            {confidencePercent == null ? "CONFIDENCE UNAVAILABLE" : `${confidencePercent}% CONFIDENCE`}
             <ChevronUp className={cn("h-3.5 w-3.5 transition-transform", !expanded && "rotate-180")} />
           </button>
         </div>
@@ -105,6 +111,7 @@ export default function ClinicalAssessmentWorkspacePage() {
   const [episode, setEpisode] = useState<CareEpisodeDetail | null>(null);
   const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
   const [workspace, setWorkspace] = useState<AssessmentWorkspaceEntry | null>(null);
+  const [aiSummary, setAiSummary] = useState<EpisodeInsightPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [workspaceError, setWorkspaceError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -121,7 +128,7 @@ export default function ClinicalAssessmentWorkspacePage() {
     if (!episodeId) return;
     capturePostHogEvent("clinical_assessment_viewed", { episode_id: episodeId });
     let ignore = false;
-    Promise.allSettled([getCareEpisodeById(episodeId), getAssessmentWorkspace(episodeId), getCurrentUserIdentity()]).then(([episodeResult, workspaceResult, userResult]) => {
+    Promise.allSettled([getCareEpisodeById(episodeId), getAssessmentWorkspace(episodeId), getCurrentUserIdentity(), getLatestRecoverySummary(episodeId)]).then(([episodeResult, workspaceResult, userResult, aiResult]) => {
       if (ignore) return;
       if (episodeResult.status === "fulfilled") setEpisode(episodeResult.value);
       if (workspaceResult.status === "fulfilled") {
@@ -138,6 +145,11 @@ export default function ClinicalAssessmentWorkspacePage() {
         setWorkspaceError(workspaceResult.reason instanceof Error ? workspaceResult.reason.message : "Unable to load assessment data.");
       }
       if (userResult.status === "fulfilled") setClinicianName(userResult.value.name);
+      if (aiResult.status === "fulfilled" && aiResult.value.status === "success" && aiResult.value.summary) {
+        setAiSummary(aiResult.value.summary);
+      } else {
+        setAiSummary(null);
+      }
       setIsLoading(false);
     });
     return () => {
@@ -168,11 +180,7 @@ export default function ClinicalAssessmentWorkspacePage() {
       });
       capturePostHogEvent("clinical_assessment_saved", { episode_id: episodeId, outcome });
       toast.success("Assessment saved successfully.");
-      if (recommendedActions.includes("Adjust Care Plan")) {
-        router.push(`/dashboard/care-episodes/${episodeId}/care-plan`);
-      } else {
-        router.push(`/dashboard/care-episodes/${episodeId}/assessment-history`);
-      }
+      router.push(`/dashboard/care-episodes/${episodeId}/recovery`);
     } catch (requestError) {
       toast.error(requestError instanceof Error ? requestError.message : "Failed to save assessment.");
     } finally {
@@ -209,10 +217,23 @@ export default function ClinicalAssessmentWorkspacePage() {
     );
   }
 
+  const clinicalSources = aiSummary ? workspace.clinicalStatus.sources : [];
+  const hasClinicalSourceData = clinicalSources.length > 0;
+  const aiConfidencePercent = aiSummary && hasClinicalSourceData && aiSummary.dataSufficiency !== "insufficient" && Number.isFinite(aiSummary.confidence)
+    ? Math.round(Math.min(1, Math.max(0, aiSummary.confidence)) * 100)
+    : null;
+  const clinicalSummary = aiSummary && hasClinicalSourceData
+    ? aiSummary.summary
+    : aiSummary
+      ? "AI clinical intelligence is unavailable until contributing source data is recorded for this episode."
+      : "No AI clinical summary is available for this episode yet.";
+  const humanPatientId = displayEpisode.tracmedyPatientId || displayEpisode.patient?.hospitalId || "--";
+
   return (
     <div className="mx-auto max-w-[1200px] space-y-6 pb-8">
+      <div className="space-y-2">
       <Link
-        href={`/dashboard/care-episodes/${episodeId}`}
+        href={`/dashboard/care-episodes/${episodeId}/recovery`}
         className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -221,67 +242,78 @@ export default function ClinicalAssessmentWorkspacePage() {
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-bold text-slate-900 md:text-2xl">Clinical Assessment Workspace</h1>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
             <Sparkles className="h-3.5 w-3.5" />
-            Episode data loaded
+            AI Intelligence Loaded
           </span>
         </div>
         <p className="mt-1.5 text-sm font-medium text-slate-500">
-          {displayEpisode.patient?.name || "Patient"} · {displayEpisode.patient?.hospitalId || "--"} · Assessment #{workspace.assessmentNumber}
+          {displayEpisode.patient?.name || "Patient"} · {humanPatientId} · Assessment #{workspace.assessmentNumber}
         </p>
       </div>
 
+      </div>
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
-          <IntelligenceCard icon={<Stethoscope className="h-5 w-5" />} title="A · Clinical Status Intelligence" confidencePercent={workspace.clinicalStatus.confidencePercent}>
+          <IntelligenceCard icon={<Stethoscope className="h-5 w-5" />} title="A · Clinical Status Intelligence" confidencePercent={aiConfidencePercent}>
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
               <p className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.06em] text-blue-600">
                 <Sparkles className="h-3.5 w-3.5" />
                 Clinical Summary
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">{workspace.clinicalStatus.summary}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-700">{clinicalSummary}</p>
             </div>
             <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.06em] text-slate-500">Sources</p>
             <div className="flex flex-wrap gap-2">
-              {workspace.clinicalStatus.sources.map((source) => (
+              {clinicalSources.map((source) => (
                 <SourceTag key={source.label} label={source.label} />
               ))}
-              {workspace.clinicalStatus.sources.length === 0 ? <span className="text-xs font-medium text-slate-500">No current source data</span> : null}
+              {clinicalSources.length === 0 ? <span className="text-xs font-medium text-slate-500">No source data contributed to an AI summary yet.</span> : null}
             </div>
           </IntelligenceCard>
 
           <IntelligenceCard icon={<ClipboardList className="h-5 w-5" />} title="B · Care Plan Adherence Intelligence" confidencePercent={workspace.carePlanAdherence.confidencePercent}>
-            <p className="text-sm font-medium text-slate-500">{workspace.carePlanAdherence.summary}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-4">
-              <span className="text-4xl font-extrabold text-slate-900">{workspace.carePlanAdherence.adherencePercent == null ? "--" : `${workspace.carePlanAdherence.adherencePercent}%`}</span>
-              <div className="h-2 min-w-40 flex-1 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-amber-500" style={{ width: `${workspace.carePlanAdherence.adherencePercent ?? 0}%` }} />
+            <p className="text-sm font-semibold text-slate-700">Is the patient following the plan?</p>
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <p className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.06em] text-blue-600">
+                <Sparkles className="h-3.5 w-3.5" />
+                AI Summary
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-700">{workspace.carePlanAdherence.summary}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-4">
+                <span className="text-4xl font-extrabold text-slate-900">{workspace.carePlanAdherence.adherencePercent == null ? "--" : `${workspace.carePlanAdherence.adherencePercent}%`}</span>
+                <div className="h-2 min-w-40 flex-1 overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full bg-amber-500" style={{ width: `${workspace.carePlanAdherence.adherencePercent ?? 0}%` }} />
+                </div>
+                <span className={cn("inline-flex shrink-0 rounded-full px-3 py-1 text-xs font-bold", workspace.carePlanAdherence.trendPositive ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500")}>
+                  {workspace.carePlanAdherence.trendLabel}
+                  {workspace.carePlanAdherence.trendDeltaPercent == null ? "" : ` (${workspace.carePlanAdherence.trendDeltaPercent}%)`}
+                </span>
               </div>
-              <span className="inline-flex shrink-0 rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-500">
-                {workspace.carePlanAdherence.trendLabel}
-                {workspace.carePlanAdherence.trendDeltaPercent == null ? "" : ` (${workspace.carePlanAdherence.trendDeltaPercent}%)`}
-              </span>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.06em] text-slate-500">Supporting factors</p>
+            <div className="grid gap-2 sm:grid-cols-2">
               {workspace.carePlanAdherence.breakdown.map((item) => (
                 <span key={item.label} className={cn("inline-flex items-center gap-2 text-sm font-medium", item.positive ? "text-emerald-500" : "text-red-500")}>
                   {item.positive ? <CircleCheck className="h-4 w-4 shrink-0" /> : <XIcon className="h-4 w-4 shrink-0 rounded-full bg-red-50 p-0.5" />}
                   {item.label}
                 </span>
               ))}
+              {workspace.carePlanAdherence.breakdown.length === 0 ? <span className="text-xs font-medium text-slate-500">No supporting adherence factors are available.</span> : null}
             </div>
             <p className="mb-2 mt-4 text-xs font-extrabold uppercase tracking-[0.06em] text-slate-500">Sources</p>
             <div className="flex flex-wrap gap-2">
               {workspace.carePlanAdherence.sources.map((source) => (
                 <SourceTag key={source.label} label={source.label} />
               ))}
-              {workspace.carePlanAdherence.sources.length === 0 ? <span className="text-xs font-medium text-slate-500">No medication data available</span> : null}
+              {workspace.carePlanAdherence.sources.length === 0 ? <span className="text-xs font-medium text-slate-500">No care-plan data contributed to this adherence summary.</span> : null}
             </div>
           </IntelligenceCard>
 
           <div className="flex items-center gap-3">
             <div className="h-px flex-1 bg-slate-200" />
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-500">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-500 shadow-sm">
+              <Stethoscope className="h-3.5 w-3.5 text-primary" />
               Clinician Responds to Evidence
             </span>
             <div className="h-px flex-1 bg-slate-200" />
@@ -301,11 +333,26 @@ export default function ClinicalAssessmentWorkspacePage() {
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">Symptom Status</span>
-                  <input value={symptomStatus} onChange={(event) => setSymptomStatus(event.target.value)} className={fieldClass()} />
+                  <Select value={symptomStatus || undefined} onValueChange={setSymptomStatus}>
+                    <SelectTrigger className={fieldClass("justify-between")} aria-label="Symptom Status">
+                      <SelectValue placeholder="Select symptom status" />
+                    </SelectTrigger>
+                    <SelectContent className="border-border">
+                      {symptomStatus && !SYMPTOM_STATUS_OPTIONS.includes(symptomStatus as (typeof SYMPTOM_STATUS_OPTIONS)[number]) ? <SelectItem value={symptomStatus}>{symptomStatus}</SelectItem> : null}
+                      {SYMPTOM_STATUS_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="block">
                   <span className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">Treatment Response</span>
-                  <input value={treatmentResponse} onChange={(event) => setTreatmentResponse(event.target.value)} className={fieldClass()} />
+                  <Select value={treatmentResponse || undefined} onValueChange={setTreatmentResponse}>
+                    <SelectTrigger className={fieldClass("justify-between")} aria-label="Treatment Response">
+                      <SelectValue placeholder="Select treatment response" />
+                    </SelectTrigger>
+                    <SelectContent className="border-border">
+                      {TREATMENT_RESPONSE_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </label>
               </div>
               <label className="mt-4 block">
@@ -316,9 +363,14 @@ export default function ClinicalAssessmentWorkspacePage() {
                 <span className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-900">Clinical Assessment Notes</span>
                 <Textarea
                   value={clinicalNotes}
-                  onChange={(event) => setClinicalNotes(event.target.value)}
-                  className={cn(fieldClass(), "min-h-28 resize-none py-3 leading-6")}
+                  onChange={(event) => setClinicalNotes(event.target.value.slice(0, MAX_CLINICAL_NOTES_LENGTH))}
+                  maxLength={MAX_CLINICAL_NOTES_LENGTH}
+                  aria-describedby="clinical-notes-counter"
+                  className={cn(fieldClass(), "max-h-56 min-h-28 resize-none overflow-y-auto py-3 leading-6")}
                 />
+                <p id="clinical-notes-counter" className="mt-1.5 text-right text-xs font-medium text-slate-500">
+                  {clinicalNotes.length}/{MAX_CLINICAL_NOTES_LENGTH}
+                </p>
               </label>
             </CardContent>
           </Card>
@@ -398,7 +450,7 @@ export default function ClinicalAssessmentWorkspacePage() {
           >
             <Link href={`/dashboard/care-episodes/${episodeId}`}>Cancel</Link>
           </Button>
-          <p className="text-center text-xs font-medium text-slate-500">{clinicianName} · auto-timestamped</p>
+          <p className="flex items-center justify-center gap-1.5 text-center text-xs font-medium text-slate-500"><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{clinicianName} · auto-timestamped</p>
         </aside>
       </div>
     </div>

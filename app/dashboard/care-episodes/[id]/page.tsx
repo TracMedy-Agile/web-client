@@ -379,6 +379,8 @@ export default function CareEpisodeDetailPage() {
   const [checkinHistory, setCheckinHistory] = useState<CheckInHistoryRecord[]>([]);
   const [medicationRecords, setMedicationRecords] = useState<MedicationAdherenceRecord[]>([]);
   const [taskCompletion, setTaskCompletion] = useState<TaskCompletionRecord | null>(null);
+  const [episodeMissedTasksCount, setEpisodeMissedTasksCount] = useState<number | null>(null);
+  const [episodeTaskProgress, setEpisodeTaskProgress] = useState<{ completed: number; total: number } | null>(null);
   const [taskCompletionLog, setTaskCompletionLog] = useState<TaskCompletionLog | null>(null);
   const [vitalsLoading, setVitalsLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -497,6 +499,48 @@ export default function CareEpisodeDetailPage() {
   }, [episodeId, refreshKey]);
 
   useEffect(() => {
+    if (!episodeId || !episode) return;
+    let ignore = false;
+    const startedAt = Date.parse(episode.createdAt);
+    const elapsedDays = Number.isFinite(startedAt)
+      ? Math.max(1, Math.floor(Math.max(0, Date.now() - startedAt) / 86_400_000) + 1)
+      : 1;
+    const episodeDays = Math.min(
+      366,
+      Math.max(1, Math.min(
+        episode.expectedDurationDays ?? episode.currentDay ?? elapsedDays,
+        elapsedDays,
+      )),
+    );
+    const dates = Array.from({ length: episodeDays }, (_, index) => {
+      const date = new Date(Number.isFinite(startedAt) ? startedAt : Date.now());
+      date.setDate(date.getDate() + index);
+      return localDateKey(date);
+    });
+
+    Promise.all(dates.map((date) => getCareEpisodeTaskCompletion(episodeId, date).catch(() => null))).then((records) => {
+      if (ignore) return;
+      const availableRecords = records.filter((record): record is TaskCompletionRecord => record !== null);
+      setEpisodeMissedTasksCount(
+        availableRecords.length > 0
+          ? availableRecords.reduce((total, record) => total + record.missed, 0)
+          : null,
+      );
+      setEpisodeTaskProgress(
+        availableRecords.length > 0
+          ? {
+              completed: availableRecords.reduce((total, record) => total + record.completed, 0),
+              total: availableRecords.reduce((total, record) => total + record.totalDue, 0),
+            }
+          : null,
+      );
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [episode, episodeId, refreshKey]);
+  useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
     getCareEpisodeForecast(episodeId)
@@ -571,14 +615,14 @@ export default function CareEpisodeDetailPage() {
       checkInTrend,
       medicationAdherence,
       medicationTrend,
-      missedTasksCount: taskCompletion?.missed ?? missedTasks.length,
+      missedTasksCount: episodeMissedTasksCount ?? taskCompletion?.missed ?? missedTasks.length,
       lastMissedLabel,
       completedTasks,
       engagementScore,
       engagementTier,
       engagementTrend,
     };
-  }, [careTaskRows, checkinHistory, episode, medicationRecords, taskCompletion]);
+  }, [careTaskRows, checkinHistory, episode, episodeMissedTasksCount, medicationRecords, taskCompletion]);
 
   const medicationCompletionTimeline = useMemo(() => {
     if (!episode) return [];
@@ -608,10 +652,12 @@ export default function CareEpisodeDetailPage() {
     const totalCheckIns = Math.max(episode.dayStart ?? completedCheckIns, completedCheckIns, 1);
     return {
       checkInCompletion: { completed: completedCheckIns, total: totalCheckIns },
-      goalAchievementPercent: null,
+      goalAchievementPercent: episodeTaskProgress && episodeTaskProgress.total > 0
+        ? clamp(Math.round((episodeTaskProgress.completed / episodeTaskProgress.total) * 100))
+        : null,
       missedTasksCount: episode.currentCarePlan ? monitoring?.missedTasksCount ?? null : null,
     };
-  }, [closureTimeline, episode, monitoring]);
+  }, [closureTimeline, episode, episodeTaskProgress, monitoring]);
 
   const handleCloseEpisode = async (payload: CloseCareEpisodePayload) => {
     if (!episode) return;
@@ -732,7 +778,7 @@ export default function CareEpisodeDetailPage() {
                 </div>
 
                 <p className="text-xs font-medium text-slate-500">
-                  Hospital ID: {patient?.hospitalId || "--"} <span className="mx-2 text-slate-400">•</span> Age: {patient?.age ?? "--"} <span className="mx-2 text-slate-400">•</span> {patientGender}
+                  <span className="font-bold text-slate-700">Hospital ID:</span> {episode.facility?.tracId || "--"} <span className="mx-2 text-slate-400">•</span> Age: {patient?.age ?? "--"} <span className="mx-2 text-slate-400">•</span> Gender: {patientGender}
                 </p>
 
                 <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">

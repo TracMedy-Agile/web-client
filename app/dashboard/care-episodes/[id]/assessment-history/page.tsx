@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Download, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -20,6 +20,8 @@ import { getAssessmentHistory } from "@/lib/api/careTeamAndPlan.api";
 import { createPlaceholderEpisode, formatLongDate, formatTime } from "../_shared/utils";
 import type { Assessment } from "../_shared/careTeamTypes";
 
+const ASSESSMENT_HISTORY_PAGE_SIZE = 10;
+
 const ESCALATION_BADGE_CLASSNAME: Record<string, string> = {
   Stable: "bg-emerald-50 text-emerald-600",
   Improving: "bg-amber-50 text-amber-600",
@@ -27,6 +29,14 @@ const ESCALATION_BADGE_CLASSNAME: Record<string, string> = {
   Escalated: "bg-red-50 text-red-500",
 };
 
+const CLINICIAN_NOTES_PREVIEW_LIMIT = 120;
+
+function clinicianNotesPreview(notes: string) {
+  const normalized = notes.trim();
+  if (!normalized) return "No clinical assessment notes recorded.";
+  if (normalized.length <= CLINICIAN_NOTES_PREVIEW_LIMIT) return normalized;
+  return `${normalized.slice(0, CLINICIAN_NOTES_PREVIEW_LIMIT - 3).trimEnd()}...`;
+}
 const OUTCOME_TEXT_CLASSNAME: Record<string, string> = {
   "No Escalation": "text-emerald-600",
   Escalated: "text-red-500",
@@ -48,6 +58,7 @@ export default function AssessmentHistoryPage() {
   const [clinicianFilter, setClinicianFilter] = useState("all");
   const [outcomeFilter, setOutcomeFilter] = useState("all");
   const [selectedAssessment, setSelectedAssessment] = useState<Assessment | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!episodeId) return;
@@ -73,10 +84,17 @@ export default function AssessmentHistoryPage() {
       if (clinicianFilter !== "all" && assessment.clinicianName !== clinicianFilter) return false;
       if (outcomeFilter !== "all" && assessment.outcome !== outcomeFilter) return false;
       if (dateFrom && Date.parse(assessment.date) < Date.parse(dateFrom)) return false;
-      if (dateTo && Date.parse(assessment.date) > Date.parse(dateTo)) return false;
+      if (dateTo && Date.parse(assessment.date) > new Date(`${dateTo}T23:59:59.999`).getTime()) return false;
       return true;
     });
   }, [assessments, clinicianFilter, outcomeFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ASSESSMENT_HISTORY_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedAssessments = filtered.slice(
+    (currentPage - 1) * ASSESSMENT_HISTORY_PAGE_SIZE,
+    currentPage * ASSESSMENT_HISTORY_PAGE_SIZE,
+  );
 
   const hasFilters = Boolean(dateFrom || dateTo || clinicianFilter !== "all" || outcomeFilter !== "all");
 
@@ -85,6 +103,7 @@ export default function AssessmentHistoryPage() {
     setDateTo("");
     setClinicianFilter("all");
     setOutcomeFilter("all");
+    setPage(1);
   };
 
   const openAssessmentModal = (assessment: Assessment) => {
@@ -153,20 +172,20 @@ export default function AssessmentHistoryPage() {
                   <input
                     type="date"
                     value={dateFrom}
-                    onChange={(event) => setDateFrom(event.target.value)}
+                    onChange={(event) => { setDateFrom(event.target.value); setPage(1); }}
                     className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-medium text-slate-700 outline-none sm:w-36"
                   />
                   <input
                     type="date"
                     value={dateTo}
-                    onChange={(event) => setDateTo(event.target.value)}
+                    onChange={(event) => { setDateTo(event.target.value); setPage(1); }}
                     className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-medium text-slate-700 outline-none sm:w-36"
                   />
                 </div>
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Clinician</span>
-                <Select value={clinicianFilter} onValueChange={setClinicianFilter}>
+                <Select value={clinicianFilter} onValueChange={(value) => { setClinicianFilter(value); setPage(1); }}>
                   <SelectTrigger className="h-10 w-full rounded-lg border-border text-sm font-medium text-slate-700 sm:w-44">
                     <SelectValue />
                   </SelectTrigger>
@@ -182,7 +201,7 @@ export default function AssessmentHistoryPage() {
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Outcome</span>
-                <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
+                <Select value={outcomeFilter} onValueChange={(value) => { setOutcomeFilter(value); setPage(1); }}>
                   <SelectTrigger className="h-10 w-full rounded-lg border-border text-sm font-medium text-slate-700 sm:w-44">
                     <SelectValue />
                   </SelectTrigger>
@@ -223,7 +242,7 @@ export default function AssessmentHistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((assessment) => (
+                  {pagedAssessments.map((assessment) => (
                     <tr
                       key={assessment.id}
                       role="button"
@@ -263,7 +282,7 @@ export default function AssessmentHistoryPage() {
                           {assessment.outcome}
                         </span>
                       </td>
-                      <td className="max-w-xs px-4 py-5 align-top text-sm text-slate-700">{assessment.clinicianNotes}</td>
+                      <td className="max-w-xs px-4 py-5 align-top text-sm text-slate-700"><span className="block max-w-[280px] line-clamp-2 break-words" title={assessment.clinicianNotes || "No clinical assessment notes recorded."}>{clinicianNotesPreview(assessment.clinicianNotes)}</span></td>
                       <td className="px-4 py-5 align-top text-sm font-medium text-slate-700">{assessment.clinicianName}</td>
                     </tr>
                   ))}
@@ -273,9 +292,32 @@ export default function AssessmentHistoryPage() {
           )}
 
           {filtered.length > 0 ? (
-            <p className="mt-4 text-sm font-medium text-slate-500">
-              Showing 1-{filtered.length} of {filtered.length} Assessments
-            </p>
+            <div className="mt-4 flex flex-col gap-3 text-sm font-medium text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing {(currentPage - 1) * ASSESSMENT_HISTORY_PAGE_SIZE + 1}-{Math.min(currentPage * ASSESSMENT_HISTORY_PAGE_SIZE, filtered.length)} of {filtered.length} Assessments
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  disabled={currentPage === 1}
+                  aria-label="Previous assessment page"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span aria-live="polite" className="min-w-20 text-center text-xs font-bold text-slate-600">Page {currentPage} of {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                  disabled={currentPage === totalPages}
+                  aria-label="Next assessment page"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           ) : null}
         </CardContent>
       </Card>
@@ -289,12 +331,21 @@ export default function AssessmentHistoryPage() {
 }
 
 function AssessmentDetailModal({ assessment, onClose }: { assessment: Assessment | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!assessment) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [assessment]);
+
   if (!assessment) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="assessment-detail-title">
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-[0_24px_72px_rgba(15,23,42,0.28)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="assessment-detail-title">
+      <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_72px_rgba(15,23,42,0.28)]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">Clinical Assessment</p>
             <h2 id="assessment-detail-title" className="mt-1 text-lg font-bold text-slate-900">Assessment Details</h2>
@@ -312,7 +363,7 @@ function AssessmentDetailModal({ assessment, onClose }: { assessment: Assessment
           </button>
         </div>
 
-        <div className="space-y-5 px-5 py-5 sm:px-6">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Escalation Status</p>
@@ -322,7 +373,28 @@ function AssessmentDetailModal({ assessment, onClose }: { assessment: Assessment
               <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Assessment Outcome</p>
               <p className="mt-1 text-sm font-bold text-slate-900">{assessment.outcome}</p>
             </div>
+          </div> 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Symptom Status</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{assessment.symptomStatus || "Not recorded"}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Treatment Response</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{assessment.treatmentResponse || "Not recorded"}</p>
+            </div>
           </div>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-[0.06em] text-slate-900">Recommended Actions</h3>
+            {assessment.recommendedActions.length > 0 ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
+                {assessment.recommendedActions.map((action) => <li key={action}>{action}</li>)}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-slate-500">No recommended actions recorded.</p>
+            )}
+          </section>
 
           <section className="rounded-xl border border-slate-200 p-4">
             <h3 className="text-xs font-extrabold uppercase tracking-[0.06em] text-slate-900">Key Observation</h3>

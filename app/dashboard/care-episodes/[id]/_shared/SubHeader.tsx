@@ -79,7 +79,7 @@ export function CareEpisodeSubHeader({
                 </span>
               </div>
               <p className={cn("font-medium text-slate-500", isTimeline ? "text-xs" : "text-sm")}>
-                Patient ID: {patient?.hospitalId || "--"} • Age: {patient?.age ?? "--"} • {humanizeSlug(patient?.gender || "") || "--"}
+                <span className="font-bold text-slate-700">Hospital ID:</span> {episode.facility?.tracId || "--"} • Age: {patient?.age ?? "--"} • Gender: {humanizeSlug(patient?.gender || "") || "--"}
               </p>
             </div>
           </div>

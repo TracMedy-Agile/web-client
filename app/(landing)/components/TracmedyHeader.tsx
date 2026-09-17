@@ -2,13 +2,14 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 
 const navLinks = [
-  { label: "The Problem", href: "#problem" },
-  { label: "Solution", href: "#solution" },
-  { label: "How It Works", href: "#how-it-works" },
+  { label: "The Problem", href: "/#problem" },
+  { label: "Solution", href: "/#solution" },
+  { label: "How It Works", href: "/#how-it-works" },
 ];
 
 const TracmedyHeader = () => {
@@ -21,23 +22,23 @@ const TracmedyHeader = () => {
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-20 items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2" aria-label="Tracmedy home">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden">
               <Image src="/tracmedy_logo.svg" alt="Tracmedy logo" width={40} height={40} className="h-full w-full object-cover" />
             </div>
             <span className="text-2xl font-bold tracking-tight text-primary">Tracmedy</span>
-          </div>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-10">
             {navLinks.map((l) => (
-              <a key={l.href} className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors" href={l.href}>{l.label}</a>
+              <Link key={l.href} className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors" href={l.href}>{l.label}</Link>
             ))}
           </nav>
 
           <div className="flex items-center gap-4">
-            <a className="hidden sm:inline-flex rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 transition-all" href="#waitlist" onClick={captureWaitlistClick}>
+            <Link className="hidden sm:inline-flex rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90 transition-all" href="/#waitlist" onClick={captureWaitlistClick}>
               Join Waitlist
-            </a>
+            </Link>
             <button className="md:hidden flex items-center justify-center h-10 w-10 shrink-0" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
               {mobileOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
@@ -67,12 +68,12 @@ const TracmedyHeader = () => {
                 <X size={24} />
               </button>
               {navLinks.map((l) => (
-                <a key={l.href} className="text-lg font-semibold text-foreground hover:text-primary transition-colors" href={l.href} onClick={() => setMobileOpen(false)}>{l.label}</a>
+                <Link key={l.href} className="text-lg font-semibold text-foreground hover:text-primary transition-colors" href={l.href} onClick={() => setMobileOpen(false)}>{l.label}</Link>
               ))}
-              <a className="mt-4 rounded-full bg-primary px-6 py-3 text-sm font-bold text-primary-foreground text-center" href="#waitlist" onClick={() => {
+              <Link className="mt-4 rounded-full bg-primary px-6 py-3 text-sm font-bold text-primary-foreground text-center" href="/#waitlist" onClick={() => {
                 captureWaitlistClick();
                 setMobileOpen(false);
-              }}>Join Waitlist</a>
+              }}>Join Waitlist</Link>
             </motion.nav>
           </>
         )}

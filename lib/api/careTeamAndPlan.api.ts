@@ -3,6 +3,8 @@ import {
   getCareEpisodeById,
   getCareEpisodeDailyVitals,
   getCareEpisodeMedicationAdherence,
+  getCareEpisodeLabResults,
+  getCareEpisodeTaskCompletion,
   getCareEpisodeTimelinePage,
   type ApiRecord,
 } from "@/lib/api/care-episodes";
@@ -22,6 +24,13 @@ function stringValue(record: ApiRecord, keys: string[], fallback = "") {
   return fallback;
 }
 
+function stringArray(record: ApiRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  }
+  return [];
+}
 function isAssessmentOutcome(value: string): value is AssessmentOutcome {
   return [
     "Improving",
@@ -64,14 +73,27 @@ export async function getAssessmentHistory(
   episodeId: string,
   filters?: AssessmentHistoryFilters,
 ): Promise<Assessment[]> {
-  const page = await getCareEpisodeTimelinePage(episodeId, {
+  const firstPage = await getCareEpisodeTimelinePage(episodeId, {
     eventType: ASSESSMENT_EVENT_TYPE,
     dateFrom: filters?.dateFrom,
     dateTo: filters?.dateTo,
     limit: 100,
+    page: 1,
   });
+  const remainingPages = firstPage.totalPages > 1
+    ? await Promise.all(
+        Array.from({ length: firstPage.totalPages - 1 }, (_, index) => getCareEpisodeTimelinePage(episodeId, {
+          eventType: ASSESSMENT_EVENT_TYPE,
+          dateFrom: filters?.dateFrom,
+          dateTo: filters?.dateTo,
+          limit: 100,
+          page: index + 2,
+        })),
+      )
+    : [];
+  const events = [firstPage, ...remainingPages].flatMap((page) => page.data);
 
-  return page.data.map((event) => {
+  return events.map((event) => {
     const outcomeValue = stringValue(event.payload, ["outcome"], "Stable");
     const escalationValue = stringValue(event.payload, ["escalationStatus"], "Stable");
     return {
@@ -83,10 +105,12 @@ export async function getAssessmentHistory(
       keyObservation: stringValue(event.payload, ["keyObservation"], "No key observation recorded."),
       clinicianNotes: stringValue(event.payload, ["clinicianNotes", "notes", "message"], "No clinical notes recorded."),
       clinicianName: stringValue(event.payload, ["clinicianName"], event.source === "clinician" ? "Clinician" : event.source),
+      symptomStatus: stringValue(event.payload, ["symptomStatus"]),
+      treatmentResponse: stringValue(event.payload, ["treatmentResponse"]),
+      recommendedActions: stringArray(event.payload, ["recommendedActions"]),
     };
   });
 }
-
 export type SaveAssessmentPayload = {
   outcome: AssessmentOutcome;
   escalationStatus: EscalationStatus;
@@ -117,16 +141,21 @@ export async function saveAssessment(episodeId: string, payload: SaveAssessmentP
     outcome: payload.outcome,
     keyObservation: payload.keyObservation || "No key observation recorded.",
     clinicianNotes: payload.clinicianNotes,
-    clinicianName: payload.clinicianName,
+    clinicianName: payload.clinicianName,symptomStatus: payload.symptomStatus,
+    treatmentResponse: payload.treatmentResponse,
+    recommendedActions: payload.recommendedActions,
   };
 }
 
 export async function getAssessmentWorkspace(episodeId: string): Promise<AssessmentWorkspaceEntry> {
-  const [episode, medicationRecords, dailyVitals, history] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const [episode, medicationRecords, dailyVitals, labResults, history, taskCompletion] = await Promise.all([
     getCareEpisodeById(episodeId),
     getCareEpisodeMedicationAdherence(episodeId).catch(() => []),
     getCareEpisodeDailyVitals(episodeId, 7).catch(() => []),
+    getCareEpisodeLabResults(episodeId).catch(() => []),
     getAssessmentHistory(episodeId).catch(() => []),
+    getCareEpisodeTaskCompletion(episodeId, today).catch(() => null),
   ]);
 
   const symptoms = symptomNames(episode.latestCheckin);
@@ -136,40 +165,49 @@ export async function getAssessmentWorkspace(episodeId: string): Promise<Assessm
     latestVitals ? { label: "Vitals", verified: true } : null,
     symptoms.length > 0 ? { label: "Symptoms", verified: true } : null,
     checkinNotes ? { label: "Patient Notes", verified: true } : null,
+    medicationRecords.length > 0 ? { label: "Medication adherence", verified: true } : null,
+    labResults.length > 0 ? { label: "Laboratory results", verified: true } : null,
     Array.isArray(episode.latestCheckin?.images) && episode.latestCheckin.images.length > 0
       ? { label: "Clinical Media", verified: true }
       : null,
   ].filter((source): source is { label: string; verified: boolean } => Boolean(source));
 
-  const vitalSummary = latestVitals
-    ? [
-        latestVitals.spo2 != null ? `SpO2 ${latestVitals.spo2}%` : "",
-        latestVitals.heartRate != null ? `heart rate ${latestVitals.heartRate} bpm` : "",
-        latestVitals.bloodPressureSystolic != null
-          ? `blood pressure ${latestVitals.bloodPressureSystolic}/${latestVitals.bloodPressureDiastolic ?? "--"} mmHg`
-          : "",
-      ].filter(Boolean).join(", ")
-    : "";
-
-  const clinicalSummary = [
-    episode.diagnosis ? `The active episode is monitoring ${episode.diagnosis}.` : "",
-    vitalSummary ? `The latest recorded vitals show ${vitalSummary}.` : "No recent daily vitals are available.",
-    symptoms.length > 0 ? `The latest check-in reports ${symptoms.join(", ")}.` : "No symptoms were reported in the latest check-in.",
-    checkinNotes ? `Patient note: ${checkinNotes}` : "",
-    episode.riskScore != null ? `The current risk score is ${episode.riskScore}.` : "",
-  ].filter(Boolean).join(" ");
-
-  const adherencePercent = medicationRecords.length > 0
+  const medicationTotals = medicationRecords.reduce(
+    (totals, item) => ({
+      total: totals.total + item.totalDoses,
+      completed: totals.completed + item.takenCount,
+      missed: totals.missed + item.missedCount,
+    }),
+    { total: 0, completed: 0, missed: 0 },
+  );
+  const taskTotals = taskCompletion && taskCompletion.totalDue > 0
+    ? { total: taskCompletion.totalDue, completed: taskCompletion.completed, missed: taskCompletion.missed }
+    : { total: 0, completed: 0, missed: 0 };
+  const adherenceTotal = medicationTotals.total + taskTotals.total;
+  const adherenceCompleted = medicationTotals.completed + taskTotals.completed;
+  const fallbackMedicationPercent = medicationRecords.length > 0
     ? Math.round(medicationRecords.reduce((total, item) => total + item.adherencePercentage, 0) / medicationRecords.length)
-    : 0;
-  const missedDoses = medicationRecords.reduce((total, item) => total + item.missedCount, 0);
+    : null;
+  const adherencePercent = adherenceTotal > 0
+    ? Math.round((adherenceCompleted / adherenceTotal) * 100)
+    : fallbackMedicationPercent;
+  const missedItems = medicationTotals.missed + taskTotals.missed;
+  const adherenceSources = [
+    medicationRecords.length > 0 ? { label: "Medication", verified: true } : null,
+    taskTotals.total > 0 ? { label: "Daily Tasks", verified: true } : null,
+  ].filter((source): source is { label: string; verified: boolean } => Boolean(source));
   const adherenceBreakdown = medicationRecords.map((item) => ({
     label: item.missedCount > 0
       ? `${item.name}: ${item.missedCount} missed dose${item.missedCount === 1 ? "" : "s"}`
       : `${item.name}: no missed doses`,
     positive: item.missedCount === 0,
   }));
-  if (episode.latestCheckin) adherenceBreakdown.push({ label: "Latest check-in received", positive: true });
+  if (taskTotals.total > 0) {
+    adherenceBreakdown.push({
+      label: `${taskTotals.completed}/${taskTotals.total} daily tasks completed`,
+      positive: taskTotals.missed === 0,
+    });
+  }
 
   return {
     episodeId,
@@ -177,20 +215,21 @@ export async function getAssessmentWorkspace(episodeId: string): Promise<Assessm
     clinicalStatus: {
       title: "Clinical Status Summary",
       confidencePercent: null,
-      summary: clinicalSummary,
+      summary: "",
       sources: clinicalSources,
     },
     carePlanAdherence: {
       title: "Care Plan Adherence",
       confidencePercent: null,
-      summary: medicationRecords.length > 0
-        ? "Calculated from medication logs available for this episode."
-        : "No medication adherence records are available for this episode.",
-      adherencePercent: medicationRecords.length > 0 ? adherencePercent : null,
-      trendLabel: missedDoses > 0 ? `${missedDoses} missed dose${missedDoses === 1 ? "" : "s"}` : "No missed doses",
+      summary: adherenceSources.length > 0
+        ? `Whole-care-plan adherence uses ${adherenceSources.map((source) => source.label.toLowerCase()).join(" and ")} records available for this episode.`
+        : "No care-plan adherence records are available for this episode.",
+      adherencePercent,
+      trendLabel: missedItems > 0 ? `${missedItems} missed item${missedItems === 1 ? "" : "s"}` : "No missed items",
+      trendPositive: missedItems === 0,
       trendDeltaPercent: null,
       breakdown: adherenceBreakdown,
-      sources: medicationRecords.length > 0 ? [{ label: "Medication", verified: true }] : [],
+      sources: adherenceSources,
     },
     outcomeOptions: ["Improving", "Stable", "Delayed Recovery", "Deteriorating", "Resolved"],
     recommendedActions: ["Adjust Care Plan", "Schedule Follow-up", "Send Patient Instructions", "Escalate to Specialist"],
