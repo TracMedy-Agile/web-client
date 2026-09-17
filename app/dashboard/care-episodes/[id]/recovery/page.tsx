@@ -31,6 +31,7 @@ import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getAssessmentHistory } from "@/lib/api/careTeamAndPlan.api";
 import {
   getCareEpisodeById,
+  getHumanReadableCareEpisodeReference,
   getCareEpisodeDailyVitals,
   getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
@@ -90,18 +91,21 @@ function buildRecoveryProgression(totalDays: number, currentDay: number | null, 
 }
 
 function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
-  return alerts.map((alert) => ({
-    id: alert.id,
-    severity: alert.severity,
-    title: alert.reason,
-    description: `Triggered by ${alert.triggerSource}.`,
-    meta: formatRelativeTime(alert.timestamp),
-    triggerSource: alert.triggerSource,
-    status: alert.status,
-    acknowledgedAt: alert.acknowledgedAt,
-    acknowledgedBy: alert.acknowledgedBy,
-    thresholdDetails: alert.thresholdDetails,
-  }));
+  return alerts.map((alert) => {
+    const threshold = alert.thresholdDetails[0];
+    return {
+      id: alert.id,
+      severity: alert.severity,
+      title: alert.reason,
+      description: threshold?.warningMessage || `Triggered by ${alert.triggerSource}.`,
+      meta: formatRelativeTime(alert.timestamp),
+      triggerSource: alert.triggerSource,
+      status: alert.status,
+      acknowledgedAt: alert.acknowledgedAt,
+      acknowledgedBy: alert.acknowledgedBy,
+      thresholdDetails: alert.thresholdDetails,
+    };
+  });
 }
 
 function formatTaskClock(value: string) {
@@ -110,22 +114,64 @@ function formatTaskClock(value: string) {
   return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(parsed));
 }
 
+function formatTaskSchedule(value: string) {
+  const schedule = value.trim();
+  if (!schedule) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(schedule)) {
+    const date = new Date(`${schedule}T12:00:00`);
+    return Number.isNaN(date.getTime())
+      ? schedule
+      : `Due ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date)}`;
+  }
+
+  if (/^\d{1,2}:\d{2}(?:\s*[AP]M)?$/i.test(schedule)) return `Due at ${schedule}`;
+
+  const parsed = Date.parse(schedule);
+  if (Number.isFinite(parsed)) {
+    const hasTime = /[T ]\d{1,2}:\d{2}/.test(schedule) || /Z$/i.test(schedule);
+    if (hasTime) return `Due at ${formatTaskClock(schedule)}`;
+    return `Due ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(parsed))}`;
+  }
+
+  return `Schedule: ${schedule}`;
+}
+
+function formatTaskSyncAge(value: string | null) {
+  if (!value) return "awaiting sync";
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return "awaiting sync";
+  const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hr ago`;
+}
+
 function taskDetailText(task: CareTaskRow) {
   const completedAt = task.completedAt ? formatTaskClock(task.completedAt) : null;
+  const schedule = formatTaskSchedule(task.sub);
   const note = task.completion?.notes?.trim();
   if (note) return `Logged ${note}${completedAt ? ` · ${completedAt}` : ""}`;
-  if (task.kind === "medication" && completedAt) return `Taken at: ${completedAt}${task.sub ? ` · Due ${task.sub}` : ""}`;
-  if (task.sub && completedAt) return `${task.sub} · Completed at ${completedAt}`;
-  if (task.sub) return task.sub;
+  if (task.kind === "medication" && completedAt) return `Taken at: ${completedAt}${schedule ? ` · ${schedule}` : ""}`;
+  if (schedule && completedAt) return `${schedule} · Completed at ${completedAt}`;
+  if (schedule) return schedule;
   if (completedAt) return `Completed at: ${completedAt}`;
   return "Schedule not supplied";
 }
 
 function alertTone(alert: RecoveryAlert) {
-  if (alert.status !== "active") return { card: "border-emerald-200 bg-emerald-50/60", badge: "bg-emerald-100 text-emerald-700", label: "Acknowledged" };
-  if (alert.severity.toLowerCase() === "critical") return { card: "border-red-200 bg-red-50/70", badge: "bg-red-600 text-white", label: "Critical" };
-  if (alert.severity.toLowerCase() === "moderate") return { card: "border-amber-200 bg-amber-50/70", badge: "bg-amber-100 text-amber-800", label: "Moderate" };
-  return { card: "border-blue-200 bg-blue-50/70", badge: "bg-blue-100 text-blue-700", label: "Low" };
+  const statusLabel = alert.status === "active" ? "Open" : "Acknowledged";
+  const statusBadge = alert.status === "active"
+    ? "border border-current/20 bg-white/70 text-current"
+    : "bg-emerald-100 text-emerald-700";
+  const severity = alert.severity.toLowerCase();
+  const severityLabel = severity === "critical" ? "Critical" : severity === "moderate" ? "Moderate" : "Low";
+
+  if (alert.status !== "active") return { card: "border-emerald-200 bg-emerald-50/60", badge: "bg-emerald-100 text-emerald-700", label: severityLabel, statusBadge, statusLabel };
+  if (severity === "critical") return { card: "border-red-200 bg-red-50/70", badge: "bg-red-600 text-white", label: "Critical", statusBadge, statusLabel };
+  if (severity === "moderate") return { card: "border-amber-200 bg-amber-50/70", badge: "bg-amber-100 text-amber-800", label: "Moderate", statusBadge, statusLabel };
+  return { card: "border-blue-200 bg-blue-50/70", badge: "bg-blue-100 text-blue-700", label: "Low", statusBadge, statusLabel };
 }
 
 function vitalMetricForAlert(alert: RecoveryAlert, records: DailyVitalsRecord[]) {
@@ -342,11 +388,29 @@ export default function CareEpisodeRecoveryPage() {
   const taskCompletionPercent = taskCompletion
     ? clamp(taskCompletion.completionRate * 100)
     : displayedTaskCount > 0 ? clamp((displayedCompletedCount / displayedTaskCount) * 100) : 0;
-  const lastTaskSyncLabel = lastTaskSyncAt ? formatRelativeTime(lastTaskSyncAt) : "awaiting sync";
-  const recoveryProbability = episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
-  const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
-  const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
-  const forecastDaysRemaining = episodeForecast?.recoveryForecast.predictedTimelineDays ?? null;
+  const lastTaskSyncLabel = formatTaskSyncAge(lastTaskSyncAt);
+  const recoveryForecast = episodeForecast?.recoveryForecast;
+  const deteriorationForecast = episodeForecast?.deterioration;
+  const relapseForecast = episodeForecast?.relapse;
+  const recoveryProbability = recoveryForecast?.dataSufficiency === "insufficient"
+    ? null
+    : (episodeForecast?.recoveryProbability ?? recoveryForecast?.currentRecoveryPercentage ?? null);
+  const deteriorationRisk = episodeForecast?.deteriorationRisk ?? deteriorationForecast?.probabilityPercent ?? null;
+  const relapseRisk = episodeForecast?.relapseRisk ?? relapseForecast?.probabilityPercent ?? null;
+  const recoveryOutcomeDetail = !episodeForecast
+    ? forecastError || "Forecast unavailable"
+    : recoveryForecast?.dataSufficiency === "insufficient"
+      ? "Insufficient data"
+      : recoveryForecast?.confidence == null || !recoveryForecast.dataSufficiency
+        ? "Forecast details unavailable"
+        : `${recoveryForecast.confidence}% confidence - ${recoveryForecast.dataSufficiency} data`;
+  const deteriorationOutcomeDetail = !episodeForecast || deteriorationForecast?.probabilityPercent == null
+    ? forecastError || "Insufficient data"
+    : `${(deteriorationForecast.riskLevel || "undetermined").toUpperCase()} risk - ${deteriorationForecast.horizonDays == null ? "Forecast horizon unavailable" : `${deteriorationForecast.horizonDays}-day forecast`} - ${deteriorationForecast.confidence == null ? "Confidence unavailable" : `${deteriorationForecast.confidence}% confidence`}`;
+  const relapseOutcomeDetail = !episodeForecast || relapseRisk == null || relapseForecast?.dataSufficiency === "insufficient"
+    ? forecastError || "Insufficient data"
+    : `${(relapseForecast?.riskLevel || "undetermined").toUpperCase()} risk - ${relapseForecast?.horizonDays == null ? "Forecast horizon unavailable" : `${relapseForecast.horizonDays}-day forecast`} - ${relapseForecast?.confidence == null ? "Confidence unavailable" : `${relapseForecast.confidence}% confidence`}`;
+  const forecastDaysRemaining = recoveryForecast?.predictedTimelineDays ?? null;
   const assessmentCount = assessmentDates.length;
   const lastAssessment = assessmentDates.at(0) ?? assessmentDates.at(-1) ?? "";
   const biometricEntryCount = dailyVitals.filter((item) => item.hasEntry).length;
@@ -362,6 +426,7 @@ export default function CareEpisodeRecoveryPage() {
   if (!episode) return null;
 
   const patient = episode.patient;
+  const careEpisodeReference = getHumanReadableCareEpisodeReference(episode);
   const riskBadge = getHeaderRiskBadge(episode.riskCategory);
   const overallProgress = clamp(Math.round(episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays)));
   const expectedRecoveryDate = (() => {
@@ -420,7 +485,7 @@ export default function CareEpisodeRecoveryPage() {
     }
   };
   return (
-    <div className="space-y-6 pb-8">
+    <div className="min-w-0 space-y-6 overflow-x-hidden pb-8">
       <button type="button" aria-label="Back to care episode" onClick={() => router.push(`/dashboard/care-episodes/${episodeId}`)} className="inline-flex h-9 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"><ArrowLeft className="h-4 w-4" />Back to Care Episode</button>
 
       <div>
@@ -434,8 +499,8 @@ export default function CareEpisodeRecoveryPage() {
         <MetricCard icon={<ClipboardCheck className="h-4 w-4" />} label="Care Plan Adherence" value={adherence == null ? "--" : `${adherence}%`} detail={adherence == null ? "No adherence records" : `${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}`} progress={adherence} />
         <MetricCard icon={<TrendingUp className="h-4 w-4" />} label="Overall Progress" value={`${overallProgress}%`} detail={episode.expectedDurationDays ? `Day ${episode.dayStart ?? "--"} of ${episode.expectedDurationDays}` : "Duration unavailable"} progress={overallProgress} />
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-6">
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-6">
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-6">
             <div className="flex items-center gap-2"><BrainCircuit className="h-5 w-5 text-primary" /><h2 className="text-xl font-bold text-foreground">Recovery Intelligence</h2></div>
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">System-generated insights</p>
@@ -460,37 +525,37 @@ export default function CareEpisodeRecoveryPage() {
             <div className="mt-4 flex flex-wrap gap-3"><Button type="button" onClick={() => openAction("new_assessment", `/dashboard/care-episodes/${episodeId}/assessment`)}><Plus className="h-4 w-4" />New Assessment</Button><Button type="button" variant="outline" onClick={() => openAction("assessment_history", `/dashboard/care-episodes/${episodeId}/assessment-history`)}><History className="h-4 w-4" />View History</Button></div>
           </CardContent></Card>
 
-          <section><h2 className="mb-4 text-base font-bold text-foreground">Recovery Outcomes</h2><div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <OutcomeCard label="Recovery Probability" percent={recoveryProbability} detail={episodeForecast ? `${episodeForecast.recoveryForecast.confidence}% confidence - ${episodeForecast.recoveryForecast.dataSufficiency} data` : forecastError || "Forecast unavailable"} />
-            <OutcomeCard label="Risk of Deterioration" percent={deteriorationRisk} detail={episodeForecast ? `${episodeForecast.deterioration.riskLevel.toUpperCase()} risk - ${episodeForecast.deterioration.horizonDays}-day forecast` : forecastError || "7-day forecast unavailable"} />
-            <OutcomeCard label="Relapse Risk Forecast" percent={relapseRisk ?? null} detail={episodeForecast ? `${episodeForecast.relapse.riskLevel ? episodeForecast.relapse.riskLevel.toUpperCase() : "UNDETERMINED"} risk - ${episodeForecast.relapse.horizonDays}-day forecast` : forecastError || "30-day forecast unavailable"} />
+          <section><h2 className="mb-4 text-base font-bold text-foreground">Recovery Outcomes</h2><div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-3">
+             <OutcomeCard label="Recovery Probability" percent={recoveryProbability} detail={recoveryOutcomeDetail} trackColor="var(--color-blue-50)" progressColor="var(--color-primary)" />
+             <OutcomeCard label="Risk of Deterioration" percent={deteriorationRisk} detail={deteriorationOutcomeDetail} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
+             <OutcomeCard label="Relapse Risk Forecast" percent={relapseRisk ?? null} detail={relapseOutcomeDetail} trackColor="var(--color-red-50)" progressColor="var(--color-red-500)" />
           </div></section>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
 
-          <Card className="rounded-xl border-primary/10 bg-blue-50 shadow-sm"><CardContent className="p-4 sm:p-5"><h2 className="text-base font-bold text-foreground">Clinical Action Workspace</h2><p className="mt-1 text-xs font-medium text-muted-foreground">Initiate interventions based on recovery insights.</p><div className="mt-4 space-y-3">
+          <Card className="w-full min-w-0 rounded-xl border-primary/10 bg-blue-50 shadow-sm"><CardContent className="p-4 sm:p-5"><h2 className="text-base font-bold text-foreground">Clinical Action Workspace</h2><p className="mt-1 text-xs font-medium text-muted-foreground">Initiate interventions based on recovery insights.</p><div className="mt-4 space-y-3">
             <ActionButton icon={<Pencil className="h-4 w-4" />} title="Adjust Care Plan" detail="Open care plan editor" onClick={() => openAction("adjust_care_plan", `/dashboard/care-episodes/${episodeId}/recovery/adjust-plan`)} />
             <ActionButton icon={<CalendarPlus className="h-4 w-4" />} title="Schedule Follow-up" detail="Open appointment modal" onClick={openScheduleFollowUp} />
             <ActionButton icon={<Send className="h-4 w-4" />} title="Send Patient Instruction" detail="Open messaging module" onClick={() => openAction("send_instruction", `/dashboard/messages?${new URLSearchParams({ episodeId, patientId: episode.patientId, patientName: patient?.name || "Patient" })}`)} />
           </div></CardContent></Card>
           {scheduledFollowUp ? (
-            <Card className="rounded-xl border-emerald-200 bg-emerald-50/70 shadow-sm">
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+            <Card className="w-full min-w-0 rounded-xl border-emerald-200 bg-emerald-50/70 shadow-sm">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-sm font-bold text-foreground">Follow-up scheduled</h2>
-                    <p className="mt-1 truncate whitespace-nowrap text-xs font-medium text-muted-foreground">
+                    <h2 className="truncate text-sm font-bold text-foreground">Follow-up scheduled</h2>
+                    <p className="mt-0.5 truncate whitespace-nowrap text-xs font-medium text-muted-foreground">
                       {appointmentTypeLabel(scheduledFollowUp.type)} on {formatLongDate(scheduledFollowUp.date)} at {scheduledFollowUp.time}
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => router.push(scheduledFollowUp.id ? `/dashboard/appointments/${encodeURIComponent(scheduledFollowUp.id)}` : "/dashboard/appointments")}
-                      className="mt-3 h-8 border-emerald-200 bg-white px-3 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50"
+                      className="mt-2 h-8 border-emerald-200 bg-white px-3 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50"
                     >
                       Open in Appointments
                     </Button>
@@ -499,14 +564,14 @@ export default function CareEpisodeRecoveryPage() {
               </CardContent>
             </Card>
           ) : null}
-          <Card className="flex h-[480px] flex-col rounded-xl border-border bg-card shadow-sm"><CardContent className="flex min-h-0 flex-1 flex-col p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} - Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex shrink-0 items-center gap-1 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
+          <Card className="flex w-full min-w-0 h-[480px] min-h-[360px] max-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm"><CardContent className="flex min-h-0 flex-1 flex-col p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-base font-bold text-foreground">Daily Care Tasks</h2><p className="text-xs font-medium text-muted-foreground">{patient?.name || "Patient"} - Day {episode.dayStart ?? "--"} of {episode.expectedDurationDays ?? "--"}</p></div><div className="flex shrink-0 items-center gap-1 pt-0.5 text-muted-foreground"><button type="button" aria-label="Previous care-task day" onClick={() => setTaskDate((date) => shiftDate(date, -1))} className="rounded p-1 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-20 text-center text-xs font-bold text-foreground/80">{taskDate === todayKey ? "Today" : formatLongDate(taskDate)}</span><button type="button" aria-label="Next care-task day" disabled={taskDate >= todayKey} onClick={() => setTaskDate((date) => shiftDate(date, 1))} className="rounded p-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button></div></div>
             <div className="mt-4 flex items-center justify-between text-xs font-bold text-muted-foreground"><p>Daily Check-ins</p><p>{displayedCompletedCount} / {displayedTaskCount} completed</p></div><div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${taskCompletionPercent}%` }} /></div>
-            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-start gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="mt-0.5 disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className={cn("block text-xs font-medium", task.missed ? "text-amber-700" : "text-muted-foreground")}>{taskDetailText(task)}</span></span></div>)}</div>
+            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">{dailyTasks.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No care-plan tasks configured yet.</p> : null}{dailyTasks.map((task) => <div key={task.id} className="flex items-start gap-3"><Checkbox checked={task.done} disabled aria-label={`${task.label}: ${task.done ? "completed" : "not completed"} (read only)`} className="mt-0.5 disabled:cursor-default disabled:opacity-100" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{task.label}</span><span className={cn("block text-xs font-medium", task.missed ? "text-amber-700" : "text-muted-foreground")}>{taskDetailText(task)}</span></span></div>)}</div>
             <div className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-[#BFE8F5] bg-[#E9F8FC] px-3 py-3 text-xs"><p className="flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Updating live</p><p className="font-medium text-muted-foreground">Last sync {lastTaskSyncLabel}</p></div>
           </CardContent></Card>
 
-          <Card className="rounded-xl border-border bg-card shadow-sm">
-            <CardContent className="p-4 sm:p-5">
+          <Card className="flex w-full min-w-0 h-[480px] min-h-[360px] max-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm">
+            <CardContent className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <h2 className="flex items-center gap-1.5 text-base font-bold text-foreground">
                   <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -515,23 +580,28 @@ export default function CareEpisodeRecoveryPage() {
                 <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span>
               </div>
 
-              <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+              <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
                 {alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : null}
                 {!alertsError && alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}
                 {alerts.map((alert) => {
                   const tone = alertTone(alert);
                   return (
-                    <div key={alert.id} className={cn("rounded-lg border p-3", tone.card)}>
+                    <div key={alert.id} className={cn("rounded-xl border p-3.5", tone.card)}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{alert.severity}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{alert.severity} severity</span>
                           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", tone.badge)}>{tone.label}</span>
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", tone.statusBadge)}>{tone.statusLabel}</span>
                         </div>
                         <span className="shrink-0 text-[10px] font-medium text-muted-foreground">{alert.meta}</span>
                       </div>
                       <p className="mt-2 text-sm font-bold text-foreground">{alert.title}</p>
                       <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">{alert.description}</p>
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-muted-foreground"><span>{alert.triggerSource}</span>{alert.acknowledgedBy ? <span>Acknowledged by {alert.acknowledgedBy}</span> : null}</div>
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-muted-foreground">
+                        <span>Source: {alert.triggerSource}</span>
+                        {alert.status !== "active" && alert.acknowledgedBy && alert.acknowledgedBy !== "Not recorded" ? <span>Acknowledged by {alert.acknowledgedBy}</span> : null}
+                        {alert.status !== "active" && alert.acknowledgedAt ? <span>Acknowledged {formatTaskClock(alert.acknowledgedAt)}</span> : null}
+                      </div>
                       <Button type="button" variant="outline" onClick={() => { setReviewAlertId(alert.id); capturePostHogEvent("recovery_alert_impact_opened", { episode_id: episodeId, alert_id: alert.id }); }} className="mt-3 h-8 w-full border-current/20 bg-white/70 text-xs font-bold text-foreground hover:bg-white">Review Impact</Button>
                     </div>
                   );
@@ -541,7 +611,7 @@ export default function CareEpisodeRecoveryPage() {
               {savedWarningSigns.length > 0 ? (
                 <div className="mt-5 border-t border-border pt-4">
                   <p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Patient guidance</p>
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 max-h-40 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
                     {savedWarningSigns.map((warning) => (
                       <div key={warning.id} className="rounded-lg bg-destructive/5 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -567,7 +637,7 @@ export default function CareEpisodeRecoveryPage() {
         initialPatient={{ id: episode.patientId, name: patient?.name || "Patient" }}
         initialAppointmentType="teleconsultation"
         initialCareEpisodeId={episodeId}
-        initialCareEpisodeLabel={episode.reference ? `Care episode ${episode.reference}` : "Current care episode"}
+        initialCareEpisodeLabel={careEpisodeReference ? `Care episode ${careEpisodeReference}` : "Current care episode"}
         initialReason="Recovery follow-up review"
         autoConfirm
       />
@@ -615,10 +685,32 @@ function FactorCard({ title, percent, detail }: { title: string; percent: number
   );
 }
 
-function OutcomeCard({ label, detail, percent }: { label: string; detail: string; percent: number | null }) {
-  return <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="flex min-h-[224px] flex-col items-center p-4 text-center"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p><CircularProgress percent={percent} size={116} trackColor="hsl(var(--muted))" progressColor="hsl(var(--primary))" /><p className="mt-3 text-[10px] font-medium text-muted-foreground">{detail}</p></CardContent></Card>;
+function OutcomeCard({
+  label,
+  detail,
+  percent,
+  trackColor,
+  progressColor,
+}: {
+  label: string;
+  detail: string;
+  percent: number | null;
+  trackColor: string;
+  progressColor: string;
+}) {
+  const unavailable = percent == null;
+  return (
+    <Card className="h-full rounded-xl border-border bg-slate-50/60 shadow-none">
+      <CardContent className="flex h-full min-h-[224px] flex-col items-center p-6 text-center">
+        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
+        <div role="img" aria-label={`${label}: ${unavailable ? "insufficient data" : `${percent}%`}`}>
+          <CircularProgress percent={percent} size={116} trackColor={trackColor} progressColor={progressColor} />
+        </div>
+        <p className="mt-4 text-[10px] font-medium text-muted-foreground">{detail}</p>
+      </CardContent>
+    </Card>
+  );
 }
-
 function ActionButton({ icon, title, detail, onClick }: { icon: React.ReactNode; title: string; detail: string; onClick: () => void }) {
   return <button type="button" onClick={onClick} className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-colors hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-foreground">{title}</span><span className="block text-xs font-medium text-muted-foreground">{detail}</span></span><ChevronRight className="h-4 w-4 text-muted-foreground" /></button>;
 }

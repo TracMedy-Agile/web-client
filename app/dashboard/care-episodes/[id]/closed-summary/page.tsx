@@ -209,7 +209,7 @@ export default function ClosedEpisodeSummaryPage() {
                 </span>
               </div>
               <p className="mt-1 text-sm font-medium text-muted-foreground">
-                Patient ID: {patient.patientCode} · Age: {patient.age ?? "--"} · {patient.gender}
+                <span className="font-bold text-foreground">Hospital ID:</span> {patient.patientCode} · Age: {patient.age ?? "--"} · Gender: {patient.gender}
               </p>
               <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground">
                 Episode ID: {patient.episodeCode}

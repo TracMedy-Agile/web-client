@@ -1,18 +1,8 @@
 'use client'
-import { useState } from "react";
+import Link from "next/link";
 import { Mail, MapPin } from "lucide-react";
 import Image from "next/image";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
- 
 const TracmedyFooter = () => {
-  const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [termsOpen, setTermsOpen] = useState(false);
  
   return (
     <>
@@ -78,156 +68,23 @@ const TracmedyFooter = () => {
           <div className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest font-bold">
             <p>© 2026 Tracmedy. All rights reserved.</p>
             <div className="flex gap-8">
-              <button
-                className="hover:text-primary-foreground transition-colors cursor-pointer bg-transparent border-none p-0 text-xs uppercase tracking-widest font-bold text-footer-foreground"
-                onClick={() => setPrivacyOpen(true)}
+              <Link
+                className="hover:text-primary-foreground transition-colors text-xs uppercase tracking-widest font-bold text-footer-foreground"
+                href="/privacy-policy"
               >
                 Privacy Policy
-              </button>
-              <button
-                className="hover:text-primary-foreground transition-colors cursor-pointer bg-transparent border-none p-0 text-xs uppercase tracking-widest font-bold text-footer-foreground"
-                onClick={() => setTermsOpen(true)}
+              </Link>
+              <Link
+                className="hover:text-primary-foreground transition-colors text-xs uppercase tracking-widest font-bold text-footer-foreground"
+                href="/terms"
               >
                 Terms of Service
-              </button>
+              </Link>
             </div>
           </div>
         </div>
       </footer>
  
-      <Dialog open={privacyOpen} onOpenChange={setPrivacyOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh]">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Privacy Policy</DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="h-[65vh] pr-4">
-            <div className="space-y-6 text-sm leading-relaxed text-muted-foreground">
-              <p className="text-xs text-muted-foreground">Effective Date: February 2026</p>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">1. Introduction</h3>
-                <p>Tracmedy (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our platform, including our mobile application and web dashboard.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">2. Information We Collect</h3>
-                <p><strong className="text-foreground">Personal Information:</strong> Name, email address, phone number, date of birth, and Health ID when you create an account.</p>
-                <p><strong className="text-foreground">Health Data:</strong> Medical records, medication schedules, care episode details, symptom check-in responses, and recovery progress data entered by you or your healthcare provider.</p>
-                <p><strong className="text-foreground">Usage Data:</strong> Device information, IP address, browser type, app usage patterns, and interaction logs to improve our services.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">3. How We Use Your Information</h3>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>To provide and maintain structured post-care monitoring services</li>
-                  <li>To activate and manage Care Episodes between patients and clinicians</li>
-                  <li>To send medication reminders, follow-up prompts, and health check-ins</li>
-                  <li>To generate early intervention alerts for healthcare providers</li>
-                  <li>To improve platform functionality and user experience</li>
-                  <li>To communicate important service updates</li>
-                </ul>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">4. Data Security</h3>
-                <p>We use encrypted data transmission (TLS/SSL), secure cloud infrastructure, and role-based access controls. Hospitals can only access data for their own patients. Sensitive identifiers such as QR tokens and Health IDs do not expose raw medical records without proper authentication.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">5. Data Sharing</h3>
-                <p>We do not sell your personal or health data. Information is shared only with:</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Healthcare providers linked to your Care Episodes</li>
-                  <li>Service providers who assist in operating our platform (under strict confidentiality agreements)</li>
-                  <li>Legal authorities when required by applicable law</li>
-                </ul>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">6. Your Rights</h3>
-                <p>You have the right to access, update, or request deletion of your personal data. You may also withdraw consent for data processing at any time by contacting us at <strong className="text-foreground">hello@tracmedy.com</strong>.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">7. Data Retention</h3>
-                <p>We retain your data for as long as your account is active or as needed to provide services. Health data associated with completed Care Episodes may be retained for continuity purposes unless you request deletion.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">8. Children&apos;s Privacy</h3>
-                <p>Tracmedy is not intended for use by individuals under the age of 18 without parental or guardian consent. We do not knowingly collect data from minors without appropriate authorization.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">9. Changes to This Policy</h3>
-                <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated effective date. Continued use of Tracmedy after changes constitutes acceptance of the revised policy.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">10. Contact Us</h3>
-                <p>If you have questions about this Privacy Policy, please contact us at:</p>
-                <p><strong className="text-foreground">Email:</strong> hello@tracmedy.com</p>
-                <p><strong className="text-foreground">Location:</strong> Lagos, Nigeria</p>
-              </section>
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
- 
-      <Dialog open={termsOpen} onOpenChange={setTermsOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh]">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Terms of Service</DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="h-[65vh] pr-4">
-            <div className="space-y-6 text-sm leading-relaxed text-muted-foreground">
-              <p className="text-xs text-muted-foreground">Effective Date: February 2026</p>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">1. Acceptance of Terms</h3>
-                <p>By accessing or using Tracmedy (&apos;the Platform&apos;), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Platform. Continued use constitutes acceptance of any updates or modifications to these terms.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">2. Description of Service</h3>
-                <p>Tracmedy is a post-discharge healthcare continuity platform that connects patients and healthcare providers through structured monitoring, medication reminders, symptom check-ins, and early intervention alerts. Tracmedy does not provide medical advice, diagnoses, or treatment. It is a support tool designed to enhance care coordination after hospital visits.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">3. User Accounts</h3>
-                <p>You must provide accurate and complete information when creating an account. You are responsible for maintaining the confidentiality of your login credentials and for all activities that occur under your account. Notify us immediately if you suspect unauthorized access.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">4. User Responsibilities</h3>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Use the Platform only for its intended purpose of healthcare continuity and recovery monitoring</li>
-                  <li>Provide truthful health information during check-ins and interactions</li>
-                  <li>Do not share your account credentials with others</li>
-                  <li>Do not attempt to reverse-engineer, disrupt, or misuse the Platform</li>
-                  <li>Comply with all applicable laws and regulations</li>
-                </ul>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">5. Healthcare Disclaimer</h3>
-                <p>Tracmedy is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or qualified healthcare provider with any questions you may have regarding a medical condition. Never disregard professional medical advice or delay seeking it because of information provided through Tracmedy.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">6. Intellectual Property</h3>
-                <p>All content, features, and functionality of the Platform — including text, graphics, logos, icons, and software — are the property of Tracmedy and are protected by intellectual property laws. You may not reproduce, distribute, or create derivative works without our express written permission.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">7. Limitation of Liability</h3>
-                <p>To the maximum extent permitted by law, Tracmedy shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the Platform. Our total liability shall not exceed the amount you paid (if any) for using the service.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">8. Termination</h3>
-                <p>We reserve the right to suspend or terminate your account at our discretion if you violate these Terms of Service or engage in conduct that is harmful to other users, healthcare providers, or the Platform. You may also delete your account at any time by contacting us.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">9. Changes to Terms</h3>
-                <p>We may modify these Terms of Service at any time. Updated terms will be posted on this page with a revised effective date. Your continued use of Tracmedy after changes are posted constitutes acceptance of the updated terms.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">10. Governing Law</h3>
-                <p>These Terms shall be governed by and construed in accordance with the laws of the Federal Republic of Nigeria, without regard to conflict of law principles.</p>
-              </section>
-              <section className="space-y-2">
-                <h3 className="text-base font-semibold text-foreground">11. Contact Us</h3>
-                <p>If you have questions about these Terms of Service, please contact us at:</p>
-                <p><strong className="text-foreground">Email:</strong> hello@tracmedy.com</p>
-                <p><strong className="text-foreground">Location:</strong> Lagos, Nigeria</p>
-              </section>
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };

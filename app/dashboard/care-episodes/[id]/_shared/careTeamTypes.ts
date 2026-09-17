@@ -35,6 +35,9 @@ export type Assessment = {
   keyObservation: string;
   clinicianNotes: string;
   clinicianName: string;
+  symptomStatus: string;
+  treatmentResponse: string;
+  recommendedActions: string[];
 };
 
 export type CarePlanVersionStatus = "active" | "previous" | "initial";
@@ -89,6 +92,7 @@ export type AssessmentWorkspaceEntry = {
   carePlanAdherence: AssessmentIntelligenceCard & {
     adherencePercent: number | null;
     trendLabel: string;
+    trendPositive: boolean;
     trendDeltaPercent: number | null;
     breakdown: CarePlanAdherenceBreakdownItem[];
   };

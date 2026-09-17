@@ -91,6 +91,21 @@ export type CareEpisodesQueryParams = {
   limit?: number;
 };
 
+/**
+ * Returns the human-facing care episode reference for UI labels.
+ *
+ * The route/database `id` is intentionally not used for display. A few older
+ * responses returned an internal cuid in `reference`; treat that as unavailable
+ * rather than leaking it into the appointment modal.
+ */
+export function getHumanReadableCareEpisodeReference(
+  episode: Pick<CareEpisodeRecord, "reference">,
+): string | null {
+  const reference = episode.reference?.trim()
+  if (!reference || /^cm[a-z0-9]{12,}$/i.test(reference)) return null
+  return reference
+}
+
 export type PatientSearchResult = {
   id: string;
   name: string;
@@ -233,7 +248,7 @@ export function getNumber(record: ApiRecord | null, keys: string[]): number | nu
 function normalizeCareEpisodeSummary(record: ApiRecord): CareEpisodeRecord {
   return {
     id: getString(record, ["id"]),
-    reference: getString(record, ["reference"]) || null,
+    reference: getString(record, ["reference", "careEpisodeReference", "episodeReference"]) || null,
     patientId: getString(record, ["patientId"]),
     facilityId: getString(record, ["facilityId"]),
     clinicianId: getString(record, ["clinicianId"]),
@@ -467,7 +482,7 @@ function normalizePatientIdentity(record: ApiRecord | null): CareEpisodePatient 
     email: getString(record, ["email"]),
     age: getNumber(record, ["age"]),
     gender: getString(record, ["gender"]),
-    hospitalId: getString(record, ["tracmedyPatientId", "hospitalId"]),
+    hospitalId: getString(record, ["tracmedyPatientId", "tracId", "hospitalId"]),
     avatarUrl: getString(record, ["avatarUrl", "photoUrl", "imageUrl"]),
     emergencyContactName: "",
     emergencyContactPhone: "",

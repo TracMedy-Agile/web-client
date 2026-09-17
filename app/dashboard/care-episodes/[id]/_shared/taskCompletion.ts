@@ -104,6 +104,10 @@ function findMedicationRecord(medication: ApiRecord, index: number, records: Med
   }) ?? null;
 }
 
+function getTaskSchedule(record: ApiRecord) {
+  return getString(record, ["dueAt", "scheduledAt", "dueDate", "frequency", "schedule"]);
+}
+
 function medicationWasTakenOnDate(record: MedicationAdherenceRecord | null, date: string) {
   return Boolean(record?.lastTakenAt && dateKey(record.lastTakenAt) === date);
 }
@@ -118,12 +122,12 @@ export function buildCareTaskRows(carePlan: ApiRecord | null, options: BuildCare
     return {
       id: candidates[0] || `task-${index}`,
       label: getString(task, ["title", "name", "label"], "Task"),
-      sub: getString(task, ["frequency", "schedule", "dueAt", "scheduledAt", "dueDate"]),
+      sub: getTaskSchedule(task),
       done,
       missed: !done && (isTaskMissed(task) || completionStatus === "missed" || completionStatus === "overdue"),
       kind: "task",
       completion,
-      completedAt: completion?.completedAt ?? null,
+      completedAt: completion?.completedAt ?? (getString(task, ["completedAt", "takenAt", "loggedAt"]) || null),
       source: completion?.source ?? null,
     };
   });
@@ -141,7 +145,7 @@ export function buildCareTaskRows(carePlan: ApiRecord | null, options: BuildCare
       label: getString(medication, ["name", "medicationName"], medicationRecord?.name ?? "Medication"),
       sub: unique([
         getString(medication, ["dosage", "dosageStrength", "strength"], medicationRecord?.dosageStrength ?? ""),
-        getString(medication, ["frequency", "schedule"]),
+        getTaskSchedule(medication),
       ]).join(" - "),
       done,
       missed,

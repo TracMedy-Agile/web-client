@@ -11,27 +11,11 @@ import type { components } from "@/docs/types/api";
 export type CloseCareEpisodePayload = components["schemas"]["CloseEpisodeDto"];
 type ClosureReasonValue = CloseCareEpisodePayload["closureReason"];
 type OutcomeStatusValue = CloseCareEpisodePayload["outcomeStatus"];
-type DischargeStatusValue = NonNullable<CloseCareEpisodePayload["dischargeStatus"]>;
 
 const CLOSURE_REASONS: Array<{ value: ClosureReasonValue; label: string }> = [
   { value: "recovery_completed", label: "Recovery completed" },
   { value: "lost_to_follow_up", label: "Lost to follow-up" },
   { value: "no_further_action", label: "No further action" },
-];
-
-const OUTCOME_STATUSES: Array<{ value: OutcomeStatusValue; label: string }> = [
-  { value: "recovered", label: "Recovered" },
-  { value: "ongoing_monitoring", label: "Ongoing monitoring" },
-  { value: "referred", label: "Referred" },
-  { value: "deceased", label: "Deceased" },
-  { value: "unknown", label: "Unknown" },
-];
-
-const DISCHARGE_STATUSES: Array<{ value: DischargeStatusValue; label: string }> = [
-  { value: "PLANNED", label: "Planned" },
-  { value: "IN_PROGRESS", label: "In progress" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "NOT_APPLICABLE", label: "Not applicable" },
 ];
 
 export type EpisodeOutcomeSummary = {
@@ -51,49 +35,35 @@ type CloseCareEpisodeModalProps = {
 
 export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosing, summary, onConfirm }: CloseCareEpisodeModalProps) {
   const [closureReason, setClosureReason] = useState<ClosureReasonValue | "">("");
-  const [outcomeStatus, setOutcomeStatus] = useState<OutcomeStatusValue | "">("");
-  const [finalNotes, setFinalNotes] = useState("");
-  const [dischargeStatus, setDischargeStatus] = useState<DischargeStatusValue | "">("");
-  const [followUpType, setFollowUpType] = useState("");
-  const [followUpReason, setFollowUpReason] = useState("");
-  const [followUpDate, setFollowUpDate] = useState("");
-  const [error, setError] = useState("");
+  const [finalNotes, setFinalNotes] = useState("");  const [error, setError] = useState("");
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (isClosing) return;
     if (!nextOpen) {
       setClosureReason("");
-      setOutcomeStatus("");
       setFinalNotes("");
-      setDischargeStatus("");
-      setFollowUpType("");
-      setFollowUpReason("");
-      setFollowUpDate("");
       setError("");
     }
     onOpenChange(nextOpen);
   };
 
   const handleConfirm = () => {
-    if (!closureReason || !outcomeStatus) {
-      setError("Select both a closure reason and final outcome before continuing.");
+    if (!closureReason) {
+      setError("Select a closure reason before continuing.");
       return;
     }
     setError("");
+    const outcomeStatus: OutcomeStatusValue = closureReason === "recovery_completed"
+      ? "recovered"
+      : closureReason === "lost_to_follow_up"
+        ? "unknown"
+        : "ongoing_monitoring";
     onConfirm({
       closureReason,
       outcomeStatus,
       finalNotes: finalNotes.trim() || undefined,
-      dischargeStatus: dischargeStatus || undefined,
-      followUp: followUpType ? {
-        type: followUpType,
-        reason: followUpReason.trim() || undefined,
-        scheduledDate: followUpDate ? new Date(`${followUpDate}T12:00:00`).toISOString() : undefined,
-        status: "open",
-      } : undefined,
     });
   };
-
   const checkInPercent = summary.checkInCompletion && summary.checkInCompletion.total > 0
     ? Math.min(Math.round((summary.checkInCompletion.completed / summary.checkInCompletion.total) * 100), 100)
     : null;
@@ -102,13 +72,13 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-[3px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-[680px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-card shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-[680px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-card shadow-2xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
           <div className="flex shrink-0 items-start justify-between border-b border-border bg-muted/30 px-6 py-5">
             <div><DialogPrimitive.Title className="text-xl font-bold text-foreground">Close Care Episode</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm font-medium text-muted-foreground">Reviewing final status for <strong className="text-foreground">{patientName}</strong></DialogPrimitive.Description></div>
             <DialogPrimitive.Close type="button" aria-label="Close dialog" disabled={isClosing} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"><X className="h-5 w-5" /></DialogPrimitive.Close>
           </div>
 
-          <div className="overflow-y-auto px-6 py-6">
+          <div className="min-h-0 overflow-y-auto px-6 py-5 sm:px-6 sm:py-5">
             <p className="text-xs font-extrabold uppercase tracking-[0.06em] text-primary">Episode Outcome Summary</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <SummaryCard label="Check-in Completion" value={summary.checkInCompletion ? `${summary.checkInCompletion.completed} / ${summary.checkInCompletion.total}` : "--"} progress={checkInPercent} detail={summary.checkInCompletion ? "From episode timeline" : "Not available"} />
@@ -118,23 +88,15 @@ export function CloseCareEpisodeModal({ open, onOpenChange, patientName, isClosi
 
             {error ? <p role="alert" className="mt-4 text-sm font-semibold text-destructive">{error}</p> : null}
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="mt-5">
               <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Closure Reason <span className="text-destructive">*</span></span><Select value={closureReason} onValueChange={(value) => { setClosureReason(value as ClosureReasonValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select a reason..." /></SelectTrigger><SelectContent className="z-[70] border-border">{CLOSURE_REASONS.map((reason) => <SelectItem key={reason.value} value={reason.value}>{reason.label}</SelectItem>)}</SelectContent></Select></label>
-              <label className="block"><span className="mb-2 flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Outcome <span className="text-destructive">*</span></span><Select value={outcomeStatus} onValueChange={(value) => { setOutcomeStatus(value as OutcomeStatusValue); if (error) setError(""); }}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select an outcome..." /></SelectTrigger><SelectContent className="z-[70] border-border">{OUTCOME_STATUSES.map((outcome) => <SelectItem key={outcome.value} value={outcome.value}>{outcome.label}</SelectItem>)}</SelectContent></Select></label>
             </div>
+            <label className="mt-5 block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Clinical Summary <span className="font-medium normal-case text-muted-foreground">(optional)</span></span><Textarea value={finalNotes} onChange={(event) => setFinalNotes(event.target.value)} placeholder="Enter clinical observations, final metrics, and discharge recommendations..." className="min-h-28 resize-none rounded-lg border-transparent bg-muted/60 py-3 text-sm leading-6" /></label>
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Discharge Status</span><Select value={dischargeStatus} onValueChange={(value) => setDischargeStatus(value as DischargeStatusValue)}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="Select status..." /></SelectTrigger><SelectContent className="z-[70] border-border">{DISCHARGE_STATUSES.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}</SelectContent></Select></label>
-              <label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Type</span><Select value={followUpType} onValueChange={setFollowUpType}><SelectTrigger className="h-11 w-full rounded-lg border-border bg-muted/60 text-sm font-medium"><SelectValue placeholder="No follow-up" /></SelectTrigger><SelectContent className="z-[70] border-border"><SelectItem value="telehealth">Telehealth</SelectItem><SelectItem value="in_person">In person</SelectItem><SelectItem value="phone">Phone</SelectItem></SelectContent></Select></label>
-              {followUpType ? <><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Date</span><input type="date" value={followUpDate} onChange={(event) => setFollowUpDate(event.target.value)} className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label><label className="block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Follow-up Reason</span><input value={followUpReason} onChange={(event) => setFollowUpReason(event.target.value)} placeholder="e.g. BP recheck" className="h-11 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/20" /></label></> : null}
-            </div>
-
-            <label className="mt-6 block"><span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.04em] text-foreground">Final Clinical Summary <span className="font-medium normal-case text-muted-foreground">(optional)</span></span><Textarea value={finalNotes} onChange={(event) => setFinalNotes(event.target.value)} placeholder="Enter clinical observations, final metrics, and discharge recommendations..." className="min-h-28 resize-none rounded-lg border-transparent bg-muted/60 py-3 text-sm leading-6" /></label>
-
-            <div className="mt-6 flex items-start gap-3 rounded-xl bg-primary/10 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="text-sm font-bold text-primary">Final Validation Required</p><p className="mt-1 text-sm leading-6 text-foreground/80">Closing this episode removes it from active monitoring. The closure reason, outcome, and final notes are recorded for clinical audit.</p></div></div>
+            <div className="mt-6 flex items-start gap-3 rounded-xl bg-primary/10 p-4"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /><div><p className="text-sm font-bold text-primary">Final Validation Required</p><p className="mt-1 text-sm leading-6 text-foreground/80">Closing this episode removes it from active monitoring. The closure reason and final notes are recorded for clinical audit.</p></div></div>
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border bg-muted/30 px-6 py-4"><Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isClosing} className="h-11 px-4 text-sm font-bold">Cancel</Button><Button type="button" onClick={handleConfirm} disabled={isClosing || !closureReason || !outcomeStatus} className="h-11 gap-2 rounded-xl px-5 text-sm font-bold">{isClosing ? <><Loader2 className="h-4 w-4 animate-spin" />Closing...</> : "Close Episode"}</Button></div>
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border bg-muted/30 px-6 py-4"><Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isClosing} className="h-11 px-4 text-sm font-bold">Cancel</Button><Button type="button" onClick={handleConfirm} disabled={isClosing || !closureReason} className="h-11 gap-2 rounded-xl px-5 text-sm font-bold">{isClosing ? <><Loader2 className="h-4 w-4 animate-spin" />Closing...</> : "Close Episode"}</Button></div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
