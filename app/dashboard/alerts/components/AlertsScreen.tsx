@@ -379,7 +379,7 @@ export default function AlertsScreen() {
           (isHistory || isWithinRange(alert.timestamp, dateRange))
         );
       }),
-    [clinician, dateRange, searchQuery, severity, source, sourceAlerts],
+    [clinician, dateRange, isHistory, searchQuery, severity, source, sourceAlerts],
   );
 
   const totalPages = Math.max(

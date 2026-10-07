@@ -537,6 +537,7 @@ export default function VirtualConsultationsPage() {
     [currentUserId],
   );
   const [rawConsultations, setRawConsultations] = useState<Consultation[]>([]);
+  const [currentTime, setCurrentTime] = useState(0);
   const [clinicianNames, setClinicianNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -556,6 +557,7 @@ export default function VirtualConsultationsPage() {
 
     try {
       const payload = await fetchTeleconsultations();
+      setCurrentTime(Date.now());
       setRawConsultations(getAppointmentItems(payload).map(normalizeConsultation));
     } catch (requestError) {
       setRawConsultations([]);
@@ -681,14 +683,14 @@ export default function VirtualConsultationsPage() {
   const metrics = useMemo<MetricCardData[]>(() => {
     const upcomingConsultations = consultations.filter((consultation) => {
       const appointmentDate = getAppointmentDateTime(consultation.scheduledDate, consultation.scheduledTime);
-      return (consultation.status === "upcoming" || consultation.status === "ready") && Boolean(appointmentDate && appointmentDate.getTime() >= Date.now());
+      return (consultation.status === "upcoming" || consultation.status === "ready") && Boolean(appointmentDate && appointmentDate.getTime() >= currentTime);
     });
     const upcomingCount = upcomingConsultations.length;
     const upcomingTimes = upcomingConsultations
       .map((consultation) => getAppointmentDateTime(consultation.scheduledDate, consultation.scheduledTime)?.getTime())
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     const upcomingMinutes = upcomingTimes.length
-      ? Math.max(0, Math.round((Math.min(...upcomingTimes) - Date.now()) / 60000))
+      ? Math.max(0, Math.round((Math.min(...upcomingTimes) - currentTime) / 60000))
       : 0;
     const activeClinicians = new Set(
       consultations
@@ -740,7 +742,7 @@ export default function VirtualConsultationsPage() {
         iconWrapClassName: "bg-[#E7F2FF]",
       },
     ];
-  }, [consultations]);
+  }, [consultations, currentTime]);
 
   return (
     <>
