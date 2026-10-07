@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -75,12 +75,38 @@ function parseApiDate(value?: string) {
 
 export default function AppointmentDateRangePicker({ dateFrom = "", dateTo = "", onChange }: AppointmentDateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState<PickerStep>("year");
   const [visibleYear, setVisibleYear] = useState(2026);
   const [visibleMonth, setVisibleMonth] = useState(3);
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => parseApiDate(dateFrom));
 
   const calendarDays = useMemo(() => buildCalendarDays(visibleYear, visibleMonth), [visibleYear, visibleMonth]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+        setStep("year");
+      }
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+        setStep("year");
+      }
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isOpen]);
   const selectedText = dateFrom && dateTo
     ? `${formatSelectedDate(parseApiDate(dateFrom) ?? selectedDate ?? new Date())} - ${formatSelectedDate(parseApiDate(dateTo) ?? selectedDate ?? new Date())}`
     : selectedDate
@@ -134,11 +160,13 @@ export default function AppointmentDateRangePicker({ dateFrom = "", dateTo = "",
     );
 
   return (
-    <div className="relative w-full xl:w-[150px]">
+    <div ref={pickerRef} className="relative w-full xl:w-[150px]">
       <button
         type="button"
         onClick={openPicker}
-        className="flex h-10 w-full items-center justify-between gap-3 rounded-md border border-border bg-white px-3 text-sm font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        className="flex h-10 w-full items-center justify-between gap-3 rounded-lg border border-border bg-white px-3 text-[14px] font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         <span className={cn("truncate", selectedDate || dateFrom || dateTo ? "text-[#344054]" : "text-[#71809B]")}>{selectedText}</span>
         <CalendarDays className="h-4 w-4 shrink-0 text-[#71809B]" />

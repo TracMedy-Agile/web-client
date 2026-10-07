@@ -49,8 +49,9 @@ export default function AdjustCarePlanPage() {
   const endDate = useMemo(() => projectedDate(form.startDate, form.episodeDuration), [form.startDate, form.episodeDuration]);
   // The backend always auto-creates a stub v1 care plan when the episode opens, so `versions`
   // is never empty — the real "first save" signal is that only that untouched stub exists.
-  const isFirstCarePlanSetup = !form.id || (versions.length <= 1 && form.version <= 1);
-  const versionHistory = [...versions].sort((left, right) => right.version - left.version);
+  const hasSavedVersion = versions.some((item) => Boolean(item.changeReason?.trim()));
+  const isFirstCarePlanSetup = !form.id || (versions.length <= 1 && form.version <= 1 && !hasSavedVersion);
+  const versionHistory = isFirstCarePlanSetup ? [] : [...versions].sort((left, right) => right.version - left.version);
 
   useEffect(() => {
     if (episodeId) capturePostHogEvent("care_plan_adjust_viewed", { episode_id: episodeId });
@@ -97,10 +98,10 @@ export default function AdjustCarePlanPage() {
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <button type="button" onClick={cancel} className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/80"><ArrowLeft className="h-4 w-4" /></button>
-          <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold text-foreground">Adjust Care Plan</h1><span className="rounded-full bg-primary/10 px-2.5 py-1 text-[9px] font-bold uppercase text-primary">V{form.version} {form.isActive ? "Active" : "Inactive"}</span></div>
+          <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold text-foreground">Adjust Care Plan</h1><span className="rounded-full bg-primary/10 px-2.5 py-1 text-[9px] font-bold uppercase text-primary">{isFirstCarePlanSetup ? "V0 Draft" : `V${form.version} ${form.isActive ? "Active" : "Inactive"}`}</span></div>
           <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">Review and Adjust Care Plan for <strong className="text-muted-foreground">{patient.name} ({patient.id})</strong></p>
         </div>
-        <div className="flex items-center justify-end gap-3"><Button type="button" variant="ghost" onClick={cancel} className="h-10 text-xs font-bold text-foreground">Cancel</Button><Button type="button" onClick={() => openSave("post")} disabled={Boolean(saveMode)} className="h-10 bg-primary px-5 text-xs font-bold text-white hover:bg-primary/90"><Save className="h-4 w-4" />Save changes</Button></div>
+        <div className="flex items-center justify-end gap-3"><Button type="button" variant="ghost" onClick={cancel} className="h-10 text-xs font-bold text-foreground">Cancel</Button><Button type="button" onClick={() => openSave("post")} disabled={Boolean(saveMode)} className="h-10 bg-primary px-5 text-xs font-bold text-white hover:bg-primary/90"><Save className="h-4 w-4" />{isFirstCarePlanSetup ? "Save Care Plan" : "Save Changes"}</Button></div>
       </div>
 
       {error ? (
@@ -163,7 +164,7 @@ export default function AdjustCarePlanPage() {
         </aside>
       </div>
 
-      <SaveConfirmationModal isOpen={Boolean(modalMode)} onClose={() => setModalMode(null)} onConfirm={(reason) => save(modalMode ?? "patch", reason)} currentVersion={form.version} nextVersion={modalMode === "post" ? form.version + 1 : form.version} patientName={patient.name} createsVersion={modalMode === "post"} requiresReason={!isFirstCarePlanSetup} />
+      <SaveConfirmationModal isOpen={Boolean(modalMode)} onClose={() => setModalMode(null)} onConfirm={(reason) => save(modalMode ?? "patch", reason)} currentVersion={isFirstCarePlanSetup ? 0 : form.version} nextVersion={modalMode === "post" ? (isFirstCarePlanSetup ? 1 : form.version + 1) : form.version} patientName={patient.name} createsVersion={modalMode === "post"} isInitialSetup={isFirstCarePlanSetup} requiresReason={!isFirstCarePlanSetup} />
     </div>
   );
 }

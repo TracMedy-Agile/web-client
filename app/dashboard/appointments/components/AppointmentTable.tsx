@@ -5,8 +5,9 @@ import { getAppointments } from "@/lib/api/appointments";
 import { cn } from "@/lib/utils";
 import type { AppointmentListFilters } from "./AppointmentFilters";
 import AppointmentEmptyState from "./AppointmentEmptyState";
+import { normalizeAppointmentStatus, type DailyAppointmentStatus } from "./calendar-data";
 
-type AppointmentStatus = "Confirmed" | "Pending" | "Canceled" | "Rescheduled" | "No Shows";
+type AppointmentStatus = DailyAppointmentStatus;
 
 type Appointment = {
   patientName: string;
@@ -44,7 +45,7 @@ const statusStyles: Record<AppointmentStatus, string> = {
   Pending: "text-amber-500 before:bg-amber-500",
   Canceled: "text-red-500 before:bg-red-500",
   Rescheduled: "text-[#344054] before:bg-[#344054]",
-  "No Shows": "text-[#7A8BA6] before:bg-[#7A8BA6]",
+  "No Show": "text-[#7A8BA6] before:bg-[#7A8BA6]",
 };
 
 function asRecord(value: unknown): AppointmentRecord | null {
@@ -114,12 +115,7 @@ function mapType(type: string) {
 }
 
 function mapStatus(status: string): AppointmentStatus {
-  const normalized = status.toLowerCase().replace(/[_-]/g, " ");
-  if (normalized.includes("cancel")) return "Canceled";
-  if (normalized.includes("rescheduled")) return "Rescheduled";
-  if (normalized.includes("no show")) return "No Shows";
-  if (normalized.includes("pending")) return "Pending";
-  return "Confirmed";
+  return normalizeAppointmentStatus(status);
 }
 
 function getAppointmentItems(payload: unknown): AppointmentRecord[] {
@@ -189,7 +185,7 @@ function normalizeAppointment(record: AppointmentRecord): Appointment {
 
   return {
     patientName: patientName || "Unknown Patient",
-    id: getString(record, ["appointmentId", "code", "id"], "--"),
+    id: getString(record, ["reference", "appointmentId", "code", "id"], "--"),
     routeId: getString(record, ["id", "appointmentId", "code"], "--"),
     date: formatDate(date),
     time: formatTime(time),
@@ -206,7 +202,7 @@ function AppointmentTableSkeleton() {
       {Array.from({ length: 5 }, (_, index) => (
         <tr key={index} className="text-sm text-[#344054]">
           {tableColumnVisibility.map((visibility, cellIndex) => (
-            <td key={cellIndex} className={cn("px-2 py-4 sm:px-3 xl:px-4", visibility)}>
+            <td key={cellIndex} className={cn("px-2 py-4 sm:px-3 xl:px-3", visibility)}>
               <div className="h-4 w-full max-w-[150px] animate-pulse rounded bg-[#EEF2F7]" />
             </td>
           ))}
@@ -322,17 +318,17 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
         </div>
       ) : null}
 
-      <div className="w-full overflow-hidden">
-        <table className="w-full table-fixed border-collapse text-left">
+      <div className="w-full min-w-0 overflow-hidden">
+        <table className="w-full min-w-0 table-fixed border-collapse text-left">
           <thead>
-            <tr className="bg-[#EEF4FF] text-xs font-semibold uppercase text-[#71809B]">
-              <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:px-4">Patient Name</th>
-              <th className="hidden px-4 py-4 xl:table-cell">Appointment ID</th>
-              <th className="px-2 py-4 sm:px-3 xl:px-4">Date &amp; Time</th>
-              <th className="hidden px-3 py-4 lg:table-cell xl:px-4">Appointment Type</th>
-              <th className="hidden px-4 py-4 xl:table-cell">Department / Service</th>
-              <th className="px-2 py-4 sm:px-3 xl:px-4">Status</th>
-              <th className="rounded-r-sm px-2 py-4 sm:px-3 xl:px-4">Action</th>
+            <tr className="bg-[#EEF4FF] text-[14px] font-semibold uppercase leading-5 text-[#71809B]">
+              <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:w-[160px] xl:px-3">Patient Name</th>
+              <th className="hidden px-4 py-4 xl:w-[145px] xl:table-cell">Appointment ID</th>
+              <th className="px-2 py-4 sm:px-3 xl:w-[150px] xl:px-3">Date &amp; Time</th>
+              <th className="hidden whitespace-nowrap px-3 py-4 lg:table-cell xl:w-[160px] xl:px-3">Appointment Type</th>
+              <th className="hidden px-4 py-4 xl:w-[180px] xl:table-cell">Department / Service</th>
+              <th className="px-2 py-4 sm:px-3 xl:w-[120px] xl:px-3">Status</th>
+              <th className="rounded-r-sm px-2 py-4 sm:px-3 xl:w-[76px] xl:px-3">Action</th>
             </tr>
           </thead>
           {isLoading ? (
@@ -341,23 +337,23 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
             <tbody>
               {appointments.map((appointment) => (
                 <tr key={appointment.id} className="text-sm text-[#344054]">
-                  <td className="px-2 py-3 font-semibold text-[#111827] sm:px-3 xl:px-4">
+                  <td className="px-2 py-3 font-semibold text-[#111827] sm:px-3 xl:px-3">
                     <p className="truncate" title={appointment.patientName}>{appointment.patientName}</p>
                   </td>
                   <td className="hidden px-4 py-3 font-medium text-[#344054] xl:table-cell">
                     <p className="truncate" title={appointment.id}>{appointment.id}</p>
                   </td>
-                  <td className="px-2 py-3 sm:px-3 xl:px-4">
+                  <td className="px-2 py-3 sm:px-3 xl:px-3">
                     <p className="truncate font-bold">{appointment.date}</p>
                     <p className="truncate">{appointment.time}</p>
                   </td>
-                  <td className="hidden px-3 py-3 font-medium lg:table-cell xl:px-4">
+                  <td className="hidden px-3 py-3 font-medium lg:table-cell xl:px-3">
                     <p className="truncate" title={appointment.type}>{appointment.type}</p>
                   </td>
                   <td className="hidden px-4 py-3 font-semibold xl:table-cell">
                     <p className="truncate" title={appointment.department}>{appointment.department}</p>
                   </td>
-                  <td className="px-2 py-3 sm:px-3 xl:px-4">
+                  <td className="px-2 py-3 sm:px-3 xl:px-3">
                     <span
                       className={cn(
                         "inline-flex max-w-full items-center gap-2 font-semibold before:h-1.5 before:w-1.5 before:shrink-0 before:rounded-full before:content-['']",
@@ -367,7 +363,7 @@ export default function AppointmentTable({ filters, refreshKey = 0, exportReques
                       <span className="truncate">{appointment.status}</span>
                     </span>
                   </td>
-                  <td className="px-2 py-3 sm:px-3 xl:px-4">
+                  <td className="px-2 py-3 sm:px-3 xl:px-3">
                     <Link href={`/dashboard/appointments/${encodeURIComponent(appointment.routeId)}`} className="text-sm font-bold text-primary">
                       View
                     </Link>

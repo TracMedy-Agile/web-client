@@ -157,18 +157,25 @@ export async function getTeamMemberActivity(
   const rows = Array.isArray(listRoot?.data) ? listRoot.data : [];
   const meta = asRecord(listRoot?.meta);
 
+  const activityEntries = rows
+    .map(asRecord)
+    .filter((item): item is UnknownRecord => Boolean(item))
+    .map((item) => ({
+      id: value(item, ["id"], "Unknown"),
+      module: value(item, ["module"], "system"),
+      action: value(item, ["action"], "activity_recorded"),
+      actorName: value(item, ["actorName"], "System"),
+      targetSummary: value(item, ["targetSummary"], "No target recorded"),
+      createdAt: value(item, ["createdAt"], new Date(0).toISOString()),
+    }))
+    .sort((left, right) => {
+      const rightTime = Date.parse(right.createdAt);
+      const leftTime = Date.parse(left.createdAt);
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+    });
+
   return {
-    data: rows
-      .map(asRecord)
-      .filter((item): item is UnknownRecord => Boolean(item))
-      .map((item) => ({
-        id: value(item, ["id"], "Unknown"),
-        module: value(item, ["module"], "system"),
-        action: value(item, ["action"], "activity_recorded"),
-        actorName: value(item, ["actorName"], "System"),
-        targetSummary: value(item, ["targetSummary"], "No target recorded"),
-        createdAt: value(item, ["createdAt"], new Date(0).toISOString()),
-      })),
+    data: activityEntries,
     meta: {
       page: typeof meta?.page === "number" ? meta.page : params.page ?? 1,
       limit: typeof meta?.limit === "number" ? meta.limit : params.limit ?? 20,

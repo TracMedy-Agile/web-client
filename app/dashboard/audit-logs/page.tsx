@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+
 import {
   AlertCircle,
   CalendarDays,
@@ -28,7 +29,9 @@ import AccessDeniedState from "@/components/system/AccessDeniedState";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   AuditLogAccessDeniedError,
-  getAllAuditLogs,
+  AuditLogExportTooLargeError,
+  exportAuditLogEntry,
+  exportAuditLogs,
   getAuditLog,
   getAuditLogs,
   type AuditLogEntry,
@@ -48,52 +51,34 @@ const AUDIT_MODULE_OPTIONS = [
 ];
 
 function formatDateTime(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
   return new Intl.DateTimeFormat("en-NG", {
-    day: "2-digit",
+    day: "numeric",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
     hour12: true,
-  }).format(new Date(timestamp));
+  }).format(date);
 }
 
 function formatTableTimestamp(timestamp: string) {
-  const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return formatDateTime(timestamp);
 }
-
-function csvCell(value: string) {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-
-function downloadCsv(entries: AuditLogEntry[], fileName: string) {
-  const rows = [
-    ["Audit ID", "Staff Name", "Role", "Module", "Action", "Reference", "Timestamp", "IP Address", "Device / Agent"],
-    ...entries.map((entry) => [
-      entry.id,
-      entry.staffName,
-      entry.staffRole,
-      entry.module,
-      entry.action,
-      entry.reference ?? "",
-      formatDateTime(entry.timestamp),
-      entry.ipAddress,
-      entry.deviceAgent,
-    ]),
-  ];
-  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+function downloadServerExport(exportFile: { data: string; filename: string; contentType: string }) {
+  const binary = window.atob(exportFile.data);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: exportFile.contentType }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = fileName;
+  anchor.download = exportFile.filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
 }
-
 function getPageNumbers(currentPage: number, totalPages: number) {
   if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
   const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
@@ -130,6 +115,9 @@ export default function AuditLogsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportRangeOpen, setIsExportRangeOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
   const [loadError, setLoadError] = useState("");
   const [isAuditAccessDenied, setIsAuditAccessDenied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -207,35 +195,76 @@ export default function AuditLogsPage() {
     setRefreshKey((value) => value + 1);
   }
 
-  function exportEntries(entries: AuditLogEntry[], source: "list" | "detail") {
-    if (!entries.length) return;
-    const suffix = source === "detail" ? entries[0].id.toLowerCase() : "filtered";
-    downloadCsv(entries, `tracmedy-audit-log-${suffix}.csv`);
-    capturePostHogEvent("audit_log_exported", {
-      source,
-      record_count: entries.length,
-    });
+  function openExportRange() {
+    setExportFrom("");
+    setExportTo("");
+    setIsExportRangeOpen(true);
   }
 
-  async function exportFilteredEntries() {
+  async function exportEntry(entry: AuditLogEntry) {
     setIsExporting(true);
     try {
-      const exportEntries = await getAllAuditLogs({
-        search: searchQuery.trim() || undefined,
-        module: module === "all" ? undefined : module,
+      const exportFile = await exportAuditLogEntry(entry.id, {
+        format: "xlsx",
+        reason: "Audit entry export",
       });
-      downloadCsv(exportEntries, "tracmedy-audit-log-filtered.csv");
+      downloadServerExport(exportFile);
       capturePostHogEvent("audit_log_exported", {
-        source: "list",
-        record_count: exportEntries.length,
+        source: "detail",
+        record_count: exportFile.rowCount,
       });
     } catch (requestError) {
-      toast.error(requestError instanceof Error ? requestError.message : "Failed to export audit logs.");
+      toast.error(requestError instanceof Error ? requestError.message : "Failed to export audit entry.");
     } finally {
       setIsExporting(false);
     }
   }
 
+  async function exportFilteredEntries(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!exportFrom || !exportTo) {
+      toast.error("Select a date range", { description: "Choose both a From Date and a To Date before exporting." });
+      return;
+    }
+    if (exportFrom > exportTo) {
+      toast.error("Invalid date range", { description: "The From Date must be on or before the To Date." });
+      return;
+    }
+    if (totalEntries === 0) {
+      toast.info("No audit logs to export", { description: "Adjust the filters or date range and try again." });
+      setIsExportRangeOpen(false);
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const exportFile = await exportAuditLogs({
+        format: "xlsx",
+        module: module === "all" ? undefined : module,
+        from: exportFrom,
+        to: exportTo,
+        reason: "Audit log export",
+      });
+      downloadServerExport(exportFile);
+      setIsExportRangeOpen(false);
+      capturePostHogEvent("audit_log_exported", {
+        source: "list",
+        record_count: exportFile.rowCount,
+        from: exportFrom,
+        to: exportTo,
+      });
+    } catch (requestError) {
+      if (requestError instanceof AuditLogAccessDeniedError) {
+        toast.error("Export access denied", { description: "You do not have permission to export audit logs." });
+      } else if (requestError instanceof AuditLogExportTooLargeError) {
+        toast.error("Export is too large", { description: "Narrow the date range or filters and try again." });
+      } else {
+        toast.error(requestError instanceof Error ? requestError.message : "Failed to export audit logs.");
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  }
   async function openDetails(entry: AuditLogEntry) {
     setSelectedEntry(entry);
     capturePostHogEvent("audit_log_entry_viewed", {
@@ -268,8 +297,8 @@ export default function AuditLogsPage() {
         </div>
         <button
           type="button"
-          disabled={totalEntries === 0 || Boolean(loadError) || isExporting}
-          onClick={() => void exportFilteredEntries()}
+          disabled={Boolean(loadError) || isExporting}
+          onClick={openExportRange}
           className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-lg bg-[#0756d8] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#064abd] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -352,9 +381,9 @@ export default function AuditLogsPage() {
             </button>
           </div>
         ) : isRefreshing && pageEntries.length === 0 ? (
-          <div className="w-full overflow-hidden" aria-live="polite" aria-busy="true">
+          <div className="w-full overflow-x-auto" aria-live="polite" aria-busy="true">
             <span className="sr-only">Loading audit logs</span>
-            <table className="w-full table-fixed border-collapse text-left">
+            <table className="min-w-[760px] w-full table-fixed border-collapse text-left">
               <colgroup>
                 <col className="w-[19%]" />
                 <col className="w-[14%]" />
@@ -370,7 +399,7 @@ export default function AuditLogsPage() {
                   <th className="px-3 py-4 lg:px-4">Action Taken</th>
                   <th className="px-3 py-4 lg:px-4">Timestamp</th>
                   <th className="px-3 py-4 lg:px-4">IP Address</th>
-                  <th className="px-2 py-4 text-right lg:px-4">Action</th>
+                  <th className="px-3 py-4 text-right lg:px-5">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -381,7 +410,7 @@ export default function AuditLogsPage() {
                     <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-40 rounded bg-muted" /></td>
                     <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-24 rounded bg-muted" /></td>
                     <td className="px-3 py-4 lg:px-4"><div className="h-3.5 w-20 rounded bg-muted" /></td>
-                    <td className="px-2 py-4 text-right lg:px-4"><div className="ml-auto h-3.5 w-10 rounded bg-muted" /></td>
+                    <td className="px-3 py-4 text-right lg:px-5"><div className="ml-auto h-3.5 w-10 rounded bg-muted" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -391,8 +420,8 @@ export default function AuditLogsPage() {
 
         {!loadError && pageEntries.length ? (
           <>
-            <div className="w-full overflow-hidden">
-              <table className="w-full table-fixed border-collapse text-left">
+            <div className="w-full overflow-x-auto">
+              <table className="min-w-[760px] w-full table-fixed border-collapse text-left">
                 <colgroup>
                   <col className="w-[19%]" />
                   <col className="w-[14%]" />
@@ -408,7 +437,7 @@ export default function AuditLogsPage() {
                     <th className="px-3 py-4 lg:px-4">Action Taken</th>
                     <th className="px-3 py-4 lg:px-4">Timestamp</th>
                     <th className="px-3 py-4 lg:px-4">IP Address</th>
-                    <th className="px-2 py-4 text-right lg:px-4">Action</th>
+                    <th className="px-3 py-4 text-right lg:px-5">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -433,11 +462,11 @@ export default function AuditLogsPage() {
                       <td className="break-all px-3 py-4 font-mono text-xs leading-5 text-[#475467] lg:px-4">
                         {entry.ipAddress}
                       </td>
-                      <td className="px-1 py-4 text-right lg:px-3">
+                      <td className="px-3 py-4 text-right lg:px-5">
                         <button
                           type="button"
                           onClick={() => void openDetails(entry)}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md px-1 py-1.5 text-xs font-semibold text-[#0756d8] hover:bg-[#edf4ff] xl:px-2 xl:text-sm"
+                          className="inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-[#0756d8] hover:bg-[#edf4ff] xl:px-2 xl:text-sm"
                         >
                           <Eye className="h-4 w-4 shrink-0" />
                           <span className="hidden xl:inline">View</span>
@@ -499,6 +528,55 @@ export default function AuditLogsPage() {
       </section>
       )}
 
+      <Dialog open={isExportRangeOpen} onOpenChange={setIsExportRangeOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-lg rounded-2xl border-0 bg-white p-0 shadow-2xl">
+          <form onSubmit={exportFilteredEntries}>
+            <DialogHeader className="border-b border-[#eaecf0] px-6 py-5 pr-14">
+              <DialogTitle className="text-xl text-[#172b4d]">Export Audit Logs</DialogTitle>
+              <DialogDescription className="mt-1 text-sm text-[#667085]">
+                Select a date range for the Excel export.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 px-6 py-6 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-[#344054]">
+                From Date
+                <input
+                  type="date"
+                  value={exportFrom}
+                  onChange={(event) => setExportFrom(event.target.value)}
+                  required
+                  className="h-11 rounded-lg border border-[#d0d5dd] px-3 text-sm font-normal text-[#344054] outline-none focus:border-[#0756d8] focus:ring-2 focus:ring-[#0756d8]/15"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-[#344054]">
+                To Date
+                <input
+                  type="date"
+                  value={exportTo}
+                  onChange={(event) => setExportTo(event.target.value)}
+                  required
+                  className="h-11 rounded-lg border border-[#d0d5dd] px-3 text-sm font-normal text-[#344054] outline-none focus:border-[#0756d8] focus:ring-2 focus:ring-[#0756d8]/15"
+                />
+              </label>
+            </div>
+            <DialogFooter className="flex-row justify-end gap-3 border-t border-[#eaecf0] bg-[#fbfcfe] px-6 py-4">
+              <DialogClose asChild>
+                <button type="button" className="inline-flex h-10 items-center justify-center rounded-lg border border-[#d0d5dd] px-4 text-sm font-semibold text-[#475467] hover:bg-white">
+                  Cancel
+                </button>
+              </DialogClose>
+              <button
+                type="submit"
+                disabled={isExporting}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#0756d8] px-4 text-sm font-semibold text-white hover:bg-[#064abd] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Export Excel
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(selectedEntry)}
         onOpenChange={(open) => {
@@ -576,7 +654,7 @@ export default function AuditLogsPage() {
               <DialogFooter className="flex-row items-center justify-end gap-3 border-t border-[#eaecf0] bg-[#fbfcfe] px-6 py-4">
                 <button
                   type="button"
-                  onClick={() => exportEntries([selectedEntry], "detail")}
+                  onClick={() => void exportEntry(selectedEntry)}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#0756d8] hover:bg-[#edf4ff]"
                 >
                   <Download className="h-4 w-4" />

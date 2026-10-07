@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RotateCcw, Save } from "lucide-react";
 
-import { InfoBanner, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
+import { SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
+import { InfoBanner } from "@/app/dashboard/settings/components";
 import { Button } from "@/components/ui/button";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { getPermissionOptions, getRoleTemplates } from "@/lib/api/roles";
 import {
   AdministrativePowerTable,
   DependencyRulesPanel,
@@ -17,18 +19,59 @@ import {
   roleAccess,
   unavailableRolePolicy,
   type PermissionPolicyKey,
+  type RoleAccessLevel,
 } from "@/app/dashboard/settings/roles/components";
+
+type RoleCardData = { role: string; accessLevel: RoleAccessLevel; description: string; permissionCount: number; previewPermissions: readonly string[]; permissions: readonly string[]; lastUpdated: string };
+
+const initialRoleAccess: RoleCardData[] = roleAccess.map((role) => ({ ...role }));
 
 function defaultPolicyState(): Record<PermissionPolicyKey, boolean> {
   return Object.fromEntries(permissionPolicies.map((policy) => [policy.key, policy.defaultChecked])) as Record<PermissionPolicyKey, boolean>;
 }
 
+function roleKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+function formatUpdatedDate(value: string, fallback: string) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export default function RolesPage() {
+  const [roles, setRoles] = useState<RoleCardData[]>(initialRoleAccess);
   const [policies, setPolicies] = useState<Record<PermissionPolicyKey, boolean>>(defaultPolicyState);
   const dirty = permissionPolicies.some((policy) => policies[policy.key] !== policy.defaultChecked);
 
   useEffect(() => {
     capturePostHogEvent("settings_roles_viewed");
+    let active = true;
+    void Promise.all([getRoleTemplates(), getPermissionOptions()])
+      .then(([templates, options]) => {
+        if (!active || templates.length === 0) return;
+        const labels = new Map(options.map((option) => [option.key, option.label]));
+        setRoles(roleAccess.map((role): RoleCardData => {
+          const template = templates.find((item) => roleKey(item.key) === roleKey(role.role) || roleKey(item.name) === roleKey(role.role));
+          if (!template) return role;
+          const permissions = template.permissions.map((permission) => labels.get(permission) ?? permission);
+          return {
+            ...role,
+            description: template.description || role.description,
+            permissionCount: permissions.length,
+            previewPermissions: permissions.slice(0, 3),
+            permissions,
+            lastUpdated: formatUpdatedDate(template.updatedAt, role.lastUpdated),
+          };
+        }));
+      })
+      .catch(() => {
+        // Preserve the design defaults when the role endpoints are unavailable.
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function reset() {
@@ -48,7 +91,7 @@ export default function RolesPage() {
       <div className="mt-5 space-y-5">
         <SettingsPanel title="Default Role Access" description="Configure the default access assigned to newly invited team members.">
           <div className="grid gap-4 xl:grid-cols-3">
-            {roleAccess.map((role) => <RoleCard key={role.role} {...role} />)}
+            {roles.map((role) => <RoleCard key={role.role} {...role} />)}
           </div>
         </SettingsPanel>
 

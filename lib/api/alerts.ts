@@ -24,7 +24,6 @@ import {
   type ConnectedPatientRecord,
 } from "@/lib/api/connected-patients";
 import type { components } from "@/docs/types/api";
-import { generateAlertInsight } from "@/lib/api/ai";
 
 export type AlertSeverity = "critical" | "moderate" | "low";
 export type AlertStatus = "active" | "resolved";
@@ -63,6 +62,13 @@ export type AlertsSnapshot = {
   history: ClinicalAlert[];
 };
 
+export type AlertMetrics = {
+  totalResolved: number;
+  totalAcknowledged: number;
+  avgResponseTimeMs: number | null;
+  complianceRate: number | null;
+  complianceSlaMinutes: number;
+};
 export type AlertReviewEvidence = {
   label: string;
   value: string;
@@ -95,6 +101,7 @@ type AlertApiRecord = {
   episodeId: string;
   patientId: string;
   patientName: string;
+  patientCode: string;
   type: string;
   severity: string;
   triggerSource: string;
@@ -189,6 +196,7 @@ function normalizeAlert(record: ApiRecord): AlertApiRecord {
     episodeId: getString(record, ["episodeId"]),
     patientId: getString(record, ["patientId"]),
     patientName: getString(record, ["patientName"], "Patient"),
+    patientCode: getString(record, ["patientCode"]),
     type: getString(record, ["type"], "clinical_alert"),
     severity: getString(record, ["severity"], "low"),
     triggerSource: getString(record, ["triggerSource"], "Clinical monitoring"),
@@ -209,7 +217,7 @@ function parseAlertPage(payload: unknown): AlertApiPage {
       .map(asRecord)
       .filter((record): record is ApiRecord => Boolean(record))
       .map(normalizeAlert)
-      .filter((alert) => Boolean(alert.id && alert.episodeId && alert.patientId)),
+      .filter((alert) => Boolean(alert.id && alert.patientId)),
     totalPages: Math.max(getNumber(body, ["totalPages"]) ?? 1, 1),
   };
 }
@@ -428,7 +436,7 @@ function toAlert(
     episodeId: alert.episodeId,
     patientId: alert.patientId,
     patientName: patientDirectory[alert.patientId] ? patient.name : alert.patientName,
-    patientCode: patient.code,
+    patientCode: alert.patientCode || patient.code,
     reason,
     triggerSource: formatTriggerSource(alert),
     severity: normalizeSeverity(alert.severity),
@@ -441,6 +449,27 @@ function toAlert(
     riskCategory: episode?.riskCategory ?? null,
     riskTrend: episode?.riskTrend ?? null,
     thresholdDetails: buildThresholdAlertDetails(alert.triggerData),
+  };
+}
+export async function getAlertMetrics(dateRange: string = "all"): Promise<AlertMetrics> {
+  const query = new URLSearchParams();
+  if (dateRange !== "all") {
+    const days = Number(dateRange);
+    if (Number.isFinite(days) && days > 0) {
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      query.set("dateFrom", from.toISOString().slice(0, 10));
+      query.set("dateTo", new Date().toISOString().slice(0, 10));
+    }
+  }
+  const payload = await requestAlerts("/alerts/metrics", query);
+  const body = asRecord(unwrapData(payload)) ?? {};
+  return {
+    totalResolved: getNumber(body, ["totalResolved"]) ?? 0,
+    totalAcknowledged: getNumber(body, ["totalAcknowledged"]) ?? 0,
+    avgResponseTimeMs: getNumber(body, ["avgResponseTimeMs"]),
+    complianceRate: getNumber(body, ["complianceRate"]),
+    complianceSlaMinutes: getNumber(body, ["complianceSlaMinutes"]) ?? 240,
   };
 }
 export async function getAlertsSnapshot(): Promise<AlertsSnapshot> {
@@ -491,24 +520,23 @@ export async function getOpenAlertsForEpisode(
   });
   return alerts.map((alert) => toAlert(alert, undefined, {}, {}));
 }
-function latestVitalEntry(records: DailyVitalsRecord[]) {
-  return records
-    .filter((record) => record.hasEntry)
-    .sort((left, right) => right.date.localeCompare(left.date))[0] ?? null;
-}
-
 function buildVitalEvidence(records: DailyVitalsRecord[]): AlertReviewEvidence[] {
-  const latest = latestVitalEntry(records);
-  if (!latest) return [];
-  const evidence: AlertReviewEvidence[] = [];
-  const { vitals } = latest;
-  if (vitals.bloodPressureSystolic !== null && vitals.bloodPressureDiastolic !== null) {
-    evidence.push({ label: `Blood pressure (${latest.date})`, value: `${vitals.bloodPressureSystolic}/${vitals.bloodPressureDiastolic} mmHg`, status: "RECORDED" });
-  }
-  if (vitals.heartRate !== null) evidence.push({ label: `Heart rate (${latest.date})`, value: `${vitals.heartRate} bpm`, status: "RECORDED" });
-  if (vitals.spo2 !== null) evidence.push({ label: `SpO₂ (${latest.date})`, value: `${vitals.spo2}%`, status: "RECORDED" });
-  if (vitals.temperature !== null) evidence.push({ label: `Temperature (${latest.date})`, value: `${vitals.temperature} °C`, status: "RECORDED" });
-  return evidence;
+  const entries = records
+    .filter((record) => record.hasEntry)
+    .sort((left, right) => right.date.localeCompare(left.date));
+
+  return entries.flatMap((record, index) => {
+    const prefix = index === 0 ? "Current" : "Previous";
+    const { vitals } = record;
+    const evidence: AlertReviewEvidence[] = [];
+    if (vitals.bloodPressureSystolic !== null && vitals.bloodPressureDiastolic !== null) {
+      evidence.push({ label: `${prefix} blood pressure (${record.date})`, value: `${vitals.bloodPressureSystolic}/${vitals.bloodPressureDiastolic} mmHg`, status: "RECORDED" });
+    }
+    if (vitals.heartRate !== null) evidence.push({ label: `${prefix} heart rate (${record.date})`, value: `${vitals.heartRate} bpm`, status: "RECORDED" });
+    if (vitals.spo2 !== null) evidence.push({ label: `${prefix} SpO₂ (${record.date})`, value: `${vitals.spo2}%`, status: "RECORDED" });
+    if (vitals.temperature !== null) evidence.push({ label: `${prefix} temperature (${record.date})`, value: `${vitals.temperature} °C`, status: "RECORDED" });
+    return evidence;
+  });
 }
 
 function buildAdherenceEvidence(records: MedicationAdherenceRecord[]): AlertReviewEvidence[] {
@@ -632,56 +660,46 @@ function buildVitalHeadline(alert: ClinicalAlert, records: DailyVitalsRecord[]) 
 
 export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertReviewImpact> {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const [detail, vitals, adherence, timeline, sync, aiInsightPayload, backendImpactPayload] = await Promise.all([
+  const [detail, vitals, adherence, timeline, sync, backendImpactPayload] = await Promise.all([
     getCareEpisodeById(alert.episodeId).catch(() => null),
     getCareEpisodeDailyVitals(alert.episodeId, 7).catch(() => []),
     getCareEpisodeMedicationAdherence(alert.episodeId).catch(() => []),
     getCareEpisodeTimelinePage(alert.episodeId, { page: 1, limit: 10 }).catch(() => null),
     getCareEpisodeSync(alert.episodeId, since).catch(() => null),
-    generateAlertInsight(alert.id).catch(() => null),
     requestAlertAction(`/alerts/${encodeURIComponent(alert.id)}/impact`).catch(() => null),
   ]);
-  const aiInsight = asRecord(aiInsightPayload?.insight ?? null);
   const impactRoot = asRecord(backendImpactPayload);
   const fallbackImpact = asRecord(impactRoot?.impact) ?? impactRoot;
-  const backendImpact = aiInsight ?? fallbackImpact;
+  const backendImpact = fallbackImpact;
   const patientName = detail?.patient?.name || alert.patientName;
   const patientCode = detail?.patient?.hospitalId ? `ID: ${detail.patient.hospitalId}` : alert.patientCode;
   const events = [...(sync?.events ?? []), ...(timeline?.data ?? [])];
-  const severity = alert.severity.toUpperCase();
   const thresholdEvidence = buildThresholdEvidence(alert.thresholdDetails);
   const endpointEvidence = buildEndpointEvidence(backendImpact);
-  const aiEvidence = getStringList(backendImpact, "supportingEvidence")
-    .map((value) => ({ label: "AI supporting evidence", value, status: "RECORDED" }));
-  const aiSignals = getStringList(backendImpact, "relatedSignals")
-    .map((value) => ({ label: "Related signal", value, status: "RECORDED" }));
   const backendSignals = getStringList(backendImpact, "trends")
     .map((value) => ({ label: "Impact trend", value, status: "RECORDED" }));
   const evidence = [
     ...thresholdEvidence,
     ...endpointEvidence,
-    ...aiEvidence,
-    ...aiSignals,
     ...backendSignals,
     ...buildVitalEvidence(vitals),
     ...buildAdherenceEvidence(adherence),
     ...buildTimelineEvidence(events),
-    { label: "Assigned clinician", value: alert.assignedClinician, status: "LINKED" },
-  ].slice(0, 5);
+  ];
   const vitalHeadline = buildVitalHeadline(alert, vitals);
   const riskScore = sync?.riskScore ?? detail?.riskScore ?? alert.riskScore;
   const endpointExpected = getDisplayValue(backendImpact, ["expected", "expectedValue", "expectedRange", "baselineComparison"]);
   const endpointActual = getDisplayValue(backendImpact, ["actual", "actualValue", "currentValue", "contextSummary"]);
   const endpointTrend = getDisplayValue(backendImpact, ["trend", "trendDirection", "trendInterpretation"]);
   const suggestedReview = getStringList(backendImpact, "suggestedReview");
-  const hasStructuredEndpointImpact = Boolean(endpointExpected || endpointActual || endpointTrend || endpointEvidence.length || aiEvidence.length || aiSignals.length);
+  const hasStructuredEndpointImpact = Boolean(endpointExpected || endpointActual || endpointTrend || endpointEvidence.length);
 
   return {
     patientName,
     patientCode,
-    expectedLabel: getString(backendImpact, ["expectedLabel"]) || (aiInsight ? "Baseline comparison" : vitalHeadline?.expectedLabel || "Alert trigger"),
+    expectedLabel: getString(backendImpact, ["expectedLabel"]) || (vitalHeadline?.expectedLabel || "Alert trigger"),
     expected: endpointExpected || vitalHeadline?.expected || alert.triggerSource,
-    actualLabel: getString(backendImpact, ["actualLabel"]) || (aiInsight ? "AI context" : "Current risk score"),
+    actualLabel: getString(backendImpact, ["actualLabel"]) || "Current risk score",
     actual: endpointActual || vitalHeadline?.actual || (riskScore === null ? "Not recorded" : `${Math.round(riskScore)}/100`),
     riskScore,
     riskCategory: detail?.riskCategory ?? alert.riskCategory,
@@ -690,9 +708,7 @@ export async function getAlertReviewImpact(alert: ClinicalAlert): Promise<AlertR
     generatedAt: getString(backendImpact, ["generatedAt", "generated_at", "computedAt"]) || new Date().toISOString(),
     suggestedReview,
     thresholdDetails: alert.thresholdDetails,
-    analysisSource: aiInsight ? "ai alert insight" : hasStructuredEndpointImpact ? "alert-impact endpoint" : "episode evidence fallback",
-    evidence: evidence.length > 0
-      ? evidence
-      : [{ label: "Alert severity", value: alert.severity, status: severity }],
+    analysisSource: hasStructuredEndpointImpact ? "alert-impact endpoint" : "episode evidence fallback",
+    evidence,
   };
 }

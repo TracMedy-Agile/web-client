@@ -87,7 +87,7 @@ export default function WorkloadStatus({ clinicians = [], isLoading = false }: W
             const colors = LOAD_COLOR[clinician.load];
             const percent = workloadPercent(clinician);
             return (
-              <article key={clinician.id} className="rounded-2xl border border-border/80 bg-background/60 p-4">
+              <article key={clinician.id} className="overflow-hidden rounded-2xl border border-border/80 bg-background/60 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-bold text-foreground">{clinician.name}</p>
@@ -104,15 +104,15 @@ export default function WorkloadStatus({ clinicians = [], isLoading = false }: W
                 <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
                   <div className="rounded-xl bg-card p-3">
                     <p className="text-xs font-medium text-muted-foreground">Episodes</p>
-                    <p className="mt-1 text-lg font-extrabold text-foreground">{clinician.episodes}</p>
+                    <p className="mt-1 whitespace-nowrap text-lg font-extrabold text-foreground">{clinician.episodes}</p>
                   </div>
                   <div className="rounded-xl bg-card p-3">
                     <p className="text-xs font-medium text-muted-foreground">Alerts</p>
-                    <p className="mt-1 text-lg font-extrabold text-foreground">{clinician.alerts}</p>
+                    <p className="mt-1 whitespace-nowrap text-lg font-extrabold text-foreground">{clinician.alerts}</p>
                   </div>
                   <div className="rounded-xl bg-card p-3">
                     <p className="text-xs font-medium text-muted-foreground">Load</p>
-                    <p className="mt-1 text-lg font-extrabold text-foreground">{percent}%</p>
+                    <p className="mt-1 whitespace-nowrap text-lg font-extrabold text-foreground">{percent}%</p>
                   </div>
                 </div>
               </article>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, MapPin, Utensils, Video } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Loader2, Utensils } from "lucide-react";
 import { getCalendarAppointments } from "@/lib/api/appointments";
 import { getHospitalFacilityId } from "@/lib/api/care-episodes";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,8 @@ type CalendarFilters = {
   type: string;
 };
 
-const weekSlots = ["8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", "LUNCH", "1:00 PM", "2:00 PM"];
-const weekSlotHours = [8, 9, 10, 11, null, 13, 14];
+const weekSlots = ["8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", "LUNCH", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
+const weekSlotHours = [8, 9, 10, 11, null, 13, 14, 15, 16, 17];
 const rowHeight = 96;
 
 const statusOptions = [
@@ -34,7 +34,7 @@ const statusOptions = [
   { label: "Confirmed", value: "confirmed" },
   { label: "Pending", value: "pending" },
   { label: "Rescheduled", value: "rescheduled" },
-  { label: "No Shows", value: "no_show" },
+  { label: "No Show", value: "no_show" },
 ];
 
 const departmentOptions = [
@@ -47,7 +47,7 @@ const departmentOptions = [
 ];
 
 const typeOptions = [
-  { label: "Appointment type", value: "all" },
+  { label: "Appointment Type", value: "all" },
   { label: "Physical Visit", value: "in_person" },
   { label: "Teleconsultation", value: "teleconsultation" },
   { label: "Nurse Check-in", value: "nurse_checkin" },
@@ -56,6 +56,7 @@ const typeOptions = [
 const weekCardStyles: Record<DailyAppointmentStatus, string> = {
   Confirmed: "border-l-4 border-emerald-500 bg-emerald-50 text-emerald-500",
   Pending: "border-l-4 border-amber-500 bg-amber-50 text-amber-500",
+  Canceled: "border-l-4 border-red-500 bg-red-50 text-red-500",
   Rescheduled: "border-l-4 border-gray-400 bg-gray-100 text-[#111827]",
   "No Show": "border-l-4 border-gray-400 bg-gray-100 text-[#111827]",
 };
@@ -76,7 +77,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-md border border-border bg-white px-3 pr-9 text-sm font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-white px-3 pr-9 text-[14px] font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -112,31 +113,43 @@ function buildWeekDays(date: Date) {
 }
 
 function getWeekSlotIndex(appointment: CalendarAppointment) {
-  const minutes = parseTimeToMinutes(appointment.startTime);
-  const hour = Math.floor(minutes / 60);
-  const index = weekSlotHours.findIndex((slotHour) => slotHour === hour);
-  return index >= 0 ? index : 0;
+  const hour = Math.floor(parseTimeToMinutes(appointment.startTime) / 60);
+  if (hour === 12) return 4; // The lunch row covers the noon hour.
+
+  let slotIndex = 0;
+  weekSlotHours.forEach((slotHour, index) => {
+    if (slotHour !== null && hour >= slotHour) slotIndex = index;
+  });
+  return slotIndex;
 }
 
 function getNowLineTop(nowTime: string) {
   const minutes = parseTimeToMinutes(nowTime);
-  const hour = Math.floor(minutes / 60);
-  const slotIndex = weekSlotHours.findIndex((slotHour) => slotHour === hour);
-  if (slotIndex < 0) return null;
-  return slotIndex * rowHeight + ((minutes % 60) / 60) * rowHeight;
+  const timelineStart = 8 * 60;
+  const timelineEnd = 17 * 60;
+  if (minutes < timelineStart || minutes > timelineEnd) return null;
+
+  const clampedMinutes = minutes;
+  const hour = Math.floor(clampedMinutes / 60);
+  const slotIndex = hour === 12
+    ? 4
+    : weekSlotHours.reduce<number>((index, slotHour, candidateIndex) => (
+      slotHour !== null && hour >= slotHour ? candidateIndex : index
+    ), 0);
+  const slotStartHour = slotIndex === 4 ? 12 : (weekSlotHours[slotIndex] ?? 14);
+  return slotIndex * rowHeight + ((clampedMinutes - slotStartHour * 60) / 60) * rowHeight;
 }
 
 function WeekAppointmentCard({ appointment }: { appointment: CalendarAppointment }) {
-  const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
-
   return (
     <Link
       href={`/dashboard/appointments/${encodeURIComponent(appointment.id)}`}
       aria-label={`Open appointment details for ${appointment.patientName}`}
       className={cn(
-        "mx-1 mt-1 block min-w-0 cursor-pointer overflow-hidden rounded-xl px-2 py-3 text-xs shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 xl:px-3",
+        "mx-1 mt-1 box-border flex w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)] min-w-0 flex-col overflow-hidden rounded-xl px-2 py-3 text-xs shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 xl:px-3",
         weekCardStyles[appointment.status],
       )}
+      style={{ minHeight: Math.max(64, Math.round((appointment.durationMinutes / 60) * rowHeight)) }}
     >
       <p className="truncate font-bold leading-tight">{appointment.patientName}</p>
       <p className="mt-1 truncate font-medium text-[#71809B]">{appointment.type}</p>
@@ -145,10 +158,9 @@ function WeekAppointmentCard({ appointment }: { appointment: CalendarAppointment
         <span className="truncate">{appointment.startTime}</span>
       </p>
       <p className="mt-0.5 flex min-w-0 items-center gap-1 font-medium text-[#71809B]">
-        {isTeleconsultation ? <Video className="h-3 w-3 shrink-0" /> : <MapPin className="h-3 w-3 shrink-0" />}
         <span className="truncate">{appointment.doctor}</span>
       </p>
-      <p className="mt-1 truncate font-bold">{appointment.status}</p>
+      <p className="mt-auto truncate whitespace-nowrap pt-1 font-bold">{appointment.status}</p>
     </Link>
   );
 }
@@ -193,7 +205,8 @@ function WeekCalendar({
   const [nowTime, setNowTime] = useState(() => getCurrentDisplayTime());
   const [facilityId, setFacilityId] = useState("");
   const days = useMemo(() => buildWeekDays(date), [date]);
-  const nowLineTop = getNowLineTop(nowTime);
+  const todayKey = formatDateForApi(new Date());
+  const nowLineTop = days.some((day) => day.key === todayKey) ? getNowLineTop(nowTime) : null;
 
   useEffect(() => {
     const updateNow = () => setNowTime(getCurrentDisplayTime());
@@ -263,35 +276,37 @@ function WeekCalendar({
 
   return (
     <>
-      <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <FilterSelect className="w-full sm:w-[120px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
-          <FilterSelect className="w-full sm:w-[155px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
-          <FilterSelect className="w-full sm:w-[170px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
+      <div className="mb-7 flex flex-col gap-2 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap xl:flex-nowrap">
+          <FilterSelect className="w-full sm:w-[130px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
+          <FilterSelect className="w-full sm:w-[180px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
+          <FilterSelect className="w-full sm:w-[180px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
         </div>
 
-        <div className="flex items-center justify-center gap-5 text-[#111827]">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-3 text-[#111827]">
           <button type="button" aria-label="Previous week" className="text-[#111827]" onClick={onPreviousWeek}>
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <p className="whitespace-nowrap text-lg font-bold md:text-xl">{formatWeekTitle(date)}</p>
+          <p className="min-w-0 truncate whitespace-nowrap text-center text-[20px] font-bold leading-6">{formatWeekTitle(date)}</p>
           <button type="button" aria-label="Next week" className="text-[#111827]" onClick={onNextWeek}>
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="inline-flex h-10 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
+        <div className="inline-flex h-10 shrink-0 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
           <button
             type="button"
             onClick={() => onViewChange?.("day")}
-            className="rounded-lg px-4 text-xs font-medium text-[#71809B] transition-colors"
+            aria-pressed={false}
+            className="rounded-lg px-4 text-[12px] font-medium text-[#71809B] transition-colors"
           >
             Day
           </button>
           <button
             type="button"
             onClick={() => onViewChange?.("week")}
-            className="rounded-lg bg-white px-4 text-xs font-semibold text-[#111827] shadow-sm transition-colors"
+            aria-pressed={true}
+            className="rounded-lg bg-white px-4 text-[12px] font-semibold text-[#111827] shadow-sm transition-colors"
           >
             Week
           </button>

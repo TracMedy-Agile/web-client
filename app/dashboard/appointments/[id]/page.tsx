@@ -18,7 +18,6 @@ import {
   MessageSquare,
   MoreVertical,
   RefreshCcw,
-  Send,
   Stethoscope,
   UserRound,
   UserX,
@@ -87,7 +86,6 @@ type AppointmentDetails = AppointmentCallFields & {
     dateTime: string;
     bookedVia: string;
     linkedEpisode: string;
-    createdBy: string;
     bookingDate: string;
     previousDateTime: string;
     cancelledReason: string;
@@ -269,6 +267,12 @@ function minutesToDisplayTime(totalMinutes: number) {
   return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
 }
 
+function formatGender(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return "";
+  return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 function formatDate(value: string) {
   const parsed = Date.parse(value);
   if (!value || !Number.isFinite(parsed)) return value || "--";
@@ -341,7 +345,7 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
   const patientName = getString(record, ["patientName"], "") || getString(patient, ["name", "fullName"], "Unknown Patient");
   const rawStatus = normalizeStatusKey(getString(record, ["status"], "pending"));
   const status = mapStatus(rawStatus);
-  const appointmentCode = getString(record, ["appointmentId", "code", "id"], fallbackId);
+  const appointmentCode = getString(record, ["reference", "appointmentId", "code", "id"], fallbackId);
   const date = getString(record, ["date", "appointmentDate", "scheduledDate", "startsAt", "startTime"]);
   const time = getString(record, ["time", "appointmentTime", "scheduledTime", "startsAt", "startTime"]);
   const previousDate = getString(record, ["previousDate", "oldDate"]);
@@ -349,9 +353,10 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
   const bookingDate = formatDateTime(getString(record, ["createdAt", "bookingDate"]), getString(record, ["createdAt", "bookingDate"]));
   const department = getString(record, ["department", "service"], "") || getString(departmentRecord, ["name"], "Unassigned");
   const clinicianId = getNullableString(record, ["clinicianId"]) ?? getNullableString(clinician, ["id", "clinicianId", "_id"]);
-  const assignedDoctor = clinicianId ? getString(record, ["clinicianName", "doctor", "assignedDoctor"], "") || getString(clinician, ["name", "fullName"], "None assigned") : "None assigned";
+  const assignedDoctor = clinicianId ? getString(record, ["clinicianName", "doctor", "assignedDoctor"], "") || getString(clinician, ["name", "fullName"], "Not assigned") : "Not assigned";
   const patientAge = getString(patient, ["age"]) || getAgeFromDateOfBirth(getString(patient, ["dateOfBirth", "dob"]));
-  const patientAgeGender = [patientAge, getString(patient, ["gender", "sex"])].filter(Boolean).join(" yrs, ");
+  const patientGender = formatGender(getString(patient, ["gender", "sex"]));
+  const patientAgeGender = [patientAge ? `${patientAge} yrs` : "", patientGender].filter(Boolean).join(", ");
   const appointmentType = normalizeAppointmentType(getString(record, ["type", "appointmentType"], "in_person"));
   const callStatus = normalizeCallStatus(getNullableString(record, ["callStatus"]));
 
@@ -370,7 +375,7 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
       initials: getInitials(patientName),
       avatarUrl: getString(record, ["patientAvatarUrl"], "") || getString(patient, ["avatarUrl", "patientAvatarUrl"], ""),
       name: patientName,
-      hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracmedyId", "medicalRecordNumber", "id"], "--"),
+      hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracId", "patientTracId", "tracmedyId", "medicalRecordNumber"], "--"),
       ageGender: patientAgeGender || "--",
       phone: getString(record, ["phone"], "") || getString(patient, ["phone", "phoneNumber"], "--"),
       email: getString(record, ["email"], "") || getString(patient, ["email"], "--"),
@@ -381,7 +386,6 @@ function normalizeAppointment(payload: unknown, fallbackId: string): Appointment
       dateTime: formatDateTime(date, time),
       bookedVia: getString(record, ["bookedVia", "source"], "Patient App"),
       linkedEpisode: getString(record, ["linkedEpisode"], "") || getString(careEpisode, ["code", "id", "title"], "--"),
-      createdBy: getString(record, ["createdBy"], "Patient (Self-booked)"),
       bookingDate,
       previousDateTime: previousDate || previousTime ? formatDateTime(previousDate, previousTime) : "",
       cancelledReason: getString(record, ["cancelledReason", "cancelReason", "cancellationReason"], ""),
@@ -422,9 +426,9 @@ function CardHeader({ icon, title, showChevron = false }: { icon: React.ReactNod
 
 function DetailItem({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
   return (
-    <div className={className}>
+    <div className={cn("min-w-0", className)}>
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#344054]">{label}</p>
-      <div className="mt-1 text-sm font-bold text-[#111827]">{value}</div>
+      <div className="mt-1 min-w-0 break-words text-sm font-bold text-[#111827]">{value}</div>
     </div>
   );
 }
@@ -690,9 +694,9 @@ export default function AppointmentDetailsPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap justify-end gap-2">
             {canConfirm ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction) || needsClinician} onClick={handleConfirmClick} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" disabled={!appointment || Boolean(activeAction) || needsClinician} onClick={handleConfirmClick} className="flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                 {activeAction === "Appointment confirmed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Confirm
               </button>
@@ -706,26 +710,26 @@ export default function AppointmentDetailsPage() {
                   capturePostHogEvent("appointment_completed", { appointment_id: appointmentId });
                   return result;
                 })}
-                className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {activeAction === "Appointment completed" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Mark as Completed
               </button>
             ) : null}
             {canStartOrJoinCall ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => void handleCallClick()} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-7 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => void handleCallClick()} className="flex h-11 items-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                 {activeAction === "Appointment call" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
                 {callActionLabel}
               </button>
             ) : null}
             {canReschedule ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => setIsRescheduleOpen(true)} className="flex h-11 items-center gap-2 rounded-xl border border-[#8AA0C0] bg-white px-5 text-sm font-bold text-[#344054] disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => setIsRescheduleOpen(true)} className="flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-[#8AA0C0] bg-white px-4 text-sm font-bold text-[#344054] disabled:cursor-not-allowed disabled:opacity-60">
                 <RefreshCcw className="h-4 w-4" />
                 Reschedule
               </button>
             ) : null}
             {canCancel ? (
-              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => setIsCancelOpen(true)} className="flex h-11 items-center gap-2 rounded-xl border border-red-500 bg-white px-5 text-sm font-bold text-red-500 disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" disabled={!appointment || Boolean(activeAction)} onClick={() => setIsCancelOpen(true)} className="flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-red-500 bg-white px-4 text-sm font-bold text-red-500 disabled:cursor-not-allowed disabled:opacity-60">
                 <X className="h-4 w-4" />
                 Cancel
               </button>
@@ -764,9 +768,9 @@ export default function AppointmentDetailsPage() {
         {!isLoading && !error && appointment ? (
           <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
             <div className="space-y-6">
-              <Card>
+              <Card className="min-w-0">
                 <CardHeader icon={<UsersRound className="h-5 w-5" />} title="Patient Information" showChevron />
-                <div className="flex items-center gap-4 lg:gap-6">
+                <div className="flex min-w-0 items-center gap-4 lg:gap-6">
                   {appointment.patient.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={appointment.patient.avatarUrl} alt={appointment.patient.name} className="h-20 w-20 shrink-0 rounded-full object-cover" />
@@ -775,25 +779,24 @@ export default function AppointmentDetailsPage() {
                   )}
                   <div>
                     <h3 className="text-lg font-bold text-[#111827]">{appointment.patient.name}</h3>
-                    <p className="mt-3 text-base font-medium text-[#344054]">Hospital ID: <Link href="#" className="font-bold text-[#1473E6]">{appointment.patient.hospitalId}</Link></p>
+                    <p className="mt-2 break-all text-base font-medium text-[#344054]">Hospital ID: <Link href="#" className="font-bold text-[#1473E6]">{appointment.patient.hospitalId}</Link></p>
                   </div>
                 </div>
-                <div className="mt-9 space-y-5">
-                  <div className="flex items-center justify-between gap-4"><p className="font-medium text-[#344054]">Age / Gender</p><p className="font-bold text-[#111827]">{appointment.patient.ageGender}</p></div>
-                  <div className="flex items-center justify-between gap-4"><p className="font-medium text-[#344054]">Phone</p><p className="font-bold text-[#111827]">{appointment.patient.phone}</p></div>
-                  <div className="flex items-center justify-between gap-4"><p className="font-medium text-[#344054]">Email</p><p className="font-bold text-[#111827]">{appointment.patient.email}</p></div>
+                <div className="mt-7 space-y-5">
+                  <div className="flex items-start justify-between gap-4 text-base"><p className="font-medium text-[#344054]">Age / Gender</p><p className="break-words text-right font-bold text-[#111827]">{appointment.patient.ageGender}</p></div>
+                  <div className="flex items-start justify-between gap-4 text-base"><p className="font-medium text-[#344054]">Phone</p><p className="break-words text-right font-bold text-[#111827]">{appointment.patient.phone}</p></div>
+                  <div className="flex items-start justify-between gap-4 text-base"><p className="font-medium text-[#344054]">Email</p><p className="max-w-[65%] break-all text-right font-bold text-[#111827]">{appointment.patient.email}</p></div>
                 </div>
               </Card>
 
               <Card>
                 <CardHeader icon={<CalendarDays className="h-5 w-5" />} title="Appointment Details" />
-                <div className="grid gap-x-16 gap-y-5 md:grid-cols-2">
+                <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                   <DetailItem label="Appointment ID" value={appointment.details.appointmentId} />
                   <DetailItem label="Status" value={<span className={cn(statusBadgeClass(appointment.rawStatus).includes("orange") ? "text-orange-500" : statusBadgeClass(appointment.rawStatus).includes("red") ? "text-red-500" : "text-emerald-600")}>{appointment.details.status}</span>} />
                   <DetailItem label="Date & Time" value={appointment.details.dateTime} />
                   <DetailItem label="Booked Via" value={appointment.details.bookedVia} />
                   <DetailItem label="Linked Episode" value={<Link href="#" className="text-[#1473E6]">{appointment.details.linkedEpisode}</Link>} />
-                  <DetailItem label="Created By" value={appointment.details.createdBy} />
                   <DetailItem label="Booking Date" value={appointment.details.bookingDate} />
                   {appointment.details.previousDateTime ? <DetailItem label="Previous Date & Time" value={appointment.details.previousDateTime} /> : null}
                   {appointment.details.rescheduleReason ? <DetailItem label="Reschedule Reason" value={appointment.details.rescheduleReason} /> : null}
@@ -801,7 +804,7 @@ export default function AppointmentDetailsPage() {
                 </div>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardHeader icon={<Clock3 className="h-5 w-5" />} title="Appointment History" />
                 <div className="relative pl-8">
                   <span className="absolute left-[15px] top-5 h-[calc(100%-52px)] w-px bg-[#D5DCE8]" />
@@ -822,7 +825,7 @@ export default function AppointmentDetailsPage() {
             </div>
 
             <div className="space-y-6">
-              <Card>
+              <Card className="min-w-0">
                 <CardHeader icon={<Stethoscope className="h-5 w-5" />} title="Service & Doctor" />
                 <div className="space-y-6">
                   <DetailItem label="Service / Department" value={appointment.service.department} />
@@ -899,25 +902,23 @@ export default function AppointmentDetailsPage() {
                 </div>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardHeader icon={<FileText className="h-5 w-5" />} title="Patient Notes" />
                 <div>
                   <p className="mb-4 font-bold text-[#111827]">Reason for visit / Notes</p>
-                  <div className="border-l-2 border-primary bg-[#E7F2FF] px-4 py-4 text-sm font-medium leading-7 text-[#111827]">{appointment.notes.reason}</div>
+                  <div className="min-w-0 break-all border-l-2 border-primary bg-[#E7F2FF] px-4 py-4 text-sm font-medium leading-7 text-[#111827]">{appointment.notes.reason}</div>
                 </div>
-                <div className="mt-8"><p className="font-bold text-[#111827]">Additional Notes</p><p className="mt-3 text-sm font-medium text-[#111827]">{appointment.notes.additional}</p></div>
+                <div className="mt-8"><p className="font-bold text-[#111827]">Additional Notes</p><p className="mt-3 min-w-0 break-all text-sm font-medium text-[#111827]">{appointment.notes.additional}</p></div>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardHeader icon={<MessageSquare className="h-5 w-5" />} title="Communication" />
-                <div className="border-l-2 border-primary bg-[#E7F2FF] px-5 py-5">
+                <div className="min-w-0 break-all border-l-2 border-primary bg-[#E7F2FF] px-5 py-5">
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#344054]">Last Communication</p>
                   <p className="mt-3 text-sm font-bold text-[#111827]">{appointment.communication.message}</p>
                   <p className="mt-5 text-xs font-bold uppercase text-[#344054]">{appointment.communication.timestamp}</p>
                 </div>
                 <div className="mt-6 space-y-5">
-
-                    <button type="button" onClick={() => setMessageMode("message")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Send className="h-4 w-4" />Send Message</button>
 
                   <button type="button" onClick={() => setMessageMode("update")} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-primary bg-white text-sm font-semibold text-primary"><Bell className="h-4 w-4" />Send Appointment Update</button>
                 </div>
@@ -931,7 +932,9 @@ export default function AppointmentDetailsPage() {
         key={isRescheduleOpen ? "reschedule-open" : "reschedule-closed"}
         isOpen={isRescheduleOpen}
         appointmentId={appointment?.id ?? appointmentId}
+        appointmentDisplayId={appointment?.appointmentCode ?? appointment?.details.appointmentId}
         patientName={appointment?.patient.name}
+        clinicianId={appointment?.clinicianId ?? undefined}
         appointmentReason={appointment?.notes.reason}
         appointmentDate={appointment?.details.dateTime}
         appointmentTime={appointment?.details.dateTime}

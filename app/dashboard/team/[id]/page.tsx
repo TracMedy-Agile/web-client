@@ -36,12 +36,14 @@ import {
   getTeamMemberRequestId,
   getTeamMemberActivity,
   getTeamMemberEscalationPreference,
+  updateTeamMember,
   updateTeamMemberEscalationPreference,
   type ClinicianProfile,
   type EscalationPreference,
   type TeamMember,
   type TeamMemberActivityEntry,
   type UpdateEscalationPreferenceInput,
+  type UpdateTeamMemberInput,
 } from "@/lib/api/clinicians";
 import { errorMessage, isAccessDeniedError, isNetworkError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils";
@@ -84,6 +86,30 @@ function statusLabel(value?: string | null) {
   return STATUS_LABELS[value] ?? humanize(value);
 }
 
+function activityTitle(action: string) {
+  const normalized = action.toLowerCase().replace(/[\s-]+/g, "_");
+  const labels: Record<string, string> = {
+    invitation_sent: "Invitation Sent",
+    invite_sent: "Invitation Sent",
+    account_activated: "Account Activated",
+    login: "Signed In",
+    logged_in: "Signed In",
+    team_member_updated: "Permissions Updated",
+    permissions_updated: "Permissions Updated",
+    team_member_suspended: "Account Suspended",
+    team_member_reactivated: "Account Reactivated",
+  };
+  return labels[normalized] ?? humanize(action);
+}
+
+function activityDetail(entry: TeamMemberActivityEntry) {
+  const detail = entry.targetSummary && entry.targetSummary !== "No target recorded"
+    ? entry.targetSummary
+    : "Activity recorded";
+  return entry.actorName && entry.actorName !== "System"
+    ? detail + " by " + entry.actorName
+    : detail;
+}
 function formatDate(value?: string | null) {
   if (!value) return "Not recorded";
   const date = new Date(value);
@@ -165,6 +191,19 @@ const PERMISSION_GROUPS = [
 // member who genuinely has that access.
 const CARE_EPISODE_BUNDLED_PERMISSIONS = new Set(["connected_patients", "alerts", "messages"]);
 
+type TeamPermissionKey = NonNullable<UpdateTeamMemberInput["permissions"]>[number];
+const PERMISSION_KEY_MAP: Record<string, TeamPermissionKey> = {
+  connected_patients: "care_episode",
+  care_episode: "care_episode",
+  alerts: "care_episode",
+  messages: "care_episode",
+  appointments: "appointments",
+  view_all_reports: "view_all_reports",
+  manage_team_members: "manage_team_members",
+  audit_log: "audit_log",
+  configure_settings: "configure_settings",
+};
+
 function hasPermission(member: TeamMember, permission: string) {
   if (member.accessProfile === "full_access" || member.permissions.includes("full_system_access")) return true;
   if (member.permissions.includes(permission)) return true;
@@ -217,6 +256,7 @@ export default function TeamMemberPage() {
   const [isActivityLoading, setIsActivityLoading] = useState(true);
   const [isEscalationLoading, setIsEscalationLoading] = useState(true);
   const [isSavingEscalation, setIsSavingEscalation] = useState(false);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [escalationError, setEscalationError] = useState<string | null>(null);
@@ -279,6 +319,47 @@ export default function TeamMemberPage() {
     void loadProfile();
   }, [loadProfile, memberId]);
 
+  const canEditPermissions = hasCurrentUserPermission("configure_settings");
+
+  async function togglePermission(permission: string, checked: boolean) {
+    if (!member || !canEditPermissions || isSavingPermissions) return;
+    const backendPermission = PERMISSION_KEY_MAP[permission];
+    if (!backendPermission) return;
+
+    const currentPermissions = member.permissions
+      .map((item) => PERMISSION_KEY_MAP[item] ?? (item as TeamPermissionKey))
+      .filter((item, index, items): item is TeamPermissionKey => items.indexOf(item) === index);
+    const nextPermissions = checked
+      ? Array.from(new Set([...currentPermissions, backendPermission]))
+      : currentPermissions.filter((item) => item !== backendPermission);
+    const nextAccessProfile: UpdateTeamMemberInput["accessProfile"] = checked && member.accessProfile === "full_access"
+      ? "full_access"
+      : "limited";
+
+    setIsSavingPermissions(true);
+    try {
+      const requestMemberId = getTeamMemberRequestId(member);
+      const updatedMember = await updateTeamMember(requestMemberId, {
+        accessProfile: nextAccessProfile,
+        permissions: nextPermissions,
+      });
+      setMember(updatedMember);
+      await loadActivity(updatedMember);
+      capturePostHogEvent("team_member_updated", {
+        member_id: requestMemberId,
+        change: "permissions",
+        permission: backendPermission,
+        enabled: checked,
+      });
+      toast.success("Permissions updated");
+    } catch (requestError) {
+      toast.error("Permissions could not be saved", {
+        description: requestError instanceof Error ? requestError.message : "Unable to update this team member's permissions.",
+      });
+    } finally {
+      setIsSavingPermissions(false);
+    }
+  }
   async function toggleWhatsapp(checked: boolean) {
     if (!member) return;
     const currentChannels = channelsFromPreference(escalation, member);
@@ -328,6 +409,7 @@ export default function TeamMemberPage() {
   const department = member.ward || member.specialty || profile?.department || "Not specified";
   const activeChannels = channelsFromPreference(escalation, member);
   const whatsappEnabled = activeChannels.includes("whatsapp");
+  const whatsappConfigured = Boolean(escalation?.whatsappPhone);
   const enabledPermissionCount = PERMISSION_GROUPS.reduce((sum, g) => {
     return sum + g.permissions.filter((p) => hasPermission(member, p.key)).length;
   }, 0);
@@ -414,16 +496,6 @@ export default function TeamMemberPage() {
               </div>
               <p className="mt-3 text-xl font-bold text-foreground">{isToday(member.lastLoginAt) ? "Today" : formatDate(member.lastLoginAt)}</p>
               {isToday(member.lastLoginAt) ? <p className="text-sm text-muted-foreground">at {formatTime(member.lastLoginAt)}</p> : null}
-            </article>
-            <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-[#023E8A]">
-                  <Calendar className="h-4 w-4" />
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Added</span>
-              </div>
-              <p className="mt-3 text-xl font-bold text-foreground">{formatDate(member.invitedAt)}</p>
-              {member.invitedBy ? <p className="text-sm text-muted-foreground">by {member.invitedBy.name}</p> : null}
             </article>
             <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
               <div className="flex items-center gap-2">
@@ -569,12 +641,12 @@ export default function TeamMemberPage() {
                   </span>
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Permission Source</p>
-                    <p className="text-sm font-bold text-foreground">Manual/Custom</p>
+                    <p className="text-sm font-bold text-foreground">{member.accessProfile === "full_access" ? "Role default" : "Manual/Custom"}</p>
                   </div>
                 </div>
               </div>
               <div className="mt-6 border-t border-border pt-4">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-xs font-semibold italic text-muted-foreground">
                   <Clock className="h-3.5 w-3.5" />
                   Last Update: {formatDate(member.lastLoginAt)}
                 </div>
@@ -605,12 +677,12 @@ export default function TeamMemberPage() {
                         return (
                           <div key={permission.label} className="flex items-center justify-between gap-3">
                             <span className="text-sm text-foreground">{permission.label}</span>
-                            <div className={cn(
-                              "flex h-5 w-5 items-center justify-center rounded",
-                              enabled ? "bg-[#023E8A] text-white" : "border border-border bg-white",
-                            )}>
-                              {enabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-                            </div>
+                            <Switch
+                              checked={enabled}
+                              disabled={!canEditPermissions || isSavingPermissions}
+                              aria-label="Permission toggle"
+                              onCheckedChange={(checked) => void togglePermission(permission.key, checked)}
+                            />
                           </div>
                         );
                       })}
@@ -652,7 +724,7 @@ export default function TeamMemberPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Compliance</span>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">Consent Status</p>
-                  <p className="text-lg font-bold text-green-600">Granted</p>
+                  <p className="text-lg font-bold text-green-600">{whatsappEnabled ? "Granted" : "Not granted"}</p>
                 </article>
                 <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-center justify-between">
@@ -662,7 +734,7 @@ export default function TeamMemberPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Security</span>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">WhatsApp Verification</p>
-                  <p className="text-lg font-bold text-[#023E8A]">{escalation?.whatsappPhone ? "Verified" : "Not Verified"}</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{whatsappConfigured ? "Configured" : "Not configured"}</p>
                 </article>
                 <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-center justify-between">
@@ -672,7 +744,7 @@ export default function TeamMemberPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Timeline</span>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">Verified On</p>
-                  <p className="text-lg font-bold text-[#023E8A]">{formatDate(member.invitedAt)}</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{whatsappConfigured ? "Not recorded" : "Not available"}</p>
                 </article>
               </div>
 
@@ -686,7 +758,7 @@ export default function TeamMemberPage() {
                     <div>
                       <h2 className="font-semibold text-foreground">WhatsApp Critical Alert Escalations Status</h2>
                       <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                        This clinician will receive high-priority alert escalations through WhatsApp for assigned patients during configured care hours.
+                        This team member will receive high-priority alert escalations through WhatsApp for assigned patients during configured care hours.
                       </p>
                     </div>
                   </div>
@@ -699,7 +771,7 @@ export default function TeamMemberPage() {
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                   <Info className="h-4 w-4" />
-                  <span>Role default: on. Clinician can opt-out via personal settings.</span>
+                  <span className="whitespace-nowrap italic">Role default: On. Team member can opt out via personal settings.</span>
                 </div>
               </div>
             </>
@@ -749,13 +821,8 @@ export default function TeamMemberPage() {
                         <div className="min-w-0 flex-1 pt-1">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-bold text-foreground">{humanize(entry.action)}</p>
-                              <p className="mt-0.5 text-sm text-muted-foreground">{entry.targetSummary}</p>
-                              {entry.actorName ? (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  by <span className="font-medium text-[#023E8A]">{entry.actorName}</span>
-                                </p>
-                              ) : null}
+                              <p className="text-sm font-bold text-foreground">{activityTitle(entry.action)}</p>
+                              <p className="mt-0.5 text-sm text-muted-foreground">{activityDetail(entry)}</p>
                             </div>
                             <span className="shrink-0 whitespace-nowrap rounded-lg border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
                               {formatActivityDate(entry.createdAt)}

@@ -14,6 +14,7 @@ type SaveConfirmationModalProps = {
   nextVersion: number;
   patientName: string;
   createsVersion: boolean;
+  isInitialSetup?: boolean;
   requiresReason?: boolean;
 };
 
@@ -25,6 +26,7 @@ export function SaveConfirmationModal({
   nextVersion,
   patientName,
   createsVersion,
+  isInitialSetup = false,
   requiresReason = true,
 }: SaveConfirmationModalProps) {
   const inputId = useId();
@@ -38,7 +40,7 @@ export function SaveConfirmationModal({
     setSaving(true); setError("");
     try {
       const savedVersion = await onConfirm(requiresReason ? reason.trim() : "Initial care plan setup");
-      toast.success("Care plan updated", {
+      toast.success(isInitialSetup ? "Care plan created" : createsVersion ? "Care plan version created" : "Care plan updated", {
         description: `Version ${savedVersion} is active.`,
       });
       close();
@@ -50,9 +52,9 @@ export function SaveConfirmationModal({
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !saving) close(); }}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-[576px] gap-0 overflow-hidden rounded-[14px] border-border bg-card p-0 shadow-2xl [&>button]:right-6 [&>button]:top-6 [&>button]:text-muted-foreground">
         <form onSubmit={submit}>
-          <DialogHeader className="border-b border-border px-6 py-[18px] pr-16 text-left"><DialogTitle className="flex items-center gap-3 text-xl font-bold text-foreground"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Save className="h-[18px] w-[18px]" /></span>Save Updated Care Plan</DialogTitle></DialogHeader>
+          <DialogHeader className="border-b border-border px-6 py-[18px] pr-16 text-left"><DialogTitle className="flex items-center gap-3 text-xl font-bold text-foreground"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Save className="h-[18px] w-[18px]" /></span>{isInitialSetup ? "Save Care Plan" : "Save Updated Care Plan"}</DialogTitle></DialogHeader>
           <div className="px-6 py-6">
-            <DialogDescription className="flex items-start gap-3 text-[14px] leading-5 text-muted-foreground"><AlertCircle className="mt-0.5 h-[22px] w-[22px] shrink-0 text-amber-500" /><span>{createsVersion ? <>The current plan (v{currentVersion}) will be archived and a new version (v{nextVersion}) will become active for <strong className="text-foreground">{patientName}</strong>.</> : <>The active plan (v{currentVersion}) will be updated for <strong className="text-foreground">{patientName}</strong>. This change will be recorded in the audit log.</>}</span></DialogDescription>
+            <DialogDescription className="flex items-start gap-3 text-[14px] leading-5 text-muted-foreground"><AlertCircle className="mt-0.5 h-[22px] w-[22px] shrink-0 text-amber-500" /><span>{isInitialSetup ? <>This will create the initial care plan for <strong className="text-foreground">{patientName}</strong> as Version 1.0.</> : createsVersion ? <>The current plan (v{currentVersion}) will be archived and a new version (v{nextVersion}) will become active for <strong className="text-foreground">{patientName}</strong>.</> : <>The active plan (v{currentVersion}) will be updated for <strong className="text-foreground">{patientName}</strong>. This change will be recorded in the audit log.</>}</span></DialogDescription>
             {requiresReason ? (
               <>
                 <label htmlFor={inputId} className="mt-6 block text-[14px] font-medium text-foreground">Change Reason</label>

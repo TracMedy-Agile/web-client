@@ -66,7 +66,7 @@ function relativeTime(value: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export async function getDashboardLiveAlerts(limit = 3, clinicianId?: string): Promise<LiveAlert[]> {
+export async function getDashboardLiveAlerts(limit = 6, clinicianId?: string): Promise<LiveAlert[]> {
   const snapshot = await getAlertsSnapshot();
   let activeAlerts = snapshot.active;
   if (clinicianId) {
@@ -82,7 +82,9 @@ export async function getDashboardLiveAlerts(limit = 3, clinicianId?: string): P
     description: alert.reason,
     time: relativeTime(alert.timestamp),
     actionLabel: alert.severity === "critical" ? "Review" : "View Details",
-    actionHref: `/dashboard/alerts?alertId=${encodeURIComponent(alert.id)}`,
+    episodeId: alert.episodeId,
+    triggerSource: alert.triggerSource,
+    clinicalAlert: alert,
   }));
 }
 

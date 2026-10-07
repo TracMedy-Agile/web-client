@@ -16,7 +16,6 @@ export type HospitalProfileSettings = {
   contactPhone: string;
   timezone: string;
   logoUrl: string;
-  coverPhotoUrl: string;
 };
 
 export type NotificationPreferences = {
@@ -50,7 +49,6 @@ const defaultHospitalProfile: HospitalProfileSettings = {
   contactPhone: "+234 801 000 0001",
   timezone: "Africa/Lagos",
   logoUrl: "",
-  coverPhotoUrl: "",
 };
 
 export const defaultNotificationPreferences: NotificationPreferences = {
@@ -155,7 +153,6 @@ function normalizeHospitalProfile(payload: unknown): HospitalProfileSettings {
     contactPhone: nullableString(contact, ["contactPhone", "phone", "phoneNumber"], defaultHospitalProfile.contactPhone),
     timezone: nullableString(facility, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
     logoUrl: nullableString(facility, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
-    coverPhotoUrl: nullableString(facility, ["coverPhotoUrl", "coverPhoto", "coverUrl", "bannerUrl"], defaultHospitalProfile.coverPhotoUrl),
   };
 }
 
@@ -185,7 +182,6 @@ export async function updateHospitalProfileSettings(profile: HospitalProfileSett
     contactPhone: profile.contactPhone.trim() || null,
     timezone: profile.timezone.trim() || null,
     logoUrl: profile.logoUrl.trim() || null,
-    coverPhotoUrl: profile.coverPhotoUrl.trim() || null,
   };
 
   return normalizeHospitalProfile(await request(`/facilities/${encodeURIComponent(profile.facilityId)}`, {
@@ -210,11 +206,10 @@ export async function updateHospitalLocation(facilityId: string, location: Facil
     longitude: typeof payload?.longitude === "number" ? payload.longitude : null,
   };
 }
-
-type FacilityUploadType = "logo" | "cover";
+type FacilityUploadType = "logo";
 
 async function uploadHospitalMedia(facilityId: string, file: File, type: FacilityUploadType): Promise<string> {
-  if (!facilityId) throw new Error(`Unable to upload hospital ${type === "logo" ? "logo" : "cover photo"} because the facility ID is missing.`);
+  if (!facilityId) throw new Error(`Unable to upload hospital logo because the facility ID is missing.`);
 
   const formData = new FormData();
   formData.append("file", file);
@@ -225,16 +220,12 @@ async function uploadHospitalMedia(facilityId: string, file: File, type: Facilit
     body: formData,
   })) as FacilityUploadResponseDto | null;
 
-  if (!payload?.url) throw new Error(`The ${type === "logo" ? "logo" : "cover photo"} upload response did not include a URL.`);
+  if (!payload?.url) throw new Error(`The logo upload response did not include a URL.`);
   return payload.url;
 }
 
 export async function uploadHospitalLogo(facilityId: string, file: File): Promise<string> {
   return uploadHospitalMedia(facilityId, file, "logo");
-}
-
-export async function uploadHospitalCoverPhoto(facilityId: string, file: File): Promise<string> {
-  return uploadHospitalMedia(facilityId, file, "cover");
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

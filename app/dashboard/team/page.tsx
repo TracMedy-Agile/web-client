@@ -125,7 +125,7 @@ function SummarySkeleton() {
 }
 
 function exportTeamMembers(members: TeamMember[]) {
-  const headers = ["Full Name", "Role", "Specialty", "Assigned Patients", "Status", "Last Login", "Email"];
+  const headers = ["Full Name", "Role", "Specialty", "Patients", "Status", "Last Login", "Email"];
   const rows = members.map((m) => [
     m.name,
     roleLabel(m.role),
@@ -434,16 +434,16 @@ export default function TeamPage() {
 
             {/* Desktop table */}
             <div className="hidden lg:block">
-              <table className="w-full text-left">
+              <table className="w-full table-fixed text-left">
                 <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    <th className="px-5 py-3.5">Full Name</th>
-                    <th className="px-5 py-3.5">Role</th>
-                    <th className="px-5 py-3.5">Speciality</th>
-                    <th className="px-5 py-3.5">Assigned Patient</th>
-                    <th className="px-5 py-3.5">Status</th>
-                    <th className="px-5 py-3.5">Last Login</th>
-                    <th className="px-5 py-3.5">Action</th>
+                    <th className="w-[24%] px-5 py-3.5">Full Name</th>
+                    <th className="w-[13%] px-5 py-3.5">Role</th>
+                    <th className="w-[18%] px-5 py-3.5">Speciality</th>
+                    <th className="w-[12%] px-5 py-3.5">Patients</th>
+                    <th className="w-[12%] px-5 py-3.5">Status</th>
+                    <th className="w-[14%] px-5 py-3.5">Last Login</th>
+                    <th className="w-[7%] px-5 py-3.5">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">

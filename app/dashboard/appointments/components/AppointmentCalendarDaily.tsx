@@ -48,7 +48,7 @@ const statusOptions = [
   { label: "Confirmed", value: "confirmed" },
   { label: "Pending", value: "pending" },
   { label: "Rescheduled", value: "rescheduled" },
-  { label: "No Shows", value: "no_show" },
+  { label: "No Show", value: "no_show" },
 ];
 
 const departmentOptions = [
@@ -61,7 +61,7 @@ const departmentOptions = [
 ];
 
 const typeOptions = [
-  { label: "Appointment type", value: "all" },
+  { label: "Appointment Type", value: "all" },
   { label: "Physical Visit", value: "in_person" },
   { label: "Teleconsultation", value: "teleconsultation" },
   { label: "Nurse Check-in", value: "nurse_checkin" },
@@ -84,6 +84,11 @@ const statusStyles: Record<
     card: "border-l-[4px] border-amber-500 bg-amber-50",
     name: "text-amber-500",
     badge: "bg-amber-500 text-white",
+  },
+  Canceled: {
+    card: "border-l-[4px] border-red-500 bg-red-50",
+    name: "text-red-500",
+    badge: "bg-red-500 text-white",
   },
   Rescheduled: {
     card: "border-l-[4px] border-gray-400 bg-gray-100",
@@ -113,7 +118,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-md border border-border bg-white px-3 pr-9 text-sm font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-white px-3 pr-9 text-[14px] font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -149,9 +154,12 @@ function positionFromTime(time: string) {
 
 function AppointmentCard({ appointment }: { appointment: DailyCalendarAppointment }) {
   const styles = statusStyles[appointment.status];
-  const top = Math.max(0, positionFromTime(appointment.startTime));
-  const rawHeight = positionFromTime(appointment.endTime) - top;
-  const height = Math.max(MIN_CARD_HEIGHT, rawHeight);
+  const startMinutes = minutesFromMidnight(appointment.startTime);
+  const endMinutes = minutesFromMidnight(appointment.endTime);
+  const top = Math.max(0, ((startMinutes - START_HOUR * 60) / 60) * HOUR_HEIGHT);
+  const endBasedHeight = Math.max(0, endMinutes - startMinutes) / 60 * HOUR_HEIGHT;
+  const durationBasedHeight = (appointment.durationMinutes / 60) * HOUR_HEIGHT;
+  const height = Math.max(MIN_CARD_HEIGHT, endBasedHeight, durationBasedHeight);
   const isTeleconsultation = appointment.type.toLowerCase().includes("tele");
 
   return (
@@ -227,7 +235,11 @@ export default function AppointmentCalendarDaily({
   const [nowTime, setNowTime] = useState(() => getCurrentDisplayTime());
   const [facilityId, setFacilityId] = useState("");
   const timelineHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
-  const nowTop = Math.max(0, Math.min(timelineHeight, positionFromTime(nowTime)));
+  const isCurrentDate = formatDateForApi(date) === formatDateForApi(new Date());
+  const nowMinutes = minutesFromMidnight(nowTime);
+  const nowTop = isCurrentDate && nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60
+    ? Math.max(0, Math.min(timelineHeight, positionFromTime(nowTime)))
+    : null;
 
   useEffect(() => {
     const updateNow = () => setNowTime(getCurrentDisplayTime());
@@ -293,35 +305,37 @@ export default function AppointmentCalendarDaily({
 
   return (
     <div>
-      <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <FilterSelect className="w-full sm:w-[120px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
-          <FilterSelect className="w-full sm:w-[155px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
-          <FilterSelect className="w-full sm:w-[170px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
+      <div className="mb-7 flex flex-col gap-2 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap xl:flex-nowrap">
+          <FilterSelect className="w-full sm:w-[130px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
+          <FilterSelect className="w-full sm:w-[180px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
+          <FilterSelect className="w-full sm:w-[180px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
         </div>
 
-        <div className="flex items-center justify-center gap-5 text-[#111827]">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-3 text-[#111827]">
           <button type="button" aria-label="Previous day" className="text-[#111827]" onClick={onPreviousDay}>
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <p className="whitespace-nowrap text-lg font-bold md:text-xl">{formatDate(date)}</p>
+          <p className="min-w-0 truncate whitespace-nowrap text-center text-[20px] font-bold leading-6">{formatDate(date)}</p>
           <button type="button" aria-label="Next day" className="text-[#111827]" onClick={onNextDay}>
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="inline-flex h-10 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
+        <div className="inline-flex h-10 shrink-0 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
           <button
             type="button"
             onClick={() => onViewChange?.("day")}
-            className="rounded-lg bg-white px-4 text-xs font-semibold text-[#111827] shadow-sm transition-colors"
+            aria-pressed={true}
+            className="rounded-lg bg-white px-4 text-[12px] font-semibold text-[#111827] shadow-sm transition-colors"
           >
             Day
           </button>
           <button
             type="button"
             onClick={() => onViewChange?.("week")}
-            className="rounded-lg px-4 text-xs font-medium text-[#71809B] transition-colors"
+            aria-pressed={false}
+            className="rounded-lg px-4 text-[12px] font-medium text-[#71809B] transition-colors"
           >
             Week
           </button>
@@ -331,7 +345,7 @@ export default function AppointmentCalendarDaily({
       {!isLoading && !error && appointments.length === 0 ? (
         <AppointmentEmptyState onRefresh={() => setRefreshKey((key) => key + 1)} />
       ) : (
-      <div className="w-full overflow-hidden">
+      <div className="min-h-[420px] max-h-[70vh] w-full overflow-x-hidden overflow-y-auto overscroll-contain">
         <div className="relative w-full bg-white pb-3 pl-4 pr-6">
           <div className="relative ml-20 border-l border-[#CBD5E1]" style={{ height: timelineHeight }}>
             {timeSlots.map((slot, index) => (
@@ -342,13 +356,15 @@ export default function AppointmentCalendarDaily({
               </div>
             ))}
 
-            <div className="pointer-events-none absolute left-0 right-0 z-20 flex items-center" style={{ top: nowTop }}>
-              <span className="h-2 w-2 -translate-x-[5px] rounded-full bg-red-500" />
-              <span className="h-px flex-1 bg-red-500" />
-              <span className="rounded border border-red-500 bg-white px-3 py-1 text-xs font-medium text-red-500">
-                NOW {nowTime}
-              </span>
-            </div>
+            {nowTop !== null ? (
+              <div className="pointer-events-none absolute left-0 right-0 z-20 flex items-center" style={{ top: nowTop }}>
+                <span className="h-2 w-2 -translate-x-[5px] rounded-full bg-red-500" />
+                <span className="h-px flex-1 bg-red-500" />
+                <span className="rounded border border-red-500 bg-white px-3 py-1 text-xs font-medium text-red-500">
+                  NOW {nowTime}
+                </span>
+              </div>
+            ) : null}
 
             {isLoading ? <CalendarLoadingState /> : null}
             {!isLoading && error ? <CalendarMessage>{error}</CalendarMessage> : null}

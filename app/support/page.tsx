@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { ChevronDown, Headphones, Loader2, Mail, Send } from "lucide-react";
+import { ChevronDown, Headphones, Loader2, Mail, Paperclip, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import TracmedyFooter from "@/app/(landing)/components/TracmedyFooter";
@@ -33,6 +33,7 @@ export default function SupportPage() {
   const [faqError, setFaqError] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -76,9 +77,10 @@ export default function SupportPage() {
         return;
       }
 
-      await submitSupportTicket({ subject: trimmedSubject, message: trimmedMessage });
+      await submitSupportTicket({ subject: trimmedSubject, message: trimmedMessage, attachments });
       setSubject("");
       setMessage("");
+      setAttachments([]);
       toast.success("Support ticket submitted.");
     } catch (error: unknown) {
       const messageText = error instanceof Error ? error.message : "Unable to submit support ticket.";
@@ -146,7 +148,11 @@ export default function SupportPage() {
                     required
                   />
                 </div>
-                <Button type="submit" className="h-12 w-full rounded-lg text-base font-bold" disabled={isSubmitting}>
+                <label htmlFor="support-attachments" className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                  <Paperclip className="h-4 w-4 text-primary" aria-hidden="true" /> Attach screenshots or logs (optional)
+                  <input id="support-attachments" type="file" multiple accept="image/png,image/jpeg,application/pdf,.log,.txt" className="sr-only" disabled={isSubmitting} onChange={(event) => setAttachments(Array.from(event.target.files ?? []))} />
+                </label>
+                {attachments.length > 0 ? <p className="text-xs text-muted-foreground">{attachments.map((file) => file.name).join(", ")}</p> : null}                <Button type="submit" className="h-12 w-full rounded-lg text-base font-bold" disabled={isSubmitting}>
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
                   Submit ticket
                 </Button>

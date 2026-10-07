@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowDownToLine,
   CalendarDays,
@@ -302,6 +303,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
 
 
 export default function CareEpisodesPage() {
+  const router = useRouter();
   const [facilityId, setFacilityId] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("active");
   const [episodes, setEpisodes] = useState<CareEpisodeRecord[]>([]);
@@ -923,7 +925,11 @@ export default function CareEpisodesPage() {
         open={isReviewModalOpen}
         onOpenChange={setIsReviewModalOpen}
         episodeId={reviewEpisodeId}
-        onActionComplete={() => setRefreshKey((key) => key + 1)}
+        onActionComplete={(result) => {
+          setRefreshKey((key) => key + 1);
+          const status = result.status.trim().toLowerCase();
+          if (status === "active" || status === "open") router.push(`/dashboard/care-episodes/${encodeURIComponent(result.id)}`);
+        }}
       />
     </div>
   );

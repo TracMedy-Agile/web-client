@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   ArrowLeft,
+  Activity,
   CalendarDays,
   ChevronDown,
   FileDown,
   FileSpreadsheet,
   FileText,
+  Clock3,
   Loader2,
   Sheet,
   TriangleAlert,
@@ -17,14 +19,15 @@ import {
 } from "lucide-react";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
-  downloadServerAnalyticsExport,
+  downloadServerReportExport,
+  getReportCatalog,
   getExportDateRange,
-  getReportsSnapshot,
   type ReportsSnapshot,
+  type FacilityReportExportId,
+  type ReportCatalogEntry,
 } from "@/lib/api/reports";
 import { cn } from "@/lib/utils";
 import {
-  downloadReport,
   type OutputFormat,
   type ReportType,
 } from "../report-export";
@@ -56,6 +59,34 @@ const REPORTS: ReportDefinition[] = [
     icon: FileText,
   },
   {
+    type: "connected-patients",
+    title: "Connected Patients Report",
+    description: "Approved patient connections for this facility",
+    scope: "FACILITY-SCOPED",
+    icon: Users,
+  },
+  {
+    type: "active-care-episodes",
+    title: "Active Care Episodes Report",
+    description: "Facility-wide active care episode list",
+    scope: "FACILITY-SCOPED",
+    icon: Activity,
+  },
+  {
+    type: "pending-care-episodes",
+    title: "Pending Care Episodes Report",
+    description: "Facility-wide pending-action episode list",
+    scope: "FACILITY-SCOPED",
+    icon: Clock3,
+  },
+  {
+    type: "closed-care-episodes",
+    title: "Closed Care Episodes Report",
+    description: "Facility-wide closed care episode list",
+    scope: "FACILITY-SCOPED",
+    icon: FileText,
+  },
+  {
     type: "alert-response",
     title: "Alert Response Performance",
     description: "Facility-wide alert triage timing and SLA",
@@ -80,14 +111,50 @@ const REPORTS: ReportDefinition[] = [
 
 const TIME_RANGES = ["Last 7 days", "Last 30 days", "Last 90 days", "Last 12 months"];
 
-const DETAIL_OPTIONS: Record<Exclude<ReportType, "closed-episode">, string[]> = {
+const SERVER_REPORT_IDS: Partial<Record<ReportType, ReportCatalogEntry["report"]>> = {
+  "closed-episode": "patient_closed_episode_summary",
+  "connected-patients": "connected_patients",
+  "active-care-episodes": "active_care_episodes",
+  "pending-care-episodes": "pending_care_episodes",
+  "closed-care-episodes": "closed_care_episodes",
+  "alert-response": "alert_response",
+  "appointment-activity": "appointment_activity",
+  "clinician-workload": "clinician_workload",
+};
+
+const FALLBACK_FORMATS: Record<ReportType, OutputFormat[]> = {
+  "closed-episode": ["PDF"],
+  "connected-patients": ["Excel"],
+  "active-care-episodes": ["Excel"],
+  "pending-care-episodes": ["Excel"],
+  "closed-care-episodes": ["Excel"],
+  "alert-response": ["PDF", "Excel", "CSV"],
+  "appointment-activity": ["PDF", "Excel", "CSV"],
+  "clinician-workload": ["PDF", "Excel"],
+};
+
+const FACILITY_REPORT_IDS: Partial<Record<ReportType, FacilityReportExportId>> = {
+  "connected-patients": "connected_patients",
+  "active-care-episodes": "active_care_episodes",
+  "pending-care-episodes": "pending_care_episodes",
+  "closed-care-episodes": "closed_care_episodes",
+};
+
+const DETAIL_OPTIONS: Partial<Record<Exclude<ReportType, "closed-episode">, string[]>> = {
   "alert-response": ["Response time trend", "Breakdown by severity", "Per-clinician breakdown"],
   "appointment-activity": ["No-shows & cancellations", "Per-department breakdown", "Booking trend"],
   "clinician-workload": ["Active episodes", "Open alerts", "Average response time"],
 };
 
+function formatReportDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+}
+
+function getScopeLabel(scope: ReportDefinition["scope"]) {
+  return scope === "ENTITY-SCOPED" ? "Single care episode" : "Your facility";
+}
 function getDefaultIncluded(reportType?: ReportType) {
-  const options = reportType && reportType !== "closed-episode" ? DETAIL_OPTIONS[reportType] : [];
+  const options = reportType && reportType !== "closed-episode" ? DETAIL_OPTIONS[reportType] ?? [] : [];
   return Object.fromEntries(
     options.map((option, index) => [option, reportType === "alert-response" ? index < 2 : true]),
   );
@@ -108,7 +175,7 @@ function ReportCard({ report, onSelect }: { report: ReportDefinition; onSelect: 
       <span className="min-w-0">
         <span className="block text-sm font-medium text-foreground">{report.title}</span>
         <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">{report.description}</span>
-        <span className="mt-1.5 block text-[10px] tracking-wide text-muted-foreground/75">{report.scope}</span>
+        <span className="mt-1.5 block text-[10px] tracking-wide text-muted-foreground/75">{getScopeLabel(report.scope)}</span>
       </span>
     </button>
   );
@@ -117,15 +184,26 @@ function ReportCard({ report, onSelect }: { report: ReportDefinition; onSelect: 
 function OutputFormatPicker({
   value,
   onChange,
+  allowedFormats,
+  excelOnly = false,
 }: {
   value: OutputFormat;
   onChange: (format: OutputFormat) => void;
+  allowedFormats?: OutputFormat[];
+  excelOnly?: boolean;
 }) {
-  const formats: Array<{ value: OutputFormat; icon: typeof FileDown }> = [
-    { value: "PDF", icon: FileDown },
-    { value: "CSV", icon: Sheet },
-    { value: "Excel", icon: FileSpreadsheet },
-  ];
+  const formats: Array<{ value: OutputFormat; icon: typeof FileDown }> = allowedFormats?.length
+    ? allowedFormats.map((format) => ({
+        value: format,
+        icon: format === "Excel" ? FileSpreadsheet : format === "CSV" ? Sheet : FileDown,
+      }))
+    : excelOnly
+    ? [{ value: "Excel", icon: FileSpreadsheet }]
+    : [
+        { value: "PDF", icon: FileDown },
+        { value: "CSV", icon: Sheet },
+        { value: "Excel", icon: FileSpreadsheet },
+      ];
 
   return (
     <fieldset>
@@ -217,6 +295,24 @@ function SelectField({
   );
 }
 
+function getExportErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unable to generate the report.";
+  const normalized = message.toLowerCase();
+  if (normalized.includes("forbidden") || normalized.includes("permission") || normalized.includes("unauthorized")) {
+    return "You do not have permission to export this report.";
+  }
+  if (normalized.includes("invalid") || normalized.includes("unsupported") || normalized.includes("filter") || normalized.includes("date")) {
+    return "Review the selected date range or filters and try again.";
+  }
+  if (normalized.includes("not found") || normalized.includes("unavailable")) {
+    return "This report is currently unavailable.";
+  }
+  if (normalized.includes("empty") || normalized.includes("no data") || normalized.includes("no records")) {
+    return "No records match the selected range or filters.";
+  }
+  return `Export failed: ${message}`;
+}
+
 export default function ExportReportModal({
   open,
   onOpenChange,
@@ -238,8 +334,23 @@ export default function ExportReportModal({
   const [generated, setGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const [reportCatalog, setReportCatalog] = useState<ReportCatalogEntry[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    getReportCatalog().then((catalog) => {
+      if (active) setReportCatalog(catalog);
+    }).catch(() => {
+      if (active) setReportCatalog([]);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
   function resetDetailState(reportType?: ReportType) {
-    setFormat("PDF");
+    setFormat(reportType && FACILITY_REPORT_IDS[reportType] ? "Excel" : "PDF");
     setEpisodeId("");
     setClinicianId("all");
     setValidationError("");
@@ -270,60 +381,53 @@ export default function ExportReportModal({
       return;
     }
 
-    const selectedOptions = selectedType === "closed-episode"
-      ? ["Episode overview", "Recovery handoff"]
-      : DETAIL_OPTIONS[selectedType].filter((option) => included[option]);
     setIsGenerating(true);
     setValidationError("");
 
     try {
       const exportRange = getExportDateRange(timeRange);
-      const useServerExport = selectedType !== "closed-episode" && format !== "CSV";
-      const liveSnapshot = useServerExport ? snapshot : await getReportsSnapshot(exportRange);
-
-      if (useServerExport) {
-        await downloadServerAnalyticsExport(exportRange, {
-          format,
-          type: selectedType === "alert-response" ? "clinical" : "operational",
-        });
-      } else {
-        downloadReport(liveSnapshot ?? await getReportsSnapshot(exportRange), {
-          reportType: selectedType,
-          format,
-          timeRange,
-          included: selectedOptions,
-          clinicianId,
-          episodeId,
-        });
-      }
+      const serverReport = SERVER_REPORT_IDS[selectedType];
+      if (!serverReport) throw new Error("This report is unavailable.");
+      const formatValue = format === "Excel" ? "xlsx" : format === "CSV" ? "csv" : "pdf";
+      await downloadServerReportExport(exportRange, {
+        report: serverReport,
+        format: formatValue,
+        filters: selectedType === "closed-episode" ? { episodeId } : undefined,
+      });
 
       capturePostHogEvent("reports_exported", {
         report_type: selectedType,
         format: format.toLowerCase(),
         time_range: timeRange,
-        facility_id: liveSnapshot?.facility.id,
-        source: useServerExport ? "backend" : "frontend",
+        facility_id: snapshot?.facility.id,
       });
       if (selectedType === "clinician-workload") {
         capturePostHogEvent("clinician_workload_exported", {
+          report_type: "clinician_workload",
           format: format.toLowerCase(),
-          facility_id: liveSnapshot?.facility.id,
-          source: useServerExport ? "backend" : "frontend",
+          time_range: timeRange,
+          facility_id: snapshot?.facility.id,
         });
       }
       setGenerated(true);
       window.setTimeout(() => setGenerated(false), 1600);
     } catch (error) {
-      setValidationError(error instanceof Error ? error.message : "Unable to generate the report.");
+      setValidationError(getExportErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }
   }
 
   const selectedReport = REPORTS.find((report) => report.type === selectedType);
+  const selectedBackendReport = selectedType ? SERVER_REPORT_IDS[selectedType] : undefined;
+  const catalogEntry = reportCatalog.find((entry) => entry.report === selectedBackendReport);
+  const allowedFormats = catalogEntry?.formats.map((format): OutputFormat =>
+    format === "xlsx" ? "Excel" : format === "csv" ? "CSV" : "PDF",
+  ) ?? (selectedType ? FALLBACK_FORMATS[selectedType] : undefined);
   const detailOptions =
-    selectedType && selectedType !== "closed-episode" ? DETAIL_OPTIONS[selectedType] : [];
+    selectedType && selectedType !== "closed-episode" ? DETAIL_OPTIONS[selectedType] ?? [] : [];
   const closedEpisodes = snapshot?.careEpisodes.filter((episode) => episode.status === "closed") ?? [];
+  const isEmptyClosedReport = selectedType === "closed-episode" && closedEpisodes.length === 0;
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
@@ -353,7 +457,7 @@ export default function ExportReportModal({
                 className="mt-0.5 text-xs text-muted-foreground"
               >
                 {selectedReport
-                  ? `${selectedReport.scope === "ENTITY-SCOPED" ? "Entity-scoped" : "Facility-scoped"} · ${selectedReport.description}`
+                  ? `${selectedReport.scope === "ENTITY-SCOPED" ? "Single care episode" : "Your facility"} · ${selectedReport.description}`
                   : "Generate clinical and operational reports"}
               </DialogPrimitive.Description>
             </div>
@@ -372,10 +476,18 @@ export default function ExportReportModal({
                 <ReportCard report={REPORTS[0]} onSelect={() => selectReport(REPORTS[0].type)} />
               </div>
               <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
+                Patient &amp; Care Episode Reports
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {REPORTS.slice(1, 5).map((report) => (
+                  <ReportCard key={report.type} report={report} onSelect={() => selectReport(report.type)} />
+                ))}
+              </div>
+              <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
                 Operational Reports
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                {REPORTS.slice(1).map((report) => (
+                {REPORTS.slice(5).map((report) => (
                   <ReportCard key={report.type} report={report} onSelect={() => selectReport(report.type)} />
                 ))}
               </div>
@@ -409,9 +521,13 @@ export default function ExportReportModal({
                     </select>
                     {closedEpisodes.length === 0 ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        No closed care episodes are currently available for this facility.
+                        No closed care episodes match the selected reporting period.
                       </p>
                     ) : null}
+                    <div className="mt-4 rounded-lg border border-border bg-primary/[0.025] px-3 py-2.5 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">Reporting period:</span>{" "}
+                      {formatReportDate(getExportDateRange(timeRange).dateFrom)} – {formatReportDate(getExportDateRange(timeRange).dateTo)}
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -428,7 +544,7 @@ export default function ExportReportModal({
                             ? "Aggregated report across facility clinicians."
                             : "Individual clinician workload report."}
                         </p>
-                      </div>
+                       </div>
                     ) : (
                       <p className="rounded-lg border border-border bg-card px-3 py-3 text-xs text-muted-foreground">
                         This report is restricted to {snapshot?.facility.name ?? "your authenticated facility"}.
@@ -437,25 +553,36 @@ export default function ExportReportModal({
                     <SelectField label="Time Range (required)" value={timeRange} onChange={setTimeRange}>
                       {TIME_RANGES.map((range) => <option key={range}>{range}</option>)}
                     </SelectField>
-                    <div className="border-y border-border py-4">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        Include in Report
-                      </p>
-                      {detailOptions.map((option) => (
-                        <ToggleRow
-                          key={option}
-                          label={option}
-                          checked={Boolean(included[option])}
-                          onCheckedChange={(checked) =>
-                            setIncluded((current) => ({ ...current, [option]: checked }))
-                          }
-                        />
-                      ))}
+                    <div className="rounded-lg border border-border bg-primary/[0.025] px-3 py-2.5 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">Reporting period:</span>{" "}
+                      {formatReportDate(getExportDateRange(timeRange).dateFrom)} – {formatReportDate(getExportDateRange(timeRange).dateTo)}
                     </div>
+                    {detailOptions.length > 0 ? (
+                      <div className="border-y border-border py-4">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Include in Report
+                        </p>
+                        {detailOptions.map((option) => (
+                          <ToggleRow
+                            key={option}
+                            label={option}
+                            checked={Boolean(included[option])}
+                            onCheckedChange={(checked) =>
+                              setIncluded((current) => ({ ...current, [option]: checked }))
+                            }
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                   </>
                 )}
 
-                <OutputFormatPicker value={format} onChange={setFormat} />
+                <OutputFormatPicker
+                  value={format}
+                  onChange={setFormat}
+                  allowedFormats={allowedFormats}
+                  excelOnly={Boolean(selectedType && FACILITY_REPORT_IDS[selectedType])}
+                />
 
                 {validationError ? (
                   <p
@@ -481,7 +608,7 @@ export default function ExportReportModal({
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  disabled={isGenerating}
+                  disabled={isGenerating || isEmptyClosedReport}
                   className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

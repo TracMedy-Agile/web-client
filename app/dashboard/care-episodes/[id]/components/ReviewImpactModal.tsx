@@ -27,6 +27,7 @@ export type ReviewImpactData = {
   expectedLabel?: string;
   actualLabel?: string;
   evidence: ReviewImpactEvidenceRow[];
+  emptyEvidenceMessage?: string;
 };
 
 type ReviewImpactModalProps = {
@@ -71,7 +72,7 @@ export function ReviewImpactModal({
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] max-w-[672px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-card shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-4rem)] w-[calc(100%-2rem)] max-w-[672px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-card shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
           <header className="flex shrink-0 items-start justify-between border-b border-border px-6 py-6 sm:px-8 sm:py-7">
             <div className="min-w-0 pr-4">
               <DialogPrimitive.Title className="text-xl font-bold text-foreground">
@@ -89,7 +90,7 @@ export function ReviewImpactModal({
             </DialogPrimitive.Close>
           </header>
 
-          <div className="min-h-0 overflow-y-auto px-6 py-7 sm:px-8 sm:py-8">
+          <div className="min-h-0 overflow-y-auto px-6 py-5 sm:px-8 sm:py-6">
             {isLoading ? (
               <p role="status" className="mb-4 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -97,17 +98,6 @@ export function ReviewImpactModal({
               </p>
             ) : null}
 
-            <section className="rounded-r-xl border-l-4 border-red-500 bg-primary/5 px-4 py-5">
-              <p className="text-base font-medium text-foreground sm:text-lg">
-                {alert.expectedLabel ?? "Expected resting HR at Day 4"}: <span className="font-bold">{alert.expected}</span>
-              </p>
-              <p className="mt-1.5 text-base font-medium text-red-500 sm:text-lg">
-                {alert.actualLabel ?? "Actual 72-hr average"}: <span className="font-bold">{alert.actual}</span>
-              </p>
-              <p className="mt-2 text-sm font-medium italic text-muted-foreground">
-                Trend direction: {alert.trend}
-              </p>
-            </section>
             {alert.thresholdDetails?.length ? (
               <section className="mt-6 rounded-xl border border-red-100 bg-red-50/60 px-4 py-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em] text-red-500">Threshold trigger details</p>
@@ -131,29 +121,13 @@ export function ReviewImpactModal({
                 </div>
               </section>
             ) : null}
-            {alert.analysisSummary ? (
-              <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-4">
-                <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">AI advisory insight</p>
-                <p className="mt-2 text-sm font-medium leading-6 text-foreground/80">{alert.analysisSummary}</p>
-                <p className="mt-3 text-xs font-medium text-muted-foreground">Clinician review is required before any alert action is taken.</p>
-              </section>
-            ) : null}
-
-            {alert.suggestedReview?.length ? (
-              <section className="mt-4 rounded-xl border border-border bg-muted/30 px-4 py-4">
-                <p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Suggested Review Areas</p>
-                <ul className="mt-2 space-y-2 text-sm font-medium leading-6 text-foreground/80">
-                  {alert.suggestedReview.map((item) => <li key={item}>- {item}</li>)}
-                </ul>
-              </section>
-            ) : null}
             <p className="mb-4 mt-8 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
               Supporting Evidence
             </p>
             <div className="overflow-hidden rounded-xl border border-border">
               {alert.evidence.length === 0 ? (
                 <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  No supporting evidence is available for this alert.
+                  {alert.emptyEvidenceMessage ?? "No supporting evidence is available for this alert."}
                 </p>
               ) : null}
               {alert.evidence.map((row, index) => (
@@ -180,7 +154,7 @@ export function ReviewImpactModal({
           <footer className="shrink-0 border-t border-border bg-muted/30 px-6 py-4 sm:px-8">
             <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <Info className="h-4 w-4 shrink-0" />
-              Note: Acknowledgement must be completed from the patient&apos;s care episode.
+              Note: Acknowledgement must be completed from the patient&apos;s care episode. Clinician review is required before any alert action is taken.
             </p>
             <div className="mt-6 flex justify-end gap-4">
               <DialogPrimitive.Close asChild>

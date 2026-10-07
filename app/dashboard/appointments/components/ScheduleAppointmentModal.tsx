@@ -24,6 +24,7 @@ type CreatedAppointmentPayload = components["schemas"]["CreateAppointmentRespons
 
 export type ScheduledAppointmentResult = {
   id: CreatedAppointmentPayload["id"];
+  reference: CreatedAppointmentPayload["reference"];
   type: CreatedAppointmentPayload["type"];
   date: CreatedAppointmentPayload["date"];
   time: CreatedAppointmentPayload["time"];
@@ -78,6 +79,8 @@ const fieldClass =
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
+const DURATION_OPTIONS = [15, 30, 45, 60] as const;
+
 const initialFormData: ScheduleAppointmentFormData = {
   patient: "",
   department: "Cardiology",
@@ -85,7 +88,7 @@ const initialFormData: ScheduleAppointmentFormData = {
   appointmentType: "physical",
   date: "",
   time: "",
-  duration: "30m",
+  duration: "30",
   priority: "Routine",
   reason: "",
   clinicianId: "",
@@ -132,6 +135,7 @@ function normalizeCreatedAppointment(
   const data = asRecord(unwrapData(payload));
   return {
     id: getString(data, ["id"]),
+    reference: getString(data, ["reference", "appointmentId", "code"]) || null,
     type: getAppointmentType(data, formValues.appointmentType),
     date: getString(data, ["date"], formValues.date),
     time: getString(data, ["time"], formValues.time),
@@ -477,7 +481,7 @@ export default function ScheduleAppointmentModal({
     return () => {
       ignore = true;
     };
-  }, [facilityId, formData.date, formData.time, open]);
+  }, [facilityId, formData.date, formData.duration, formData.time, open]);
 
   const clinicianOptions = useMemo(() => {
     if (!currentClinicianId || clinicians.some((clinician) => clinician.id === currentClinicianId)) return clinicians;
@@ -715,10 +719,25 @@ export default function ScheduleAppointmentModal({
                 />
                 {fieldErrors.time ? <span className="mt-2 block text-xs font-semibold text-red-600">{fieldErrors.time}</span> : null}
               </label>
-
               <label className="block">
                 <span className="mb-2 block text-sm font-bold text-[#111827]">Duration</span>
-                <SelectLike>{formData.duration}</SelectLike>
+                <span className="relative block">
+                  <select
+                    aria-label="Appointment duration"
+                    value={formData.duration}
+                    onChange={(event) => {
+                      setCapacity(null);
+                      setIsCheckingCapacity(Boolean(formData.date));
+                      updateFormData("duration", event.target.value);
+                    }}
+                    className={cn(fieldClass, "appearance-none pr-10")}
+                  >
+                    {DURATION_OPTIONS.map((minutes) => (
+                      <option key={minutes} value={String(minutes)}>{minutes} min</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#71809B]" aria-hidden="true" />
+                </span>
               </label>
             </div>
 
@@ -727,19 +746,25 @@ export default function ScheduleAppointmentModal({
                 {isCheckingCapacity
                   ? "Checking appointment capacity..."
                   : capacity
-                    ? `${capacity.availableSlots} of ${capacity.totalSlots} slots available${formData.time ? " for this time" : " for this date"}.`
-                    : "Capacity could not be confirmed; the server will validate it when you submit."}
+                  ? !capacity.canBook
+                    ? `This time is unavailable${selectedClinician ? ` for ${selectedClinician.label}` : ""}.`
+                    : selectedClinician && formData.time
+                      ? `${selectedClinician.label} is available for ${formData.duration} min.`
+                      : `${capacity.availableSlots} of ${capacity.totalSlots} slots available${formData.time ? " for this time" : " for this date"}.`
+                  : "Capacity could not be confirmed; the server will validate it when you submit."}
               </p>
             ) : null}
 
             <label className="mt-7 block">
               <span className="mb-2 block text-sm font-bold text-[#111827]">Reason for Visit</span>
               <textarea
+                maxLength={500}
                 className="min-h-[74px] w-full resize-none rounded-lg border border-transparent bg-[#F3F4F6] px-4 py-4 text-sm font-medium text-[#111827] placeholder:text-[#71809B] focus:border-primary/40 focus:bg-white focus:outline-none"
                 placeholder="Chief complaints, symptoms reported..."
                 value={formData.reason}
                 onChange={(event) => updateFormData("reason", event.target.value)}
               />
+              <span className="mt-1 block text-right text-xs font-medium text-[#71809B]" aria-live="polite">{formData.reason.length} / 500 characters</span>
             </label>
 
             <div className="mt-10">
