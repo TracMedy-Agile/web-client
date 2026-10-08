@@ -18,6 +18,7 @@ export const roleAccess = [
     description: "Full clinical oversight and patient record management within assigned wards.",
     permissionCount: 6,
     previewPermissions: ["Edit Care Records", "Approve Prescriptions", "View Analytics"],
+    permissions: ["View Care Episodes", "Edit Care Records", "Approve Prescriptions", "Manage Care Team", "View Analytics", "Export Reports"],
     lastUpdated: "Oct 12, 2026",
   },
   {
@@ -26,6 +27,7 @@ export const roleAccess = [
     description: "Care delivery, monitoring, and clinical documentation for designated patients.",
     permissionCount: 4,
     previewPermissions: ["Record Vital Signs", "Administer Meds", "View Patient Timeline"],
+    permissions: ["View Care Episodes", "Record Vital Signs", "Administer Meds", "View Patient Timeline"],
     lastUpdated: "Oct 12, 2026",
   },
   {
@@ -34,6 +36,7 @@ export const roleAccess = [
     description: "Facility-level management, billing control, and operational governance.",
     permissionCount: 12,
     previewPermissions: ["Manage Staffing", "Configure Facilities", "Override Settings"],
+    permissions: ["Manage Staffing", "Configure Facilities", "Override Settings", "Manage Billing", "Manage Team Members", "Manage Roles", "View Audit Log", "Export Reports", "Manage Integrations", "Configure Alerts", "View Analytics", "Manage Subscription"],
     lastUpdated: "Oct 12, 2026",
   },
 ] as const;
@@ -73,21 +76,51 @@ export function unavailableRolePolicy(action: string) {
   toast.info("Roles and permissions settings endpoint is not available yet.");
 }
 
-export function RoleCard({ role, accessLevel, description, permissionCount, previewPermissions, lastUpdated }: (typeof roleAccess)[number]) {
+type RoleCardProps = { role: string; accessLevel: RoleAccessLevel; description: string; permissionCount: number; previewPermissions: readonly string[]; permissions: readonly string[]; lastUpdated: string };
+
+export function RoleCard({ role, accessLevel, description, permissionCount, previewPermissions, permissions, lastUpdated }: RoleCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const permissionListId = "role-permissions-" + role.toLowerCase().replaceAll(" ", "-");
+
   return (
-    <div className="flex h-full flex-col rounded-xl border border-border bg-background p-5">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-bold text-foreground">{role}</h3>
-        <span className={cn("mt-0.5 shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide", accessLevel === "Full Access" ? "bg-slate-100 text-slate-600" : "bg-sky-100 text-primary")}>
-          {accessLevel}
-        </span>
+    <div className="flex min-h-[300px] h-full flex-col rounded-xl border border-border bg-card p-6 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Role</p>
+          <h3 className="mt-1 text-lg font-bold text-foreground">{role}</h3>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Access type</p>
+          <span className={cn("mt-1 inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide", accessLevel === "Full Access" ? "bg-slate-100 text-slate-600" : "bg-sky-100 text-primary")}>
+            {accessLevel}
+          </span>
+        </div>
       </div>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      <button type="button" onClick={() => unavailableRolePolicy(`Preview ${role} permissions`)} className="mt-3 inline-flex items-center gap-1 self-start text-sm font-bold text-primary">
-        Preview ({permissionCount} permissions)
-        <ChevronRight className="h-4 w-4" />
+            <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-controls={permissionListId}
+        onClick={() => setIsExpanded((value) => !value)}
+        className="mt-3 inline-flex items-center gap-1 self-start text-sm font-bold text-primary"
+      >
+        {isExpanded ? "Hide" : "Preview"} ({permissionCount} permissions)
+        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </button>
-      <ul className="mt-3 flex-1 space-y-2">
+      {isExpanded ? (
+        <div id={permissionListId} className="mt-3 rounded-lg border border-border bg-background p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">All permissions</p>
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+            {permissions.map((permission) => (
+              <li key={permission} className="flex items-start gap-2 text-xs text-foreground">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                {permission}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <ul aria-label="Preview permissions" className="mt-3 flex-1 space-y-2">
         {previewPermissions.map((permission) => (
           <li key={permission} className="flex items-center gap-2 text-sm text-foreground">
             <Check className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
@@ -202,7 +235,7 @@ export function DependencyRulesPanel() {
 
 export function UnsavedFooter({ dirty, children }: { dirty: boolean; children?: ReactNode }) {
   return (
-    <div className={cn("sticky bottom-0 z-10 -mx-5 mt-10 flex flex-col gap-3 border-t border-border bg-card px-5 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between lg:-mx-12 lg:px-12", !dirty && "opacity-90")}>
+    <div className={cn("mt-10 flex flex-col gap-3 border-t border-border bg-card px-5 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between lg:px-12", !dirty && "opacity-90")}>
       <p className="text-sm text-foreground">{dirty ? "You have unsaved changes in policy configurations." : "Permission policy changes will appear here before saving."}</p>
       <div className="flex gap-3">{children}</div>
     </div>

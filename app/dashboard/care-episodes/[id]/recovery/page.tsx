@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
-  BrainCircuit,
+
+  Activity,
   AlertTriangle,
   ArrowLeft,
   CalendarCheck,
@@ -34,21 +35,21 @@ import {
   getHumanReadableCareEpisodeReference,
   getCareEpisodeDailyVitals,
   getCareEpisodeForecast,
+  getCareEpisodeRecovery,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeTaskCompletion,
   getCareEpisodeTaskCompletionLog,
-  getCareEpisodeTimelinePage,
-  type ApiRecord,
   type CareEpisodeDetail,
   type DailyVitalsRecord,
   type EpisodeForecast,
+  type EpisodeRecovery,
   type MedicationAdherenceRecord,
   type TaskCompletionLog,
   type TaskCompletionRecord,
 } from "@/lib/api/care-episodes";
 import { SubHeaderSkeleton } from "../_shared/SubHeader";
 import { CircularProgress } from "../_shared/CircularProgress";
-import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getProgressPercent, getSavedWarningSignsFromPlan } from "../_shared/utils";
+import { clamp, formatLongDate, formatRelativeTime, getHeaderRiskBadge, getSavedWarningSignsFromPlan } from "../_shared/utils";
 import { ReviewImpactModal, type ReviewImpactData } from "../components/ReviewImpactModal";
 import { buildCareTaskRows, type CareTaskRow } from "../_shared/taskCompletion";
 import ScheduleAppointmentModal, { type ScheduledAppointmentResult } from "@/app/dashboard/appointments/components/ScheduleAppointmentModal";
@@ -108,6 +109,9 @@ function buildRecoveryAlerts(alerts: ClinicalAlert[]): RecoveryAlert[] {
   });
 }
 
+function formatPhaseLabel(value: string) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 function formatTaskClock(value: string) {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return value;
@@ -244,27 +248,6 @@ function appointmentTypeLabel(type: ScheduledAppointmentResult["type"]) {
   return "Physical Visit";
 }
 
-function latestVitalsSummary(records: DailyVitalsRecord[]) {
-  const latest = records.filter((record) => record.hasEntry).at(-1);
-  if (!latest) return "No daily vitals recorded";
-  const values = [
-    latest.vitals.spo2 != null ? `SpO2 ${latest.vitals.spo2}%` : "",
-    latest.vitals.heartRate != null ? `HR ${latest.vitals.heartRate} bpm` : "",
-    latest.vitals.bloodPressureSystolic != null
-      ? `BP ${latest.vitals.bloodPressureSystolic}/${latest.vitals.bloodPressureDiastolic ?? "--"}`
-      : "",
-  ].filter(Boolean);
-  return values.length > 0 ? values.join(" - ") : "Vitals entry has no supported measurements";
-}
-
-function formatPhaseLabel(value: string) {
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function coveragePercent(value: number, total: number | null) {
-  if (total == null || total <= 0) return null;
-  return clamp(Math.round((value / total) * 100));
-}
 export default function CareEpisodeRecoveryPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -273,8 +256,8 @@ export default function CareEpisodeRecoveryPage() {
   const [medications, setMedications] = useState<MedicationAdherenceRecord[]>([]);
   const [dailyVitals, setDailyVitals] = useState<DailyVitalsRecord[]>([]);
   const [episodeForecast, setEpisodeForecast] = useState<EpisodeForecast | null>(null);
+  const [episodeRecovery, setEpisodeRecovery] = useState<EpisodeRecovery | null>(null);
   const [forecastError, setForecastError] = useState("");
-  const [timeline, setTimeline] = useState<ApiRecord[]>([]);
   const [alerts, setAlerts] = useState<RecoveryAlert[]>([]);
   const [assessmentDates, setAssessmentDates] = useState<string[]>([]);
   const [taskDate, setTaskDate] = useState(() => localDateKey(new Date()));
@@ -298,13 +281,13 @@ export default function CareEpisodeRecoveryPage() {
     if (!episodeId) return;
     let active = true;
     void (async () => {
-      const [episodeResult, medicationResult, vitalsResult, timelineResult, assessmentResult, forecastResult] = await Promise.allSettled([
+      const [episodeResult, medicationResult, vitalsResult, assessmentResult, forecastResult, recoveryResult] = await Promise.allSettled([
         getCareEpisodeById(episodeId),
         getCareEpisodeMedicationAdherence(episodeId),
         getCareEpisodeDailyVitals(episodeId, 7),
-        getCareEpisodeTimelinePage(episodeId, { limit: 100 }),
         getAssessmentHistory(episodeId),
         getCareEpisodeForecast(episodeId),
+        getCareEpisodeRecovery(episodeId),
       ]);
       if (!active) return;
 
@@ -331,7 +314,6 @@ export default function CareEpisodeRecoveryPage() {
 
       if (episodeResult.status === "fulfilled") {
         setEpisode(episodeResult.value);
-        setTimeline(episodeResult.value.recentTimeline);
       } else {
         setEpisode(null);
         setError(episodeResult.reason instanceof Error ? episodeResult.reason.message : "Failed to load care episode.");
@@ -339,6 +321,11 @@ export default function CareEpisodeRecoveryPage() {
       setAlerts(nextAlerts);
       setMedications(medicationResult.status === "fulfilled" ? medicationResult.value : []);
       setDailyVitals(vitalsResult.status === "fulfilled" ? vitalsResult.value : []);
+      if (recoveryResult.status === "fulfilled") {
+        setEpisodeRecovery(recoveryResult.value);
+      } else {
+        setEpisodeRecovery(null);
+      }
       if (forecastResult.status === "fulfilled") {
         setEpisodeForecast(forecastResult.value);
         setForecastError("");
@@ -346,7 +333,6 @@ export default function CareEpisodeRecoveryPage() {
         setEpisodeForecast(null);
         setForecastError(forecastResult.reason instanceof Error ? forecastResult.reason.message : "Forecast unavailable");
       }
-      if (timelineResult.status === "fulfilled") setTimeline(timelineResult.value.data.map((event) => ({ ...event })));
       setAssessmentDates(assessmentResult.status === "fulfilled" ? assessmentResult.value.map((assessment) => assessment.date) : []);
       setIsLoading(false);
     })();
@@ -392,32 +378,28 @@ export default function CareEpisodeRecoveryPage() {
   const recoveryForecast = episodeForecast?.recoveryForecast;
   const deteriorationForecast = episodeForecast?.deterioration;
   const relapseForecast = episodeForecast?.relapse;
-  const recoveryProbability = recoveryForecast?.dataSufficiency === "insufficient"
-    ? null
-    : (episodeForecast?.recoveryProbability ?? recoveryForecast?.currentRecoveryPercentage ?? null);
-  const deteriorationRisk = episodeForecast?.deteriorationRisk ?? deteriorationForecast?.probabilityPercent ?? null;
-  const relapseRisk = episodeForecast?.relapseRisk ?? relapseForecast?.probabilityPercent ?? null;
-  const recoveryOutcomeDetail = !episodeForecast
-    ? forecastError || "Forecast unavailable"
-    : recoveryForecast?.dataSufficiency === "insufficient"
-      ? "Insufficient data"
-      : recoveryForecast?.confidence == null || !recoveryForecast.dataSufficiency
-        ? "Forecast details unavailable"
-        : `${recoveryForecast.confidence}% confidence - ${recoveryForecast.dataSufficiency} data`;
-  const deteriorationOutcomeDetail = !episodeForecast || deteriorationForecast?.probabilityPercent == null
-    ? forecastError || "Insufficient data"
-    : `${(deteriorationForecast.riskLevel || "undetermined").toUpperCase()} risk - ${deteriorationForecast.horizonDays == null ? "Forecast horizon unavailable" : `${deteriorationForecast.horizonDays}-day forecast`} - ${deteriorationForecast.confidence == null ? "Confidence unavailable" : `${deteriorationForecast.confidence}% confidence`}`;
-  const relapseOutcomeDetail = !episodeForecast || relapseRisk == null || relapseForecast?.dataSufficiency === "insufficient"
-    ? forecastError || "Insufficient data"
-    : `${(relapseForecast?.riskLevel || "undetermined").toUpperCase()} risk - ${relapseForecast?.horizonDays == null ? "Forecast horizon unavailable" : `${relapseForecast.horizonDays}-day forecast`} - ${relapseForecast?.confidence == null ? "Confidence unavailable" : `${relapseForecast.confidence}% confidence`}`;
+  const currentRecovery = episodeRecovery?.currentRecovery;
+  const recoveryComponents = episodeRecovery?.components;
+  const riskContributors = episodeRecovery?.riskContributors;
+  const componentBreakdown = recoveryComponents ? [recoveryComponents.clinicalStatus, recoveryComponents.adherence, recoveryComponents.functional, recoveryComponents.milestone] : [];
+  const recoveryProgressScore = currentRecovery ? currentRecovery.recoveryProgressScore : (recoveryForecast?.currentRecoveryPercentage ?? null);
+  const recoveryProbability = currentRecovery ? currentRecovery.recoveryProbability : (recoveryForecast?.dataSufficiency === "insufficient" ? null : (episodeForecast?.recoveryProbability ?? recoveryForecast?.currentRecoveryPercentage ?? null));
+  const deteriorationRisk = currentRecovery ? currentRecovery.deteriorationRisk : (episodeForecast?.deteriorationRisk ?? deteriorationForecast?.probabilityPercent ?? null);
+  const relapseRisk = currentRecovery ? currentRecovery.relapseRisk : (episodeForecast?.relapseRisk ?? relapseForecast?.probabilityPercent ?? null);
+  const recoveryVariance = currentRecovery?.recoveryVariance ?? null;
+  const recoveryDataIncomplete = Boolean(currentRecovery && (currentRecovery.status === "insufficient_data" || currentRecovery.dataCompleteness < 100));
+  const recoveryOutcomeDetail = currentRecovery
+    ? currentRecovery.status === "insufficient_data" ? "Insufficient data" : `${currentRecovery.recoveryProbabilityBand || currentRecovery.recoveryStatus || "Status unavailable"} - ${currentRecovery.dataCompleteness}% data completeness`
+    : !episodeForecast ? forecastError || "Forecast unavailable" : recoveryForecast?.dataSufficiency === "insufficient" ? "Insufficient data" : recoveryForecast?.confidence == null || !recoveryForecast.dataSufficiency ? "Forecast details unavailable" : `${recoveryForecast.confidence}% confidence - ${recoveryForecast.dataSufficiency} data`;
+  const deteriorationOutcomeDetail = currentRecovery
+    ? currentRecovery.deteriorationRisk == null ? "Insufficient data" : `${currentRecovery.deteriorationRiskBand || "Risk undetermined"} - ${currentRecovery.deteriorationHorizonDays}-day horizon`
+    : !episodeForecast || deteriorationForecast?.probabilityPercent == null ? forecastError || "Insufficient data" : `${(deteriorationForecast.riskLevel || "undetermined").toUpperCase()} risk - ${deteriorationForecast.horizonDays == null ? "Forecast horizon unavailable" : `${deteriorationForecast.horizonDays}-day forecast`} - ${deteriorationForecast.confidence == null ? "Confidence unavailable" : `${deteriorationForecast.confidence}% confidence`}`;
+  const relapseOutcomeDetail = currentRecovery
+    ? currentRecovery.relapseApplicability !== "applicable" ? (currentRecovery.relapseApplicabilityReason || "Insufficient data") : `${currentRecovery.relapseRiskBand || "Risk undetermined"} - ${currentRecovery.relapseHorizonDays}-day horizon`
+    : !episodeForecast || relapseRisk == null || relapseForecast?.dataSufficiency === "insufficient" ? forecastError || "Insufficient data" : `${(relapseForecast?.riskLevel || "undetermined").toUpperCase()} risk - ${relapseForecast?.horizonDays == null ? "Forecast horizon unavailable" : `${relapseForecast?.horizonDays}-day forecast`} - ${relapseForecast?.confidence == null ? "Confidence unavailable" : `${relapseForecast?.confidence}% confidence`}`;
   const forecastDaysRemaining = recoveryForecast?.predictedTimelineDays ?? null;
   const assessmentCount = assessmentDates.length;
   const lastAssessment = assessmentDates.at(0) ?? assessmentDates.at(-1) ?? "";
-  const biometricEntryCount = dailyVitals.filter((item) => item.hasEntry).length;
-  const biometricCoverage = coveragePercent(biometricEntryCount, dailyVitals.length);
-  const elapsedDays = episode?.dayStart != null ? Math.max(episode.dayStart, 1) : null;
-  const clinicalInputCoverage = coveragePercent(assessmentCount, elapsedDays);
-  const interventionCoverage = coveragePercent(timeline.length, elapsedDays);
 
   if (isLoading && !episode) return <SubHeaderSkeleton episodeId={episodeId} />;
   if (error && !episode) {
@@ -428,7 +410,6 @@ export default function CareEpisodeRecoveryPage() {
   const patient = episode.patient;
   const careEpisodeReference = getHumanReadableCareEpisodeReference(episode);
   const riskBadge = getHeaderRiskBadge(episode.riskCategory);
-  const overallProgress = clamp(Math.round(episode.dayProgress ?? getProgressPercent(episode.dayStart, episode.expectedDurationDays)));
   const expectedRecoveryDate = (() => {
     if (episodeForecast?.recoveryForecast.expectedRecoveryDate) return formatLongDate(episodeForecast.recoveryForecast.expectedRecoveryDate);
     if (!episode.createdAt || !episode.expectedDurationDays) return "--";
@@ -441,25 +422,14 @@ export default function CareEpisodeRecoveryPage() {
     ? null
     : Math.max(episode.expectedDurationDays - episode.dayStart, 0);
   const daysRemaining = forecastDaysRemaining ?? baselineDaysRemaining;
-  const actualRecovery = episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
-  const progression = buildRecoveryProgression(episode.expectedDurationDays ?? 1, episode.dayStart, actualRecovery);
+  const actualRecovery = recoveryProgressScore;
+  const progression = episodeRecovery?.trajectory.points?.map((point) => ({
+    day: String(point.recoveryDay),
+    expected: point.expectedScore,
+    actual: point.actualScore,
+  })) ?? buildRecoveryProgression(episode.expectedDurationDays ?? 1, episode.dayStart, actualRecovery);
   const hasActualRecovery = progression.some((point) => point.actual != null);
-  const latestVitals = latestVitalsSummary(dailyVitals);
   const recoveryPhaseLabel = episode.carePhase ? formatPhaseLabel(episode.carePhase) : "--";
-  const trajectorySummary = (() => {
-    const trajectory = recoveryProbability == null
-      ? "being monitored"
-      : recoveryProbability >= 70
-        ? "favorable"
-        : recoveryProbability >= 40
-          ? "steady and requiring continued monitoring"
-          : "at risk and requiring closer review";
-    const forecastText = recoveryProbability == null ? "" : ` Predicted recovery is ${recoveryProbability}%.`;
-    const adherenceText = adherence == null ? "" : ` Care-plan adherence is ${adherence}%.`;
-    const riskText = episode.riskCategory ? ` Current risk is ${formatPhaseLabel(episode.riskCategory).toLowerCase()}.` : "";
-    const timelineText = daysRemaining == null ? "" : ` The expected recovery window has ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining.`;
-    return `The patient's recovery trajectory is ${trajectory}.${forecastText}${adherenceText}${riskText}${timelineText}`;
-  })();
   const openAction = (action: string, href: string) => {
     capturePostHogEvent("recovery_action_opened", { episode_id: episodeId, action });
     router.push(href);
@@ -491,32 +461,30 @@ export default function CareEpisodeRecoveryPage() {
       <div>
         <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold text-foreground">Recovery &amp; Outcomes</h1><span className={cn("inline-flex rounded-full px-3 py-1 text-xs font-bold", riskBadge.className)}>{riskBadge.label === "High" ? "AT RISK" : riskBadge.label.toUpperCase()}</span></div>
         <p className="mt-1 text-sm font-medium text-muted-foreground">A comprehensive intelligence overview for patient <strong className="font-bold text-foreground">{patient?.name || "Unknown Patient"}</strong> (<strong className="font-bold text-foreground">{patient?.hospitalId || "--"}</strong>)</p>
+        {recoveryDataIncomplete ? <div role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"><strong className="font-bold">Insufficient recovery information.</strong> The scores below reflect only the data currently recorded for this episode ({currentRecovery?.dataCompleteness ?? 0}% complete). Add clinical assessments, adherence, functional updates, or milestones before treating the analysis as conclusive.</div> : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <MetricCard icon={<CalendarCheck className="h-4 w-4" />} label="Expected Recovery" value={expectedRecoveryDate} detail={daysRemaining == null ? "Duration unavailable" : `${daysRemaining} days remaining`} />
         <MetricCard icon={<HeartPulse className="h-4 w-4" />} label="Recovery Phase" value={recoveryPhaseLabel} detail="Current care phase" valueClassName="text-destructive" />
         <MetricCard icon={<ClipboardCheck className="h-4 w-4" />} label="Care Plan Adherence" value={adherence == null ? "--" : `${adherence}%`} detail={adherence == null ? "No adherence records" : `${missedDoseCount} missed dose${missedDoseCount === 1 ? "" : "s"}`} progress={adherence} />
-        <MetricCard icon={<TrendingUp className="h-4 w-4" />} label="Overall Progress" value={`${overallProgress}%`} detail={episode.expectedDurationDays ? `Day ${episode.dayStart ?? "--"} of ${episode.expectedDurationDays}` : "Duration unavailable"} progress={overallProgress} />
+        <MetricCard icon={<TrendingUp className="h-4 w-4" />} label="Recovery Progress Score" value={recoveryProgressScore == null ? "--" : `${recoveryProgressScore}%`} detail={currentRecovery?.expectedProgressScore == null ? "Insufficient data" : `Expected ${currentRecovery.expectedProgressScore}%`} progress={recoveryProgressScore} />
+        <MetricCard icon={<Activity className="h-4 w-4" />} label="Recovery Variance" value={recoveryVariance == null ? "--" : `${recoveryVariance > 0 ? "+" : ""}${recoveryVariance}%`} detail={currentRecovery?.recoveryStatus ? currentRecovery.recoveryStatus.replaceAll("_", " ") : "Insufficient data"} valueClassName={recoveryVariance != null && recoveryVariance < 0 ? "text-destructive" : undefined} />
       </div>
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-6">
-            <div className="flex items-center gap-2"><BrainCircuit className="h-5 w-5 text-primary" /><h2 className="text-xl font-bold text-foreground">Recovery Intelligence</h2></div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">System-generated insights</p>
-            <div className="mt-4 rounded-lg border-l-4 border-primary bg-blue-50 p-4"><p className="mb-1 text-sm font-bold text-primary">Trajectory Summary</p><p className="text-sm font-medium leading-6 text-foreground/80">{trajectorySummary}</p></div>
+            <h2 className="text-xl font-bold text-foreground">Recovery Intelligence</h2>
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Recovery Progression Over Time</p><div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 border-t-2 border-dashed border-muted-foreground" />Expected</span><span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 bg-primary" />Actual</span></div></div>
             <div className="mt-4 h-[260px] w-full"><ResponsiveContainer width="100%" height="100%"><LineChart data={progression} margin={{ top: 8, right: 12, left: -8, bottom: 2 }}><CartesianGrid vertical={false} stroke="hsl(var(--border))" /><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} /><YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={30} /><Tooltip /><Line type="monotone" dataKey="expected" name="Expected" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} /><Line type="monotone" dataKey="actual" name="Actual" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4, fill: "hsl(var(--primary))", strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls={false} /></LineChart></ResponsiveContainer></div>
             <p className="mt-2 text-xs text-muted-foreground">{hasActualRecovery ? "Actual recovery is plotted from the latest forecast on day " + (episode.dayStart ?? "--") + "." : "Actual recovery data is not available for this episode yet."}</p>
 
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Contributing Factors</p>
-            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FactorCard title="Care Plan Adherence" percent={adherence} detail={adherence == null ? "No medication logs available" : missedDoseCount + " missed dose" + (missedDoseCount === 1 ? "" : "s") + " recorded"} />
-              <FactorCard title="Biometric Trends" percent={biometricCoverage} detail={biometricCoverage == null ? "No daily vitals available" : biometricEntryCount + " of " + dailyVitals.length + " days with recorded vitals" + (latestVitals ? "; " + latestVitals : "")} />
-              <FactorCard title="Clinical Inputs" percent={clinicalInputCoverage} detail={clinicalInputCoverage == null ? "No assessments recorded" : assessmentCount + " assessment" + (assessmentCount === 1 ? "" : "s") + " across " + elapsedDays + " elapsed day" + (elapsedDays === 1 ? "" : "s")} />
-              <FactorCard title="Recent Interventions" percent={interventionCoverage} detail={interventionCoverage == null ? "No timeline interventions recorded" : timeline.length + " timeline event" + (timeline.length === 1 ? "" : "s") + " across " + elapsedDays + " elapsed day" + (elapsedDays === 1 ? "" : "s")} />
-            </div>
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Component Breakdown</p>
+            {componentBreakdown.length > 0 ? <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">{componentBreakdown.map((component) => <RecoveryComponentCard key={component.key} component={component} />)}</div> : <div className="mt-3 rounded-lg border border-border bg-muted/20 p-4 text-sm font-medium text-muted-foreground">Component analysis is unavailable until the recovery endpoint returns sufficient data.</div>}
+
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Risk Contributors</p>
+            {riskContributors ? <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2"><RiskContributorGroup title="Deterioration" contributors={riskContributors.deterioration} missing={riskContributors.deteriorationMissingCategories} completeness={riskContributors.deteriorationDataCompleteness} /><RiskContributorGroup title="Relapse" contributors={riskContributors.relapse} missing={riskContributors.relapseMissingCategories} completeness={riskContributors.relapseDataCompleteness} /></div> : <div className="mt-3 rounded-lg border border-border bg-muted/20 p-4 text-sm font-medium text-muted-foreground">Risk contributor analysis is unavailable.</div>}
           </CardContent></Card>
 
           <Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="p-4 sm:p-6">
@@ -570,7 +538,7 @@ export default function CareEpisodeRecoveryPage() {
             <div className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-[#BFE8F5] bg-[#E9F8FC] px-3 py-3 text-xs"><p className="flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Updating live</p><p className="font-medium text-muted-foreground">Last sync {lastTaskSyncLabel}</p></div>
           </CardContent></Card>
 
-          <Card className="flex w-full min-w-0 h-[480px] min-h-[360px] max-h-[calc(100vh-220px)] flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm">
+          <Card className="flex w-full min-w-0 h-[620px] min-h-[480px] max-h-[calc(100vh-140px)] flex-col overflow-hidden rounded-xl border-border bg-card shadow-sm">
             <CardContent className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <h2 className="flex items-center gap-1.5 text-base font-bold text-foreground">
@@ -580,13 +548,13 @@ export default function CareEpisodeRecoveryPage() {
                 <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-bold text-destructive">{alerts.length} OPEN</span>
               </div>
 
-              <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
+              <div className="mt-4 min-h-[220px] flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
                 {alertsError ? <p className="py-4 text-center text-sm font-medium text-destructive">{alertsError}</p> : null}
                 {!alertsError && alerts.length === 0 ? <p className="py-4 text-center text-sm font-medium text-muted-foreground">No open alerts for this care episode.</p> : null}
                 {alerts.map((alert) => {
                   const tone = alertTone(alert);
                   return (
-                    <div key={alert.id} className={cn("rounded-xl border p-3.5", tone.card)}>
+                    <div key={alert.id} className={cn("flex min-h-[180px] flex-col rounded-xl border p-3.5", tone.card)}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{alert.severity} severity</span>
@@ -669,22 +637,14 @@ function MetricCard({ icon, label, value, detail, progress, valueClassName }: { 
     </Card>
   );
 }
-function FactorCard({ title, percent, detail }: { title: string; percent: number | null; detail: string }) {
-  const displayPercent = percent == null ? "--" : String(percent) + "%";
-  return (
-    <div className="min-h-[132px] rounded-lg border border-border bg-muted/20 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-bold text-foreground">{title}</p>
-        <p className="shrink-0 text-sm font-bold text-primary">{displayPercent}</p>
-      </div>
-      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: (percent == null ? 0 : clamp(percent)) + "%" }} />
-      </div>
-      <p className="mt-3 text-xs font-medium leading-5 text-muted-foreground">{detail}</p>
-    </div>
-  );
+function RecoveryComponentCard({ component }: { component: { key: string; label: string; score: number | null; effectiveWeight: number; status: string; note?: string | null } }) {
+  const score = component.score == null ? null : clamp(component.score);
+  return <div className="min-h-[132px] rounded-lg border border-border bg-muted/20 p-4"><div className="flex items-start justify-between gap-3"><p className="text-sm font-bold text-foreground">{component.label}</p><p className="shrink-0 text-sm font-bold text-primary">{score == null ? "--" : `${score}%`}</p></div><div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${score ?? 0}%` }} /></div><p className="mt-3 text-xs font-medium leading-5 text-muted-foreground">{component.note || `${component.status.replaceAll("_", " ")} · ${component.effectiveWeight}% effective weight`}</p></div>;
 }
 
+function RiskContributorGroup({ title, contributors, missing, completeness }: { title: string; contributors: { key: string; label: string; points: number; maxPoints: number; detail: string; status: string }[]; missing: string[]; completeness: number }) {
+  return <div className="rounded-lg border border-border bg-muted/20 p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-bold text-foreground">{title}</p><p className="text-xs font-semibold text-muted-foreground">{completeness}% data</p></div><div className="mt-3 space-y-3">{contributors.length > 0 ? contributors.map((contributor) => <div key={contributor.key} className="rounded-md border border-border/70 bg-card p-3"><div className="flex items-start justify-between gap-3"><p className="text-xs font-bold text-foreground">{contributor.label}</p><p className="text-xs font-semibold text-muted-foreground">{contributor.points}/{contributor.maxPoints} pts</p></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{contributor.detail}</p></div>) : <p className="text-xs font-medium text-muted-foreground">No contributors identified.</p>}{missing.length > 0 ? <p className="text-xs font-medium text-muted-foreground">Missing: {missing.join(", ")}</p> : null}</div></div>;
+}
 function OutcomeCard({
   label,
   detail,

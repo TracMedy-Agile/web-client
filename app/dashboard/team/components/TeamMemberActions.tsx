@@ -191,24 +191,11 @@ export default function TeamMemberActions({
   const [editedPermissions, setEditedPermissions] = useState<TeamPermission[]>(permissionsForAccessProfile(normalizeAccessProfile(accessProfile), permissions));
   const [isWorking, setIsWorking] = useState(false);
 
-  function openEdit() {
+  function openStatus(action: Exclude<PendingAction, null>) {
     if (!canEditMember) {
-      capturePostHogEvent("team_member_edit_denied", { member_id: memberId });
       onAccessDenied?.();
       return;
     }
-    capturePostHogEvent("team_member_edit_opened", { member_id: memberId });
-    setEditedName(name);
-    setEditedSpecialty(specialty);
-    setEditedWard(ward);
-    setEditedRole(normalizeRole(role));
-    const nextAccessProfile = normalizeAccessProfile(accessProfile);
-    setEditedAccessProfile(nextAccessProfile);
-    setEditedPermissions(permissionsForAccessProfile(nextAccessProfile, permissions));
-    setEditOpen(true);
-  }
-
-  function openStatus(action: Exclude<PendingAction, null>) {
     capturePostHogEvent(
       action === "remove" ? "team_member_remove_opened" : "team_member_status_opened",
       { member_id: memberId, action },
@@ -273,6 +260,10 @@ export default function TeamMemberActions({
   }
 
   async function resendInvite() {
+    if (!canEditMember) {
+      onAccessDenied?.();
+      return;
+    }
     setIsWorking(true);
     try {
       const result = await resendTeamMemberInvite(memberId);
@@ -331,10 +322,7 @@ export default function TeamMemberActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={openEdit}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit member
-          </DropdownMenuItem>
+
           {canResendInvite ? (
             <DropdownMenuItem
               onSelect={(event) => {

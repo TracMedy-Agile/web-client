@@ -10,7 +10,7 @@ import { SaveNotice, SettingsHeader, SettingsPanel } from "@/app/dashboard/setti
 import { Button } from "@/components/ui/button";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { getSubscriptionSummary, type SubscriptionSummary } from "@/lib/api/settings";
-import { BillingTabs } from "@/app/dashboard/settings/billing/components";
+import { BillingTabs, formatInvoiceMoney } from "@/app/dashboard/settings/billing/components";
 
 const fallbackSubscription: SubscriptionSummary = {
   planName: "Free Plan",
@@ -22,9 +22,6 @@ const fallbackSubscription: SubscriptionSummary = {
   usage: { activeCareEpisodes: 0, appointments: 0, activeClinicians: 0 },
 };
 
-function formatMoney(amount: number, currency: string) {
-  return new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
-}
 
 export default function BillingSettingsPage() {
   const [subscription, setSubscription] = useState<SubscriptionSummary>(fallbackSubscription);
@@ -83,38 +80,38 @@ export default function BillingSettingsPage() {
         {isLoading ? (
           <div className="animate-pulse space-y-6">
             <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-              <div className="rounded-lg border border-border bg-background p-5">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
                 <div className="h-4 w-40 rounded bg-muted" />
                 <div className="mt-3 h-7 w-48 rounded bg-muted" />
                 <div className="mt-3 h-3 w-32 rounded bg-muted/70" />
                 <div className="mt-6 h-20 rounded-lg bg-card" />
               </div>
-              <div className="rounded-lg border border-border bg-background p-5">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
                 <div className="flex items-center gap-3"><div className="h-11 w-11 rounded-lg bg-muted" /><div className="space-y-2"><div className="h-4 w-32 rounded bg-muted" /><div className="h-3 w-40 rounded bg-muted/70" /></div></div>
                 <div className="mt-5 flex gap-3"><div className="h-10 w-48 rounded-lg bg-muted" /><div className="h-10 w-36 rounded-lg bg-muted" /></div>
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="rounded-lg border border-border bg-background p-5">
+                <div key={index} className="rounded-xl border border-border bg-card shadow-sm p-5">
                   <div className="h-9 w-9 rounded-lg bg-muted" />
                   <div className="mt-3 h-6 w-16 rounded bg-muted" />
                   <div className="mt-2 h-3 w-28 rounded bg-muted/70" />
                 </div>
               ))}
             </div>
-            <div className="rounded-lg border border-border bg-background p-5">
+            <div className="rounded-xl border border-border bg-card shadow-sm p-5">
               <div className="h-4 w-32 rounded bg-muted" />
               <div className="mt-5 grid gap-3 md:grid-cols-4">
                 {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="rounded-lg border border-border bg-card p-4">
+                  <div key={index} className="rounded-xl border border-border bg-card shadow-sm p-4">
                     <div className="h-8 w-8 rounded-full bg-muted" />
                     <div className="mt-3 h-3 w-24 rounded bg-muted" />
                   </div>
                 ))}
               </div>
             </div>
-            <div className="overflow-hidden rounded-lg border border-border bg-background">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-4"><div className="h-4 w-48 rounded bg-muted" /></div>
               <div className="divide-y divide-border">
                 {Array.from({ length: 3 }).map((_, index) => (
@@ -129,11 +126,11 @@ export default function BillingSettingsPage() {
         ) : (
           <>
             <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-              <div className="rounded-lg border border-border bg-background p-5">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-semibold text-muted-foreground">Current Billing Period</p><h2 className="mt-2 text-2xl font-bold text-foreground">{subscription.planName}</h2><p className="mt-2 text-sm text-muted-foreground">{subscription.billingPeriod}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{subscription.status}</span></div>
-                <div className="mt-6 rounded-lg bg-card p-4 shadow-sm"><p className="text-sm font-semibold text-muted-foreground">Estimated invoice total</p><p className="mt-2 text-3xl font-bold text-primary">{formatMoney(subscription.estimatedTotal, subscription.currency)}</p><p className="mt-2 text-sm text-muted-foreground">Renewal date: {subscription.renewalDate}</p></div>
+                <div className="mt-6 rounded-lg bg-card p-4 shadow-sm"><p className="text-sm font-semibold text-muted-foreground">Estimated invoice total</p><p className="mt-2 text-3xl font-bold text-primary">{formatInvoiceMoney(subscription.estimatedTotal, subscription.currency)}</p><p className="mt-2 text-sm text-muted-foreground">Renewal date: {subscription.renewalDate}</p></div>
               </div>
-              <div className="rounded-lg border border-border bg-background p-5">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-5">
                 <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary"><CreditCard className="h-5 w-5" /></span><div><h3 className="text-base font-bold text-foreground">Payment Method</h3><p className="mt-1 text-sm text-muted-foreground">No payment method on file</p></div></div>
                 <div className="mt-5 flex flex-wrap gap-3"><Button type="button" variant="outline" onClick={() => unavailable("Update payment method")} className="h-10 rounded-lg font-semibold">Update Payment Method</Button><Button type="button" variant="outline" asChild className="h-10 rounded-lg font-semibold text-destructive hover:text-destructive"><Link href="/dashboard/settings/billing/cancel-subscription">Cancel Subscription</Link></Button></div>
               </div>
@@ -145,11 +142,11 @@ export default function BillingSettingsPage() {
               <Metric icon={<UsersRound className="h-5 w-5" />} label="Active Clinicians" value={subscription.usage.activeClinicians} />
             </div>
 
-            <div className="rounded-lg border border-border bg-background p-5"><h3 className="text-base font-bold text-foreground">Billing Lifecycle</h3><div className="mt-5 grid gap-3 md:grid-cols-4">{["Usage tracked", "Draft invoice", "Invoice generated", "Payment processed"].map((step, index) => <div key={step} className="rounded-lg border border-border bg-card p-4"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{index + 1}</span><p className="mt-3 text-sm font-bold text-foreground">{step}</p></div>)}</div></div>
+            <div className="rounded-xl border border-border bg-card shadow-sm p-5"><h3 className="text-base font-bold text-foreground">Billing Lifecycle</h3><div className="mt-5 grid gap-3 md:grid-cols-4">{["Usage tracked", "Draft invoice", "Invoice generated", "Payment processed"].map((step, index) => <div key={step} className="rounded-xl border border-border bg-card shadow-sm p-4"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{index + 1}</span><p className="mt-3 text-sm font-bold text-foreground">{step}</p></div>)}</div></div>
 
-            <div className="overflow-hidden rounded-lg border border-border bg-background">
-              <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-bold text-foreground">Detailed Billing Breakdown</h3><p className="mt-1 text-sm text-muted-foreground">Draft CSV export is handled by the frontend.</p></div><Button type="button" variant="outline" onClick={exportDraft} className="h-10 rounded-lg font-semibold"><Download className="h-4 w-4" />Export Draft</Button></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-card text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Item</th><th className="px-5 py-3 font-bold">Quantity</th><th className="px-5 py-3 text-right font-bold">Amount</th></tr></thead><tbody className="divide-y divide-border">{lineItems.map((item) => <tr key={item.label}><td className="px-5 py-4 font-semibold text-foreground"><FileText className="mr-2 inline h-4 w-4 text-primary" />{item.label}</td><td className="px-5 py-4 text-muted-foreground">{item.quantity}</td><td className="px-5 py-4 text-right font-bold text-foreground">{formatMoney(item.amount, subscription.currency)}</td></tr>)}</tbody></table></div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-bold text-foreground">Detailed Billing Breakdown</h3><p className="mt-1 text-sm text-muted-foreground">Review current-cycle usage and estimated charges.</p></div><div className="flex flex-wrap items-center gap-3"><Link href="/dashboard/settings/billing/invoices" className="text-sm font-semibold text-primary hover:underline">View invoice history</Link><Button type="button" variant="outline" onClick={exportDraft} className="h-10 rounded-lg font-semibold"><Download className="h-4 w-4" />Export Draft</Button></div></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead className="bg-card text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Item</th><th className="px-5 py-3 font-bold">Quantity</th><th className="px-5 py-3 text-right font-bold">Amount</th></tr></thead><tbody className="divide-y divide-border">{lineItems.map((item) => <tr key={item.label}><td className="px-5 py-4 font-semibold text-foreground"><FileText className="mr-2 inline h-4 w-4 text-primary" />{item.label}</td><td className="px-5 py-4 text-muted-foreground">{item.quantity}</td><td className="px-5 py-4 text-right font-bold text-foreground">{formatInvoiceMoney(item.amount, subscription.currency)}</td></tr>)}</tbody></table></div>
             </div>
             {notice ? <SaveNotice>{notice}</SaveNotice> : null}
           </>
@@ -160,5 +157,5 @@ export default function BillingSettingsPage() {
 }
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
-  return <div className="rounded-lg border border-border bg-background p-4"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span><p className="mt-4 text-sm font-semibold text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold text-foreground">{value}</p></div>;
+  return <div className="rounded-xl border border-border bg-card shadow-sm p-4"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span><p className="mt-4 text-sm font-semibold text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold text-foreground">{value}</p></div>;
 }

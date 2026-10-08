@@ -1,10 +1,11 @@
-export type DailyAppointmentStatus = "Confirmed" | "Pending" | "Rescheduled" | "No Show";
+export type DailyAppointmentStatus = "Confirmed" | "Pending" | "Canceled" | "Rescheduled" | "No Show";
 
 export type DailyCalendarAppointment = {
   id: string;
   patientName: string;
   startTime: string;
   endTime: string;
+  durationMinutes: number;
   type: "In-person Visit" | "Teleconsultation" | string;
   doctor: string;
   status: DailyAppointmentStatus;
@@ -129,9 +130,15 @@ function mapAppointmentType(type: string) {
   return "In-person Visit";
 }
 
-function mapAppointmentStatus(status: string): DailyAppointmentStatus {
+/**
+ * Normalize every API status into the labels used by the appointment UI.
+ * Table, day, and week views all consume this helper so one appointment
+ * cannot be rendered with different statuses in different views.
+ */
+export function normalizeAppointmentStatus(status: string): DailyAppointmentStatus {
   const normalized = status.toLowerCase().replace(/[_-]/g, " ");
 
+  if (normalized.includes("cancel")) return "Canceled";
   if (normalized.includes("rescheduled")) return "Rescheduled";
   if (normalized.includes("no show")) return "No Show";
   if (normalized.includes("pending")) return "Pending";
@@ -163,7 +170,8 @@ function getCalendarItems(payload: unknown): CalendarApiRecord[] {
 
 export function normalizeCalendarAppointments(payload: unknown, fallbackDate: string): CalendarAppointment[] {
   return getCalendarItems(payload).map((appointment) => {
-    const startValue = getString(appointment, ["startTime", "time", "startsAt", "scheduledTime"], "08:00");
+    // The calendar contract returns `time` as the facility-local HH:mm slot. Prefer it so day and week views use the same axis without applying a browser timezone conversion.
+    const startValue = getString(appointment, ["time", "startTime", "startsAt", "scheduledTime"], "08:00");
     const duration = getNumber(appointment, ["duration", "durationMinutes"], 30);
     const endValue = getString(appointment, ["endTime", "endsAt"], "");
     const startTime = toDisplayTime(startValue);
@@ -180,9 +188,10 @@ export function normalizeCalendarAppointments(payload: unknown, fallbackDate: st
       patientName: patientName || "Unknown Patient",
       startTime,
       endTime,
+      durationMinutes: duration,
       type: mapAppointmentType(type),
-      doctor: doctor || "--",
-      status: mapAppointmentStatus(getString(appointment, ["status"], "confirmed")),
+      doctor: doctor || "Clinician not assigned",
+      status: normalizeAppointmentStatus(getString(appointment, ["status"], "confirmed")),
       date,
     };
   }).sort((current, next) => parseTimeToMinutes(current.startTime) - parseTimeToMinutes(next.startTime));

@@ -14,6 +14,73 @@ export type UpdateLabResultStatusPayload = components["schemas"]["UpdateLabResul
 export type AddCareTeamMemberInput = components["schemas"]["AddCareTeamMemberDto"];
 export type EpisodeMediaItem = components["schemas"]["MediaItemDto"];
 export type EpisodeForecast = components["schemas"]["EpisodeForecastDto"];
+export type EpisodeRecoveryTrajectoryPoint = {
+  recoveryDay: number;
+  date: string;
+  expectedScore: number;
+  actualScore: number | null;
+  variance: number | null;
+};
+
+export type EpisodeCurrentRecovery = {
+  recoveryProgressScore: number | null;
+  expectedProgressScore: number;
+  recoveryVariance: number | null;
+  recoveryStatus: string | null;
+  recoveryProbability: number | null;
+  recoveryProbabilityBand: string | null;
+  deteriorationRisk: number | null;
+  deteriorationRiskBand: string | null;
+  deteriorationHorizonDays: number;
+  relapseRisk: number | null;
+  relapseRiskBand: string | null;
+  relapseApplicability: string;
+  relapseApplicabilityReason: string | null;
+  relapseHorizonDays: number;
+  dataCompleteness: number;
+  status: string;
+  calculatedAt: string | null;
+  disclaimers: string[];
+};
+
+export type EpisodeRecoveryComponent = {
+  key: string;
+  label: string;
+  score: number | null;
+  weight: number;
+  effectiveWeight: number;
+  status: string;
+  note?: string | null;
+};
+
+export type EpisodeRiskContributor = {
+  key: string;
+  label: string;
+  points: number;
+  maxPoints: number;
+  detail: string;
+  status: string;
+};
+
+export type EpisodeRecoveryRiskContributors = {
+  deterioration: EpisodeRiskContributor[];
+  relapse: EpisodeRiskContributor[];
+  deteriorationMissingCategories: string[];
+  relapseMissingCategories: string[];
+  deteriorationDataCompleteness: number;
+  relapseDataCompleteness: number;
+};
+export type EpisodeRecovery = {
+  currentRecovery: EpisodeCurrentRecovery;
+  components: { clinicalStatus: EpisodeRecoveryComponent; adherence: EpisodeRecoveryComponent; functional: EpisodeRecoveryComponent; milestone: EpisodeRecoveryComponent };
+  riskContributors: EpisodeRecoveryRiskContributors;
+  trajectory: {
+    recoveryDay: number;
+    plannedDurationDays: number | null;
+    points: EpisodeRecoveryTrajectoryPoint[];
+    snapshotCount: number;
+  };
+};
 export type CheckInHistoryRecord = Omit<
   components["schemas"]["CheckInHistoryDto"],
   "symptoms" | "vitals" | "symptomTrend" | "vitalsTrend"
@@ -901,6 +968,12 @@ export async function getCareEpisodeTaskCompletionLog(
   };
 }
 
+export async function getCareEpisodeRecovery(episodeId: string): Promise<EpisodeRecovery> {
+  const payload = await request(`/care-episodes/${encodeURIComponent(episodeId)}/recovery`);
+  const recovery = unwrapData(payload);
+  if (!asRecord(recovery)) throw new Error("The episode recovery response was invalid.");
+  return recovery as EpisodeRecovery;
+}
 export async function getCareEpisodeForecast(episodeId: string): Promise<EpisodeForecast> {
   const payload = await request(`/forecasts/episodes/${encodeURIComponent(episodeId)}`);
   const forecast = unwrapData(payload);

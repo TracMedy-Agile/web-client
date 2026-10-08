@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -12,7 +13,6 @@ import {
   ChevronRight,
   Download,
   History,
-  Plus,
   RefreshCcw,
   Search,
   Target,
@@ -23,7 +23,6 @@ import VideoCallView from "@/components/video-call/VideoCallView";
 import { getCallToken, joinCall, startCall } from "@/lib/api/video-call";
 import AppointmentDateRangePicker from "../components/AppointmentDateRangePicker";
 import RescheduleAppointmentModal from "../components/RescheduleAppointmentModal";
-import ScheduleAppointmentModal from "../components/ScheduleAppointmentModal";
 
 type MetricCardData = {
   title: string;
@@ -65,6 +64,7 @@ type Consultation = {
   isJoinWindow: boolean;
   statusDetail: string;
   waitMinutes: number | null;
+  durationMinutes: number;
   completedAt: string;
 };
 
@@ -179,7 +179,9 @@ async function fetchClinicianDirectory(): Promise<Record<string, string>> {
   if (!res.ok) return {};
 
   const root = asRecord(payload);
-  const list = Array.isArray(root?.data) ? root.data : [];
+  const data = root?.data;
+  const nested = asRecord(data);
+  const list = Array.isArray(data) ? data : Array.isArray(nested?.data) ? nested.data : Array.isArray(nested?.items) ? nested.items : [];
   const directory: Record<string, string> = {};
 
   for (const item of list) {
@@ -189,6 +191,7 @@ async function fetchClinicianDirectory(): Promise<Record<string, string>> {
     if (!id || !name) continue;
     const department = getString(record, ["department"]);
     directory[id] = `Dr. ${name}${department ? ` - ${department}` : ""}`;
+    directory[id.toLowerCase()] = directory[id];
   }
 
   return directory;
@@ -389,7 +392,7 @@ function normalizeConsultation(record: ApiRecord): Consultation {
   return {
     id: getString(record, ["id", "_id", "appointmentId", "code"], "--"),
     patientName,
-    appointmentId: getString(record, ["appointmentId", "code", "id"], "--"),
+    appointmentId: getString(record, ["reference", "appointmentId", "code", "id"], "--"),
     appointmentType: normalizeAppointmentType(getString(record, ["type", "appointmentType"], "teleconsultation")),
     scheduledPrimary: scheduledDate.includes("T") ? formatDate(scheduledDate) : formatDate(scheduledDate || getString(record, ["createdAt"], "")),
     scheduledSecondary: formatTime(scheduledTime || scheduledDate),
@@ -397,7 +400,7 @@ function normalizeConsultation(record: ApiRecord): Consultation {
     scheduledTime,
     clinicianId,
     // Resolved from the clinician directory once it loads — see `consultations` memo below.
-    clinician: clinicianId ? "" : "Unassigned",
+    clinician: clinicianId ? "" : "Not assigned",
     hospitalId: getString(record, ["hospitalId", "patientHospitalId"], "") || getString(patient, ["hospitalId", "tracmedyId", "medicalRecordNumber", "id"], "--"),
     reason: getString(record, ["reason", "notes"], "Teleconsultation"),
     status,
@@ -406,7 +409,8 @@ function normalizeConsultation(record: ApiRecord): Consultation {
     isJoinWindow,
     statusDetail: getStatusDetail(status, appointmentDate, record),
     waitMinutes,
-    completedAt: getString(record, ["completedAt", "updatedAt"], ""),
+    durationMinutes: getNumber(record, ["durationMinutes", "duration", "lengthMinutes"]) ?? 0,
+    completedAt: getString(record, ["completedAt"], ""),
   };
 }
 
@@ -414,11 +418,11 @@ function MetricCard({ metric }: { metric: MetricCardData }) {
   const Icon = metric.icon;
 
   return (
-    <article className="rounded-xl border border-border bg-white p-4 shadow-sm sm:p-5 lg:p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-[#344054]">{metric.title}</p>
-          <p className="mt-6 text-xl font-bold text-[#111827] md:text-3xl">{metric.value}</p>
+    <article className="flex h-full min-h-[132px] rounded-xl border border-border bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex w-full items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="truncate whitespace-nowrap text-sm font-semibold text-[#344054]">{metric.title}</p>
+          <p className="mt-6 whitespace-nowrap text-xl font-bold text-[#111827] md:text-3xl">{metric.value}</p>
           <p className={cn("mt-2 text-xs font-medium text-[#71809B]", metric.descriptionClassName)}>
             {metric.description}
           </p>
@@ -525,6 +529,7 @@ function isToday(value: string) {
 }
 
 export default function VirtualConsultationsPage() {
+  const router = useRouter();
   const { user } = useDashboardUser();
   const currentUserId = (user?.id ?? "").toLowerCase();
   const isAssignedClinician = useCallback(
@@ -532,6 +537,7 @@ export default function VirtualConsultationsPage() {
     [currentUserId],
   );
   const [rawConsultations, setRawConsultations] = useState<Consultation[]>([]);
+  const [currentTime, setCurrentTime] = useState(0);
   const [clinicianNames, setClinicianNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -541,7 +547,6 @@ export default function VirtualConsultationsPage() {
   const [clinicianFilter, setClinicianFilter] = useState("all");
   const [dateRange, setDateRange] = useState({ dateFrom: "", dateTo: "" });
   const [reschedulingAppointment, setReschedulingAppointment] = useState<Consultation | null>(null);
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [activeCallAppointmentId, setActiveCallAppointmentId] = useState<string | null>(null);
   const [activeVideoCallSession, setActiveVideoCallSession] = useState<ActiveVideoCallSession | null>(null);
 
@@ -552,6 +557,7 @@ export default function VirtualConsultationsPage() {
 
     try {
       const payload = await fetchTeleconsultations();
+      setCurrentTime(Date.now());
       setRawConsultations(getAppointmentItems(payload).map(normalizeConsultation));
     } catch (requestError) {
       setRawConsultations([]);
@@ -643,8 +649,8 @@ export default function VirtualConsultationsPage() {
     () =>
       rawConsultations.map((consultation) =>
         consultation.clinicianId
-          ? { ...consultation, clinician: clinicianNames[consultation.clinicianId] ?? "--" }
-          : consultation,
+          ? { ...consultation, clinician: clinicianNames[consultation.clinicianId] ?? clinicianNames[consultation.clinicianId.toLowerCase()] ?? "Assigned clinician" }
+          : { ...consultation, clinician: "Unassigned" },
       ),
     [rawConsultations, clinicianNames],
   );
@@ -675,15 +681,26 @@ export default function VirtualConsultationsPage() {
   }, [clinicianFilter, consultations, dateRange.dateFrom, dateRange.dateTo, search, statusFilter]);
 
   const metrics = useMemo<MetricCardData[]>(() => {
-    const upcomingCount = consultations.filter((consultation) => consultation.status === "upcoming" || consultation.status === "ready").length;
+    const upcomingConsultations = consultations.filter((consultation) => {
+      const appointmentDate = getAppointmentDateTime(consultation.scheduledDate, consultation.scheduledTime);
+      return (consultation.status === "upcoming" || consultation.status === "ready") && Boolean(appointmentDate && appointmentDate.getTime() >= currentTime);
+    });
+    const upcomingCount = upcomingConsultations.length;
+    const upcomingTimes = upcomingConsultations
+      .map((consultation) => getAppointmentDateTime(consultation.scheduledDate, consultation.scheduledTime)?.getTime())
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const upcomingMinutes = upcomingTimes.length
+      ? Math.max(0, Math.round((Math.min(...upcomingTimes) - currentTime) / 60000))
+      : 0;
     const activeClinicians = new Set(
       consultations
-        .filter((consultation) => consultation.status === "ready" || consultation.status === "in-progress")
+        .filter((consultation) => consultation.status === "in-progress")
         .map((consultation) => consultation.clinician)
         .filter(Boolean),
     ).size;
-    const completedToday = consultations.filter((consultation) => consultation.status === "completed" && isToday(consultation.completedAt || consultation.scheduledDate)).length;
+    const completedToday = consultations.filter((consultation) => consultation.status === "completed" && Boolean(consultation.completedAt) && isToday(consultation.completedAt)).length;
     const waitValues = consultations
+      .filter((consultation) => isToday(consultation.scheduledDate))
       .map((consultation) => consultation.waitMinutes)
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     const averageWait = waitValues.length
@@ -693,8 +710,8 @@ export default function VirtualConsultationsPage() {
     return [
       {
         title: "Upcoming Consultations",
-        value: String(upcomingCount),
-        description: `${upcomingCount} Upcoming Consultations`,
+        value: `${upcomingMinutes} min`,
+        description: `${upcomingCount} upcoming consultation${upcomingCount === 1 ? "" : "s"}.`,
         icon: CalendarDays,
         iconClassName: "text-primary",
         iconWrapClassName: "bg-[#E7F2FF]",
@@ -702,8 +719,8 @@ export default function VirtualConsultationsPage() {
       {
         title: "Active Clinicians",
         value: String(activeClinicians),
-        description: "Session active now",
-        descriptionClassName: "text-red-500",
+        description: activeClinicians ? "Session active now" : "No active sessions now",
+        descriptionClassName: activeClinicians ? "text-red-500" : undefined,
         icon: Target,
         iconClassName: "text-red-500",
         iconWrapClassName: "bg-red-50",
@@ -718,14 +735,14 @@ export default function VirtualConsultationsPage() {
       },
       {
         title: "Average Wait Time",
-        value: String(averageWait),
-        description: `${averageWait} Minutes Average Wait Time`,
+        value: `${averageWait} min`,
+        description: "Average wait time today.",
         icon: History,
         iconClassName: "text-primary",
         iconWrapClassName: "bg-[#E7F2FF]",
       },
     ];
-  }, [consultations]);
+  }, [consultations, currentTime]);
 
   return (
     <>
@@ -755,14 +772,6 @@ export default function VirtualConsultationsPage() {
             >
               <RefreshCcw className={cn("h-5 w-5", isRefreshing ? "animate-spin" : "")} />
               Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
-            >
-              <Plus className="h-5 w-5" />
-              Today&apos;s Consultation
             </button>
           </div>
         </div>
@@ -840,7 +849,7 @@ export default function VirtualConsultationsPage() {
               ) : (
                 <tbody>
                   {filteredConsultations.map((consultation) => (
-                    <tr key={consultation.id} className="border-b border-border text-sm text-[#344054] last:border-b-0">
+                    <tr key={consultation.id} role="link" tabIndex={0} onClick={() => router.push(`/dashboard/appointments/${encodeURIComponent(consultation.id)}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(`/dashboard/appointments/${encodeURIComponent(consultation.id)}`); } }} className="cursor-pointer border-b border-border text-sm text-[#344054] transition-colors hover:bg-[#F8FAFC] last:border-b-0">
                       <td className="px-2 py-4 font-semibold text-[#111827] sm:px-3 xl:px-4"><p className="truncate" title={consultation.patientName}>{consultation.patientName}</p></td>
                       <td className="hidden px-3 py-4 font-medium xl:table-cell"><p className="truncate" title={consultation.appointmentId}>{consultation.appointmentId}</p></td>
                       <td className="px-2 py-4 sm:px-3 xl:px-4">
@@ -854,34 +863,19 @@ export default function VirtualConsultationsPage() {
                       <td className="px-2 py-4 text-right sm:px-3 xl:px-4">
                         <div className="flex justify-end">
                           {shouldShowJoinAction(consultation, isAssignedClinician(consultation)) ? (
-                            <button type="button" onClick={() => void startConsultation(consultation)} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
+                            <button type="button" onClick={(event) => { event.stopPropagation(); void startConsultation(consultation); }} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-full bg-primary px-5 text-xs font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60">
                               Join Consultation
                             </button>
                           ) : null}
                           {consultation.status === "in-progress" && isAssignedClinician(consultation) ? (
-                            <button type="button" onClick={() => void rejoinConsultation(consultation)} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-xl border border-primary bg-white px-5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
+                            <button type="button" onClick={(event) => { event.stopPropagation(); void rejoinConsultation(consultation); }} disabled={activeCallAppointmentId === consultation.id || !canJoinConsultationCall(consultation)} className="h-10 rounded-full border border-primary bg-white px-5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-60">
                               Rejoin Session
                             </button>
                           ) : null}
-                          {consultation.status === "completed" ? (
-                            <Link href={`/dashboard/appointments/${encodeURIComponent(consultation.id)}`} className="text-xs font-bold text-primary">
-                              View Details
-                            </Link>
-                          ) : null}
                           {shouldShowUpcomingActions(consultation, isAssignedClinician(consultation)) ? (
-                            <div className="flex items-center gap-4 lg:gap-6">
-                              <Link href={`/dashboard/appointments/${encodeURIComponent(consultation.id)}`} className="text-xs font-bold text-primary">
-                                View Details
-                              </Link>
-                              <button type="button" onClick={() => setReschedulingAppointment(consultation)} className="text-xs font-bold text-[#344054]">
-                                Reschedule
-                              </button>
-                            </div>
-                          ) : null}
-                          {(consultation.status === "ready" || consultation.status === "in-progress") && !isAssignedClinician(consultation) ? (
-                            <Link href={`/dashboard/appointments/${encodeURIComponent(consultation.id)}`} className="text-xs font-bold text-primary">
-                              View Details
-                            </Link>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); setReschedulingAppointment(consultation); }} className="h-10 rounded-full border border-[#D0D5DD] bg-white px-4 text-xs font-bold text-[#344054]">
+                              Reschedule
+                            </button>
                           ) : null}
                         </div>
                       </td>
@@ -931,7 +925,9 @@ export default function VirtualConsultationsPage() {
         key={reschedulingAppointment ? `reschedule-${reschedulingAppointment.id}` : "reschedule-closed"}
         isOpen={Boolean(reschedulingAppointment)}
         appointmentId={reschedulingAppointment?.id}
+        appointmentDisplayId={reschedulingAppointment?.appointmentId}
         patientName={reschedulingAppointment?.patientName}
+        clinicianId={reschedulingAppointment?.clinicianId}
         appointmentReason={reschedulingAppointment?.reason}
         appointmentDate={reschedulingAppointment?.scheduledDate}
         appointmentTime={reschedulingAppointment?.scheduledTime}
@@ -941,14 +937,6 @@ export default function VirtualConsultationsPage() {
         onSuccess={() => {
           toast.success("Appointment rescheduled successfully.");
           setReschedulingAppointment(null);
-          void loadConsultations(true);
-        }}
-      />
-      <ScheduleAppointmentModal
-        open={isScheduleModalOpen}
-        onOpenChange={setIsScheduleModalOpen}
-        initialAppointmentType="teleconsultation"
-        onAppointmentCreated={() => {
           void loadConsultations(true);
         }}
       />

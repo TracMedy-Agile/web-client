@@ -306,7 +306,15 @@ function normalizeCarePlan(plan: CarePlan, startDate: string, expectedDurationDa
   const homeCare: HomeCareOrder[] = [];
   const warningSigns: WarningSign[] = [];
 
-  for (const [index, task] of (plan.tasks ?? []).entries()) {
+  const tasks = plan.tasks ?? [];
+  // Legacy monitoring scaffolds are not clinician-saved plan content. Keep them out of the editor until the clinician explicitly adds monitoring items.
+  const isAutoMonitoringStub = plan.version <= 1
+    && tasks.length === 1
+    && tasks[0]?.title.trim().toLowerCase() === "blood pressure"
+    && ["monitoring", "vital", "vital-sign", "vital_sign"].includes(tasks[0]?.type?.trim().toLowerCase() ?? "");
+  const initialTasks = isAutoMonitoringStub ? [] : tasks;
+
+  for (const [index, task] of initialTasks.entries()) {
     const type = task.type?.toLowerCase() ?? "";
     if (["lab", "laboratory", "diagnostic"].includes(type)) {
       labTests.push({

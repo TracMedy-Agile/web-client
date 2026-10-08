@@ -2,6 +2,14 @@ import type { components } from "@/docs/types/api";
 
 type ApiAuditLog = components["schemas"]["AuditLogResponseDto"];
 
+export class AuditLogExportTooLargeError extends Error {
+  status = 413;
+
+  constructor(message = "This export is too large to generate as one workbook.") {
+    super(message);
+    this.name = "AuditLogExportTooLargeError";
+  }
+}
 export class AuditLogAccessDeniedError extends Error {
   status = 403;
 
@@ -29,6 +37,22 @@ export type AuditLogsResponse = {
   meta: { page: number; limit: number; total: number; totalPages: number };
 };
 
+export type AuditLogExportQuery = {
+  format?: "csv" | "xlsx";
+  module?: string;
+  action?: string;
+  actorId?: string;
+  from?: string;
+  to?: string;
+  reason?: string;
+};
+
+export type AuditLogExportResponse = {
+  contentType: string;
+  filename: string;
+  data: string;
+  rowCount: number;
+};
 export type AuditLogsQuery = {
   search?: string;
   module?: string;
@@ -50,6 +74,17 @@ function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function nestedString(value: unknown, fallback = "") {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  const record = asRecord(value);
+  if (!record) return fallback;
+  for (const key of ["value", "address", "ip", "ipAddress", "text", "raw"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return fallback;
+}
 function humanize(value: string) {
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -67,6 +102,9 @@ async function request(path: string, query?: URLSearchParams): Promise<unknown> 
     const message = stringValue(asRecord(payload)?.message, "Failed to load audit logs.");
     if (response.status === 403) {
       throw new AuditLogAccessDeniedError(message);
+    }
+    if (response.status === 413) {
+      throw new AuditLogExportTooLargeError(message);
     }
     throw new Error(message);
   }
@@ -94,11 +132,31 @@ function normalizeAuditLog(value: ApiAuditLog | Record<string, unknown>): AuditL
     action: humanize(stringValue(record.action, "Activity recorded")),
     reference: referenceSummary || (referenceId ? `#${referenceId}` : undefined),
     timestamp: stringValue(record.createdAt, new Date(0).toISOString()),
-    ipAddress: stringValue(record.ipAddress, "Not recorded"),
-    deviceAgent: stringValue(record.userAgent, "Not recorded"),
+    ipAddress: nestedString(record.ipAddress, "Not recorded"),
+    deviceAgent: nestedString(record.userAgent, "Not recorded"),
   };
 }
 
+export async function exportAuditLogs(params: AuditLogExportQuery = {}): Promise<AuditLogExportResponse> {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") query.set(key, value);
+  });
+  const root = unwrap(await request("/facilities/audit-logs/export", query));
+  if (!root) throw new Error("The audit export did not return a file.");
+  return root as unknown as AuditLogExportResponse;
+}
+export async function exportAuditLogEntry(
+  id: string,
+  params: Pick<AuditLogExportQuery, "format" | "reason"> = {},
+): Promise<AuditLogExportResponse> {
+  const query = new URLSearchParams();
+  query.set("format", params.format ?? "xlsx");
+  if (params.reason) query.set("reason", params.reason);
+  const root = unwrap(await request(`/facilities/audit-logs/export/${encodeURIComponent(id)}`, query));
+  if (!root) throw new Error("The audit entry export did not return a file.");
+  return root as unknown as AuditLogExportResponse;
+}
 export async function getAuditLogs(params: AuditLogsQuery = {}): Promise<AuditLogsResponse> {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {

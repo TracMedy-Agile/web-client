@@ -83,8 +83,29 @@ export function formatInvoiceMoney(amount: number, currency: string) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
 
+export function formatInvoiceDate(value: string, includeYear = true) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(includeYear ? { year: "numeric" as const } : {}),
+  }).format(date);
+}
+
+export function formatInvoicePeriod(period: string) {
+  const parts = period.split(/\s+-\s+/);
+  if (parts.length !== 2) return period;
+  const start = new Date(parts[0]);
+  const end = new Date(parts[1]);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return period;
+  const endYear = end.getFullYear();
+  const startText = formatInvoiceDate(parts[0], start.getFullYear() !== endYear);
+  const endText = formatInvoiceDate(parts[1]);
+  return startText + " – " + endText;
+}
 export function downloadInvoice(invoice: SettingsInvoice) {
-  const rows = [["Invoice", invoice.id], ["Period", invoice.period], ["Issued", invoice.issuedAt], ["Due", invoice.dueAt], ["Status", invoice.status], [], ["Item", "Quantity", "Amount"], ...invoice.lineItems.map((item) => [item.label, String(item.quantity), String(item.amount)])];
+  const rows = [["Invoice", invoice.id], ["Period", formatInvoicePeriod(invoice.period)], ["Issued", formatInvoiceDate(invoice.issuedAt)], ["Due", formatInvoiceDate(invoice.dueAt)], ["Status", invoice.status], [], ["Item", "Quantity", "Amount"], ...invoice.lineItems.map((item) => [item.label, String(item.quantity), String(item.amount)])];
   const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -109,9 +130,9 @@ export function InvoiceStateCard({ invoice, tone }: { invoice: SettingsInvoice; 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex gap-4">
           <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-lg", overdue ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary")}><Icon className="h-6 w-6" /></span>
-          <div><p className="text-sm font-bold uppercase text-muted-foreground">{overdue ? "Overdue Invoice" : "Outstanding Invoice"}</p><h2 className="mt-2 text-2xl font-bold text-foreground">{invoice.id}</h2><p className="mt-2 text-sm text-muted-foreground">{invoice.period}</p></div>
+          <div><p className="text-sm font-bold uppercase text-muted-foreground">{overdue ? "Overdue Invoice" : "Outstanding Invoice"}</p><h2 className="mt-2 text-2xl font-bold text-foreground">{invoice.id}</h2><p className="mt-2 text-sm text-muted-foreground">{formatInvoicePeriod(invoice.period)}</p></div>
         </div>
-        <div className="text-left lg:text-right"><p className="text-sm font-semibold text-muted-foreground">Amount Due</p><p className={cn("mt-2 text-3xl font-bold", overdue ? "text-destructive" : "text-primary")}>{formatInvoiceMoney(invoice.amount, invoice.currency)}</p><p className="mt-2 text-sm text-muted-foreground">Due {invoice.dueAt}</p></div>
+        <div className="text-left lg:text-right"><p className="text-sm font-semibold text-muted-foreground">Amount Due</p><p className={cn("mt-2 text-3xl font-bold", overdue ? "text-destructive" : "text-primary")}>{formatInvoiceMoney(invoice.amount, invoice.currency)}</p><p className="mt-2 text-sm text-muted-foreground">Due {formatInvoiceDate(invoice.dueAt)}</p></div>
       </div>
       <div className="mt-5 flex flex-wrap gap-3"><Button type="button" onClick={() => unavailableBillingAction("Pay invoice", invoice.id)} className="h-10 rounded-lg px-5 font-semibold">Pay Now</Button><Button type="button" variant="outline" onClick={() => downloadInvoice(invoice)} className="h-10 rounded-lg px-5 font-semibold"><Download className="h-4 w-4" />Download Invoice</Button></div>
     </div>

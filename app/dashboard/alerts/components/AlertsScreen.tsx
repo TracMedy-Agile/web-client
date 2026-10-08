@@ -18,8 +18,10 @@ import {
   Search,
 } from "lucide-react";
 import {
+  getAlertMetrics,
   getAlertReviewImpact,
   getAlertsSnapshot,
+  type AlertMetrics,
   type AlertReviewImpact,
   type AlertSeverity,
   type AlertsSnapshot,
@@ -43,15 +45,6 @@ const severityStyles: Record<AlertSeverity, string> = {
 function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
-  const difference = Date.now() - date.getTime();
-  if (difference >= 0 && difference < 60 * 60 * 1000) {
-    const minutes = Math.max(1, Math.round(difference / 60_000));
-    return `${minutes} min${minutes === 1 ? "" : "s"} ago`;
-  }
-  if (difference >= 0 && difference < 24 * 60 * 60 * 1000) {
-    const hours = Math.max(1, Math.round(difference / 3_600_000));
-    return `${hours} hr${hours === 1 ? "" : "s"} ago`;
-  }
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
@@ -61,6 +54,19 @@ function formatTimestamp(value: string) {
   }).format(date);
 }
 
+function formatResponseTime(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "No data";
+  const totalMinutes = Math.round(value / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatComplianceRate(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "No data";
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+}
 function isWithinRange(value: string, range: string) {
   if (range === "all") return true;
   const timestamp = new Date(value).getTime();
@@ -74,7 +80,7 @@ function downloadCsv(alerts: ClinicalAlert[], filename: string) {
     ["Patient", "Patient ID", "Alert reason", "Trigger source", "Severity", "Clinician", "Timestamp"],
     ...alerts.map((alert) => [
       alert.patientName,
-      alert.patientId,
+      alert.patientCode,
       alert.reason,
       alert.triggerSource,
       alert.severity,
@@ -94,11 +100,6 @@ function downloadCsv(alerts: ClinicalAlert[], filename: string) {
 }
 
 
-function formatThresholdSummary(alert: ClinicalAlert) {
-  const detail = alert.thresholdDetails[0];
-  if (!detail) return "";
-  return `${detail.label}: ${detail.value} vs ${detail.threshold}`;
-}
 function SeverityBadge({ severity }: { severity: AlertSeverity }) {
   return (
     <span className={`inline-flex min-w-[90px] justify-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset ${severityStyles[severity]}`}>
@@ -108,9 +109,9 @@ function SeverityBadge({ severity }: { severity: AlertSeverity }) {
 }
 
 function getReviewImpactData(alert: ClinicalAlert, impact: AlertReviewImpact | null): ReviewImpactData {
-  const severity = alert.severity.toUpperCase();
+  const isBloodPressureAlert = alert.reason.toLowerCase().includes("blood pressure") || alert.thresholdDetails.some((detail) => detail.label.toLowerCase().includes("blood pressure"));
   return {
-    title: `${alert.triggerSource} - ${alert.reason}`,
+    title: `${alert.triggerSource} – ${alert.reason}`,
     subtitle: "Reviewing 72-hour clinical trajectory",
     expectedLabel: impact?.expectedLabel ?? "Alert trigger",
     expected: impact?.expected ?? alert.triggerSource,
@@ -122,12 +123,8 @@ function getReviewImpactData(alert: ClinicalAlert, impact: AlertReviewImpact | n
     source: impact?.analysisSource,
     suggestedReview: impact?.suggestedReview,
     thresholdDetails: impact?.thresholdDetails?.length ? impact.thresholdDetails : alert.thresholdDetails,
-    evidence: impact?.evidence ?? [
-      { label: "Patient reference", value: alert.patientCode, status: "RECORDED" },
-      { label: "Risk category", value: alert.riskCategory || alert.severity, status: severity },
-      { label: "Alert severity", value: alert.severity, status: severity },
-      { label: "Assigned clinician", value: alert.assignedClinician, status: "LINKED" },
-    ],
+    evidence: impact?.evidence ?? [],
+    emptyEvidenceMessage: isBloodPressureAlert ? "No previous blood pressure readings are available for comparison." : undefined,
   };
 }
 
@@ -243,6 +240,7 @@ export default function AlertsScreen() {
   const isHistory = searchParams.get("view") === "history";
   const selectedAlertId = searchParams.get("alertId");
   const [snapshot, setSnapshot] = useState<AlertsSnapshot>(EMPTY_SNAPSHOT);
+  const [alertMetrics, setAlertMetrics] = useState<AlertMetrics | null>(null);
   const [severity, setSeverity] = useState<"all" | AlertSeverity>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState("30");
@@ -314,6 +312,20 @@ export default function AlertsScreen() {
     };
   }, [isHistory, openReview, refreshKey, selectedAlertId]);
 
+  useEffect(() => {
+    if (!isHistory) return;
+    let ignore = false;
+    getAlertMetrics(dateRange)
+      .then((data) => {
+        if (!ignore) setAlertMetrics(data);
+      })
+      .catch(() => {
+        if (!ignore) setAlertMetrics(null);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [dateRange, isHistory, refreshKey]);
   const sourceAlerts = isHistory ? snapshot.history : snapshot.active;
   const pageSize = isHistory ? 6 : 7;
   const clinicians = useMemo(
@@ -360,14 +372,14 @@ export default function AlertsScreen() {
             ? alert.acknowledgedBy
             : alert.assignedClinician;
         return (
-          (!searchQuery.trim() || [alert.patientName, alert.patientCode, alert.reason].some((value) => value.toLowerCase().includes(searchQuery.trim().toLowerCase()))) &&
+          (!searchQuery.trim() || [alert.patientName, alert.patientCode, alert.reason, alert.triggerSource, alertClinician].some((value) => value.toLowerCase().includes(searchQuery.trim().toLowerCase()))) &&
           (severity === "all" || alert.severity === severity) &&
           (source === "all" || alert.triggerSource === source) &&
           (clinician === "all" || alertClinician === clinician) &&
-          isWithinRange(alert.timestamp, dateRange)
+          (isHistory || isWithinRange(alert.timestamp, dateRange))
         );
       }),
-    [clinician, dateRange, searchQuery, severity, source, sourceAlerts],
+    [clinician, dateRange, isHistory, searchQuery, severity, source, sourceAlerts],
   );
 
   const totalPages = Math.max(
@@ -464,29 +476,29 @@ export default function AlertsScreen() {
           {[
             {
               label: "Total Resolved",
-              value: String(snapshot.history.length),
+              value: String(alertMetrics?.totalResolved ?? 0),
               icon: <CheckCircle2 className="h-6 w-6" />,
               iconClassName: "bg-emerald-50 text-emerald-500",
-              available: true,
+              available: Boolean(alertMetrics),
             },
             {
               label: "Avg. Response Time",
-              value: snapshot.history.length === 0 ? "0" : "--",
+              value: formatResponseTime(alertMetrics?.avgResponseTimeMs ?? null),
               icon: <Clock3 className="h-6 w-6" />,
               iconClassName: "bg-blue-50 text-blue-500",
-              available: snapshot.history.length === 0,
+              available: Boolean(alertMetrics),
             },
             {
               label: "Compliance Rate",
-              value: snapshot.history.length === 0 ? "0%" : "--",
+              value: formatComplianceRate(alertMetrics?.complianceRate ?? null),
               icon: <ClipboardCheck className="h-6 w-6" />,
               iconClassName: "bg-violet-50 text-violet-500",
-              available: snapshot.history.length === 0,
+              available: Boolean(alertMetrics),
             },
           ].map((metric) => (
             <article
               key={metric.label}
-              title={metric.available ? undefined : "Not provided by the current API"}
+              title={metric.available ? undefined : "Metrics unavailable"}
               className="flex min-h-[102px] items-center gap-4 rounded-xl border border-border bg-card px-6 py-5 shadow-sm"
             >
               <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${metric.iconClassName}`}>
@@ -509,7 +521,7 @@ export default function AlertsScreen() {
             ))}
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+            <table className="w-full min-w-[860px] table-fixed text-left text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
               <thead className="border-y border-border bg-primary/5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-6 py-4">Patient Name</th>
@@ -633,16 +645,28 @@ export default function AlertsScreen() {
           )}
 
           <div className={isHistory ? "mt-4 overflow-x-auto px-4" : "overflow-x-auto"}>
-            <table className="w-full min-w-[860px] table-fixed text-left text-sm">
-              {isHistory ? (
-                <colgroup>
-                  <col className="w-[17%]" />
-                  <col className="w-[32%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[19%]" />
-                </colgroup>
-              ) : null}
+            <table className="w-full min-w-[860px] table-fixed text-left text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+              <colgroup>
+                {isHistory ? (
+                  <>
+                    <col className="w-[22%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[15%]" />
+                  </>
+                ) : (
+                  <>
+                    <col className="w-[17%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                  </>
+                )}
+              </colgroup>
               <thead className="border-y border-border bg-primary/5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-6 py-4">Patient Name</th>
@@ -654,22 +678,24 @@ export default function AlertsScreen() {
                   {!isHistory ? <th className="px-6 py-4 text-right">Action</th> : null}
                 </tr>
               </thead>
-              <tbody className={isHistory ? "" : "divide-y divide-border"}>
+              <tbody className="divide-y divide-border">
                 {visibleAlerts.length === 0 ? (
                   <tr><td colSpan={isHistory ? 5 : 7} className="px-6 py-16 text-center text-sm font-medium text-muted-foreground">No alerts match the selected filters.</td></tr>
                 ) : null}
                 {visibleAlerts.map((alert) => (
                   <tr key={alert.id} className="hover:bg-muted/30">
                     <td className="px-6 py-3.5"><span className="block font-semibold text-foreground">{alert.patientName}</span><span className="mt-1 block text-xs text-muted-foreground">{alert.patientCode}</span></td>
-                                        <td className="max-w-80 px-6 py-3.5">
+                                        <td className="max-w-80 whitespace-normal px-6 py-3.5">
                       <span className="block font-medium text-foreground">{alert.reason}</span>
-                      {formatThresholdSummary(alert) ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{formatThresholdSummary(alert)}</span> : null}
-                      {alert.thresholdDetails[0]?.warningMessage ? <span className="mt-1 block text-xs font-semibold text-red-600">{alert.thresholdDetails[0].warningMessage}</span> : null}
                     </td>
                     {!isHistory ? <td className="px-6 py-3.5 text-muted-foreground">{alert.triggerSource}</td> : null}
                     <td className="px-6 py-3.5"><SeverityBadge severity={alert.severity} /></td>
                     <td className="px-6 py-3.5 text-muted-foreground">{isHistory ? alert.acknowledgedBy : alert.assignedClinician}</td>
-                    <td className="px-6 py-3.5 text-muted-foreground">{formatTimestamp(alert.timestamp)}</td>
+                    <td className="max-w-0 px-6 py-3.5 text-muted-foreground">
+                      <span className="block truncate" title={formatTimestamp(alert.timestamp)}>
+                        {formatTimestamp(alert.timestamp)}
+                      </span>
+                    </td>
                     {!isHistory ? (
                       <td className="px-6 py-3.5 text-right">
                         <button type="button" onClick={() => openReview(alert)} className="font-semibold text-primary hover:underline">Review</button>
@@ -681,7 +707,7 @@ export default function AlertsScreen() {
             </table>
           </div>
 
-          <footer className={isHistory ? "mx-4 flex flex-col gap-3 border-t border-border py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between" : "flex flex-col gap-3 border-t border-border px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"}>
+          <footer className="flex flex-col gap-3 border-t border-border px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>Showing {filteredAlerts.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredAlerts.length)} of {filteredAlerts.length} Alerts</span>
             <PaginationControls currentPage={currentPage} totalPages={totalPages} onChange={setPage} />
           </footer>
@@ -699,7 +725,7 @@ export default function AlertsScreen() {
           }
         }}
         onAcknowledge={() => undefined}
-        careEpisodeHref={reviewAlert ? `/dashboard/care-episodes/${reviewAlert.episodeId}/recovery` : undefined}
+        careEpisodeHref={reviewAlert?.episodeId ? `/dashboard/care-episodes/${reviewAlert.episodeId}/recovery` : undefined}
         isLoading={isReviewLoading}
       />
     </div>

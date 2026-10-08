@@ -6,6 +6,10 @@ import type {
 
 export type ReportType =
   | "closed-episode"
+  | "connected-patients"
+  | "active-care-episodes"
+  | "pending-care-episodes"
+  | "closed-care-episodes"
   | "alert-response"
   | "appointment-activity"
   | "clinician-workload";
@@ -251,8 +255,6 @@ function clinicianRows(clinicians: ClinicianWorkload[], included: string[]) {
   if (included.includes("Active episodes")) header.push("Active episodes");
   if (included.includes("Open alerts")) header.push("Open alerts");
   if (included.includes("Average response time")) header.push("Average response time");
-  header.push("Workload status", "Capacity utilization");
-
   return [
     header,
     ...clinicians.map((clinician) => {
@@ -260,7 +262,6 @@ function clinicianRows(clinicians: ClinicianWorkload[], included: string[]) {
       if (included.includes("Active episodes")) row.push(String(clinician.episodes));
       if (included.includes("Open alerts")) row.push(String(clinician.alerts));
       if (included.includes("Average response time")) row.push(clinician.responseTime);
-      row.push(clinician.status, `${clinician.capacityUtilization}%`);
       return row;
     }),
   ];
@@ -268,6 +269,10 @@ function clinicianRows(clinicians: ClinicianWorkload[], included: string[]) {
 
 function getTitle(reportType: ReportType) {
   if (reportType === "closed-episode") return "Patient Closed Episode Summary";
+  if (reportType === "connected-patients") return "Connected Patients Report";
+  if (reportType === "active-care-episodes") return "Active Care Episodes Report";
+  if (reportType === "pending-care-episodes") return "Pending Care Episodes Report";
+  if (reportType === "closed-care-episodes") return "Closed Care Episodes Report";
   if (reportType === "alert-response") return "Alert Response Performance";
   if (reportType === "appointment-activity") return "Appointment Activity Report";
   return "Clinician Workload Report";

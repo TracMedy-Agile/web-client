@@ -29,9 +29,10 @@ import {
   type MessageThread,
 } from "@/lib/api/messages";
 import { cn } from "@/lib/utils";
+import { getCareEpisodes } from "@/lib/api/care-episodes";
 
-type ComposerType = "INSTRUCTION" | "REMINDER" | "FOLLOW-UP";
-const COMPOSER_TYPES: ComposerType[] = ["INSTRUCTION", "REMINDER", "FOLLOW-UP"];
+type ComposerType = "INSTRUCTION" | "REMINDER";
+const COMPOSER_TYPES: ComposerType[] = ["INSTRUCTION", "REMINDER"];
 
 function initials(name: string) {
   return name
@@ -107,6 +108,7 @@ export function MessagesScreen() {
   const [sending, setSending] = useState(false);
   const [threadsError, setThreadsError] = useState("");
   const [messagesError, setMessagesError] = useState("");
+  const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null);
 
   async function loadThreads() {
     setLoadingThreads(true);
@@ -187,6 +189,30 @@ export function MessagesScreen() {
   }, [selectedEpisodeId, messageReload]);
 
   const selectedThread = threads.find((thread) => thread.episodeId === selectedEpisodeId) ?? null;
+
+  useEffect(() => {
+    const patientId = selectedThread?.patientId;
+    if (!patientId) return;
+    let active = true;
+    getCareEpisodes({ patientId, status: "active", page: 1, limit: 10 }).then((response) => {
+      if (!active) return;
+      setActiveEpisodeId(response.data.find((episode) => episode.status === "active")?.id ?? null);
+    }).catch(() => {
+      if (active) setActiveEpisodeId(null);
+    });
+    return () => { active = false; };
+  }, [selectedThread?.patientId]);
+  const visibleTemplates = useMemo(() => {
+    const reminderTerms = ["reminder", "check-in", "vitals reminder", "follow-up", "care task"];
+    const instructionTerms = ["instruction", "symptom", "vitals", "care plan", "activity", "wound", "medication"];
+    const terms = composerType === "REMINDER" ? reminderTerms : instructionTerms;
+    return templates.filter((template) => {
+      const value = `${template.id} ${template.title}`.toLowerCase();
+      if (composerType === "INSTRUCTION" && /(reminder|check-in|follow-up|care task)/.test(value)) return false;
+      return terms.some((term) => value.includes(term));
+    });
+  }, [composerType, templates]);
+
   const filteredThreads = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return threads;
@@ -216,12 +242,17 @@ export function MessagesScreen() {
     setMessageReload((value) => value + 1);
   }
 
+  function switchComposerType(type: ComposerType) {
+    setComposerType(type);
+    setSelectedTemplate("");
+    setContent("");
+  }
+
   function chooseTemplate(template: MessageTemplate) {
     setSelectedTemplate(template.id);
     setContent(template.content);
     const value = `${template.id} ${template.title}`.toLowerCase();
     if (value.includes("reminder")) setComposerType("REMINDER");
-    else if (value.includes("follow")) setComposerType("FOLLOW-UP");
     else setComposerType("INSTRUCTION");
   }
 
@@ -362,14 +393,15 @@ export function MessagesScreen() {
                 </span>
                 <div className="min-w-0">
                   <h2 className="truncate text-base font-bold text-foreground">{selectedThread.patientName}</h2>
-                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">Patient conversation</p>
                 </div>
               </div>
-              {selectedThread.patientId ? (
-                <Button asChild variant="outline" size="sm" className="shrink-0">
-                  <Link href={`/dashboard/connected-patients/${selectedThread.patientId}`}>View Profile</Link>
-                </Button>
-              ) : null}
+              <Button asChild={Boolean(activeEpisodeId)} variant="outline" size="sm" className="shrink-0" disabled={!activeEpisodeId} title={activeEpisodeId ? "Open active care episode" : "No active care episode"}>
+                {activeEpisodeId ? (
+                  <Link href={`/dashboard/care-episodes/${encodeURIComponent(activeEpisodeId)}`}>View Care Episode</Link>
+                ) : (
+                  <span>View Care Episode</span>
+                )}
+              </Button>
             </header>
 
             <section className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8" aria-live="polite">
@@ -434,7 +466,7 @@ export function MessagesScreen() {
                     type="button"
                     role="tab"
                     aria-selected={composerType === type}
-                    onClick={() => setComposerType(type)}
+                    onClick={() => switchComposerType(type)}
                     className={cn(
                       "relative pb-2.5 text-[11px] font-bold tracking-wide",
                       composerType === type ? "text-primary" : "text-muted-foreground hover:text-foreground",
@@ -446,10 +478,10 @@ export function MessagesScreen() {
                 ))}
               </div>
 
-              {templates.length > 0 ? (
+              {visibleTemplates.length > 0 ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-bold uppercase text-muted-foreground">Templates:</span>
-                  {templates.map((template) => (
+                  {visibleTemplates.map((template) => (
                     <button
                       key={template.id}
                       type="button"
@@ -483,7 +515,7 @@ export function MessagesScreen() {
                 <div className="flex justify-end border-t border-border bg-card px-3 py-2">
                   <Button type="submit" disabled={sending || !content.trim()} className="min-w-36">
                     {sending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    {sending ? "Sending..." : `Send ${composerType === "FOLLOW-UP" ? "Follow-up" : composerType[0] + composerType.slice(1).toLowerCase()}`}
+                    {sending ? "Sending..." : `Send ${composerType[0] + composerType.slice(1).toLowerCase()}`}
                   </Button>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import type { components } from "@/docs/types/api";
+import type { components, paths } from "@/docs/types/api";
 import {
   getHospitalFacility,
   type HospitalFacility,
@@ -373,27 +373,62 @@ async function settleValue<T>(label: string, promise: Promise<T>, warnings: stri
   }
 }
 
-export type ServerAnalyticsExportFormat = "PDF" | "Excel";
-export type ServerAnalyticsExportType = "clinical" | "operational";
+type ReportsExportQuery = NonNullable<paths["/reports/export"]["get"]["parameters"]["query"]>;
+export type FacilityReportExportId = Extract<ReportsExportQuery["report"], "connected_patients" | "active_care_episodes" | "pending_care_episodes" | "closed_care_episodes">;
+export type ReportCatalogEntry = components["schemas"]["ReportCatalogEntryDto"];
+export type ReportExportFormat = "pdf" | "xlsx" | "csv";
 
 function filenameFromContentDisposition(header: string | null, fallback: string) {
   const match = header?.match(/filename="?([^";]+)"?/i);
   return match?.[1] || fallback;
 }
 
-export async function downloadServerAnalyticsExport(
+export async function getReportCatalog(): Promise<ReportCatalogEntry[]> {
+  const payload = await request("/reports");
+  const root = asRecord(payload);
+  const data = asRecord(root?.data) ?? root;
+  const records = data?.reports;
+  if (!Array.isArray(records)) return [];
+  return records.flatMap((value) => {
+    const record = asRecord(value);
+    const report = getString(record, ["report"]);
+    const title = getString(record, ["title"]);
+    const periodBasis = getString(record, ["periodBasis"]);
+    const formats = Array.isArray(record?.formats)
+      ? record.formats.filter((format): format is ReportExportFormat => format === "pdf" || format === "xlsx" || format === "csv")
+      : [];
+    if (!report || !title || formats.length === 0 || !periodBasis) return [];
+    return [{ report: report as ReportCatalogEntry["report"], title, formats, periodBasis }];
+  });
+}
+
+export type ReportExportId = ReportsExportQuery["report"];
+
+export async function downloadServerReportExport(
   range: ReportsDateRange,
-  options: { format: ServerAnalyticsExportFormat; type: ServerAnalyticsExportType },
+  options: {
+    report: ReportExportId,
+    format: ReportExportFormat,
+    filters?: {
+      episodeId?: string;
+      q?: string;
+      status?: string;
+      riskLevel?: string;
+      closureReason?: string;
+    };
+  },
 ): Promise<void> {
   const accessToken = await getAccessToken();
-  const format = options.format === "Excel" ? "xlsx" : "pdf";
   const query = new URLSearchParams({
     from: range.dateFrom,
     to: range.dateTo,
-    format,
-    type: options.type,
+    format: options.format,
+    report: options.report,
   });
-  const response = await fetch(`${BASE}/analytics/export?${query.toString()}`, {
+  Object.entries(options.filters ?? {}).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const response = await fetch(`${BASE}/reports/export?${query.toString()}`, {
     cache: "no-store",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
@@ -402,7 +437,7 @@ export async function downloadServerAnalyticsExport(
     throw new Error(getString(asRecord(payload), ["message"], "Unable to download server-generated report."));
   }
   const blob = await response.blob();
-  const fallbackName = `tracmedy-${options.type}-analytics-${range.dateTo}.${format}`;
+  const fallbackName = `tracmedy-${options.report}-${range.dateTo}.${options.format}`;
   const filename = filenameFromContentDisposition(response.headers.get("content-disposition"), fallbackName);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -413,6 +448,39 @@ export async function downloadServerAnalyticsExport(
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+export async function downloadFacilityReportExport(
+  range: ReportsDateRange,
+  options: { report: FacilityReportExportId; format: "xlsx" },
+): Promise<void> {
+  const accessToken = await getAccessToken();
+  const query = new URLSearchParams({
+    from: range.dateFrom,
+    to: range.dateTo,
+    format: options.format,
+    report: options.report,
+  });
+  const response = await fetch(`${BASE}/reports/export?${query.toString()}`, {
+    cache: "no-store",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw new Error(getString(asRecord(payload), ["message"], "Unable to download server-generated report."));
+  }
+  const blob = await response.blob();
+  const fallbackName = `tracmedy-${options.report}-${range.dateTo}.${options.format}`;
+  const filename = filenameFromContentDisposition(response.headers.get("content-disposition"), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function normalizeAlert(record: ApiRecord): ReportAlert {
   const acknowledgedBy = asRecord(record.acknowledgedBy);
   return {
@@ -448,7 +516,7 @@ function normalizeCareEpisode(record: ApiRecord): ReportCareEpisode {
     closureReason: getString(record, ["closureReason"], "Not recorded"),
     outcomeStatus: getString(record, ["outcomeStatus"], "Not recorded"),
     createdAt: getString(record, ["createdAt"]),
-    closedAt: getString(record, ["closedAt", "updatedAt"]),
+    closedAt: getString(record, ["closedAt"]),
   };
 }
 

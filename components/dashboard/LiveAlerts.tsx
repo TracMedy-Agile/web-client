@@ -1,6 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { AlertTriangle, Building2, Clock3, RefreshCw, Stethoscope } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { ReviewImpactModal, type ReviewImpactData } from "@/app/dashboard/care-episodes/[id]/components/ReviewImpactModal";
+import { getAlertReviewImpact, type AlertReviewImpact, type ClinicalAlert } from "@/lib/api/alerts";
 
 export interface LiveAlert {
   id: string;
@@ -9,7 +15,9 @@ export interface LiveAlert {
   description: string;
   time: string;
   actionLabel: string;
-  actionHref: string;
+  episodeId?: string;
+  triggerSource?: string;
+  clinicalAlert: ClinicalAlert;
 }
 
 interface LiveAlertsProps {
@@ -20,7 +28,7 @@ interface LiveAlertsProps {
 function LiveAlertsSkeleton() {
   return (
     <div className="mt-5 animate-pulse space-y-3">
-      {Array.from({ length: 3 }).map((_, index) => (
+      {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="rounded-2xl border border-border bg-muted/30 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-2">
@@ -40,9 +48,41 @@ function LiveAlertsSkeleton() {
 }
 
 export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlertsProps) {
+  const [reviewAlert, setReviewAlert] = useState<LiveAlert | null>(null);
+  const [reviewImpact, setReviewImpact] = useState<AlertReviewImpact | null>(null);
+  const [isReviewLoading, setIsReviewLoading] = useState(false);
   const hasAlerts = alerts.length > 0;
+  const reviewData: ReviewImpactData | null = reviewAlert
+    ? {
+        title: `${reviewAlert.clinicalAlert.triggerSource} - ${reviewAlert.clinicalAlert.reason}`,
+        subtitle: "Reviewing 72-hour clinical trajectory",
+        expectedLabel: reviewImpact?.expectedLabel ?? "Alert trigger",
+        expected: reviewImpact?.expected ?? reviewAlert.clinicalAlert.triggerSource,
+        actualLabel: reviewImpact?.actualLabel ?? "Current risk score",
+        actual: reviewImpact?.actual ?? "Not recorded",
+        trend: reviewImpact?.trend ?? "No trend supplied",
+        analysisSummary: reviewImpact?.analysisSummary || undefined,
+        generatedAt: reviewImpact?.generatedAt,
+        source: reviewImpact?.analysisSource,
+        suggestedReview: reviewImpact?.suggestedReview,
+        thresholdDetails: reviewImpact?.thresholdDetails ?? reviewAlert.clinicalAlert.thresholdDetails,
+        evidence: reviewImpact?.evidence ?? [],
+      }
+    : null;
 
+  const openReview = (alert: LiveAlert) => {
+    capturePostHogEvent("alert_review_opened", { alert_id: alert.id, episode_id: alert.episodeId, source: "dashboard_live_alerts" });
+    setReviewAlert(alert);
+    setReviewImpact(null);
+    if (!alert.clinicalAlert.episodeId) return;
+    setIsReviewLoading(true);
+    void getAlertReviewImpact(alert.clinicalAlert)
+      .then(setReviewImpact)
+      .catch(() => setReviewImpact(null))
+      .finally(() => setIsReviewLoading(false));
+  };
   return (
+    <>
     <section className="flex h-full flex-col rounded-2xl border border-border/80 bg-card p-4 shadow-sm sm:p-5 lg:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -89,12 +129,13 @@ export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlert
                   <Clock3 className="h-3.5 w-3.5" />
                   {alert.time}
                 </span>
-                <Link
-                  href={alert.actionHref}
+                <button
+                  type="button"
+                  onClick={() => openReview(alert)}
                   className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90"
                 >
                   {alert.actionLabel}
-                </Link>
+                </button>
               </div>
             </article>
           ))}
@@ -117,5 +158,14 @@ export default function LiveAlerts({ alerts = [], isLoading = false }: LiveAlert
         </div>
       )}
     </section>
+      <ReviewImpactModal
+        open={Boolean(reviewAlert)}
+        alert={reviewData}
+        onOpenChange={(open) => { if (!open) setReviewAlert(null); }}
+        onAcknowledge={() => undefined}
+        careEpisodeHref={reviewAlert?.episodeId ? `/dashboard/care-episodes/${reviewAlert.episodeId}/recovery` : undefined}
+        isLoading={isReviewLoading}
+      />
+    </>
   );
 }

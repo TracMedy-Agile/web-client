@@ -172,33 +172,33 @@ function AppointmentsPageContent() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-lg font-bold text-[#111827] md:text-2xl">Appointment Bookings</h1>
-          <p className="mt-1 text-sm font-medium text-[#71809B]">Manage and monitor all patient appointments</p>
+          <p className="mt-1 text-[14px] font-medium leading-5 text-[#71809B]">Manage and monitor all patient appointments</p>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:flex-nowrap xl:shrink-0">
 
             <Link
               href="/dashboard/appointments/availability"
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
+              className="flex h-9 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[#8AA0C0] bg-white px-2.5 text-[14px] font-semibold text-[#71809B] sm:w-auto"
             >
-              <CalendarCheck className="h-5 w-5 text-[#71809B]" />
+              <CalendarCheck className="h-4 w-4 text-[#71809B]" />
               Availability Management
             </Link>
 
           <Link
             href="/dashboard/appointments/virtual-consultations"
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#8AA0C0] bg-white px-4 text-sm font-semibold text-[#71809B] sm:w-auto"
+            className="flex h-9 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-[#8AA0C0] bg-white px-2.5 text-[14px] font-semibold text-[#71809B] sm:w-auto"
           >
-            <Video className="h-5 w-5 text-[#71809B]" />
+            <Video className="h-4 w-4 text-[#71809B]" />
             Virtual Consultation
           </Link>
 
             <button
               type="button"
               onClick={() => setIsScheduleModalOpen(true)}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-white shadow-sm sm:w-auto"
+              className="flex h-9 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 text-[14px] font-semibold text-white shadow-sm sm:w-auto"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
               Add Appointment
             </button>
 
@@ -213,7 +213,7 @@ function AppointmentsPageContent() {
             <span className="sr-only">Loading appointments</span>
             <table className="w-full table-fixed border-collapse text-left">
               <thead>
-                <tr className="bg-[#EEF4FF] text-xs font-semibold uppercase text-[#71809B]">
+                <tr className="bg-[#EEF4FF] text-[14px] font-semibold uppercase leading-5 text-[#71809B]">
                   <th className="rounded-l-sm px-2 py-4 sm:px-3 xl:px-4">Patient Name</th>
                   <th className="hidden px-4 py-4 xl:table-cell">Appointment ID</th>
                   <th className="px-2 py-4 sm:px-3 xl:px-4">Date &amp; Time</th>
@@ -240,12 +240,13 @@ function AppointmentsPageContent() {
           <AppointmentEmptyState onRefresh={checkForAppointments} />
         ) : (
           <>
-            <div className="mb-5 inline-flex rounded-2xl bg-[#E7F2FF] p-1">
+            <div className="mb-5 inline-flex rounded-xl bg-[#E7F2FF] p-1">
               <button
                 type="button"
                 onClick={() => setView("table")}
+                aria-pressed={view === "table"}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-lg px-4 text-sm transition-colors",
+                  "flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-[14px] transition-colors",
                   view === "table" ? "bg-white font-semibold text-[#344054] shadow-sm" : "font-medium text-[#71809B]",
                 )}
               >
@@ -255,8 +256,9 @@ function AppointmentsPageContent() {
               <button
                 type="button"
                 onClick={() => setView("calendar")}
+                aria-pressed={view === "calendar"}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-lg px-4 text-sm transition-colors",
+                  "flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-[14px] transition-colors",
                   view === "calendar" ? "bg-white font-semibold text-[#111827] shadow-sm" : "font-medium text-[#71809B]",
                 )}
               >

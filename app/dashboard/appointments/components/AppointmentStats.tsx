@@ -130,8 +130,7 @@ function getAppointmentStatus(record: ApiRecord) {
 }
 
 function isPhysical(record: ApiRecord) {
-  const type = getAppointmentType(record);
-  return type.includes("physical") || type.includes("person");
+  return !isTeleconsultation(record);
 }
 
 function isTeleconsultation(record: ApiRecord) {
@@ -147,15 +146,19 @@ function isDateInRange(date: string, start: string, end: string) {
 }
 
 function calculateTrend(current: number, previous: number): TrendValue {
-  const percentage = previous === 0
-    ? current === 0 ? 0 : 100
-    : Math.round(((current - previous) / previous) * 100);
+  if (previous === 0) {
+    return {
+      change: current === 0 ? "0%" : "New",
+      tone: "positive",
+    };
+  }
+
+  const percentage = Math.round(((current - previous) / previous) * 100);
   return {
     change: `${percentage > 0 ? "+" : ""}${percentage}%`,
     tone: percentage < 0 ? "negative" : "positive",
   };
 }
-
 async function loadAllAppointmentPayloads() {
   const firstPayload = await getAppointments({ page: 1, limit: PAGE_LIMIT });
   const firstItems = getAppointmentItems(firstPayload);
@@ -186,11 +189,11 @@ function calculateStats(payloads: unknown[]): { stats: AppointmentStatsValues; t
 
   return {
     stats: {
-      totalBookings: getTotalCount(payloads[0], appointments.length),
+      totalBookings: currentBookings.length,
       todaysAppointments,
-      physicalVisits: appointments.filter(isPhysical).length,
-      teleconsultations: appointments.filter(isTeleconsultation).length,
-      pendingApproval: appointments.filter(isPending).length,
+      physicalVisits: currentScheduled.filter(isPhysical).length,
+      teleconsultations: currentScheduled.filter(isTeleconsultation).length,
+      pendingApproval: currentScheduled.filter(isPending).length,
     },
     trends: {
       totalBookings: calculateTrend(currentBookings.length, previousBookings.length),
@@ -204,7 +207,7 @@ function calculateStats(payloads: unknown[]): { stats: AppointmentStatsValues; t
 
 function StatValue({ isLoading, value }: { isLoading: boolean; value: number }) {
   if (isLoading) return <span className="mt-2 block h-8 w-12 animate-pulse rounded bg-[#EEF2F7]" />;
-  return <p className="mt-2 text-xl font-bold leading-none text-[#0F172A] md:text-3xl">{value}</p>;
+  return <p className="mt-2 text-[30px] font-bold leading-none text-[#0F172A]">{value}</p>;
 }
 
 export default function AppointmentStats({ values, refreshKey = 0 }: AppointmentStatsProps) {
@@ -248,7 +251,7 @@ export default function AppointmentStats({ values, refreshKey = 0 }: Appointment
   const cards = [
     { label: "Total Bookings", value: stats.totalBookings, trend: trends.totalBookings, icon: CalendarCheck, iconClassName: "bg-[#E7F2FF] text-[#1479E8]", comparison: "Bookings created in the latest 30 days compared with the previous 30 days" },
     { label: "Today's Appointments", value: stats.todaysAppointments, trend: trends.todaysAppointments, icon: CalendarCheck, iconClassName: "bg-[#E7F2FF] text-[#1479E8]", comparison: "Today compared with yesterday" },
-    { label: "Physical Visit", value: stats.physicalVisits, trend: trends.physicalVisits, icon: Building2, iconClassName: "bg-[#E7F2FF] text-[#1479E8]", comparison: "Latest 30 scheduled days compared with the previous 30 days" },
+    { label: "Physical Visits", value: stats.physicalVisits, trend: trends.physicalVisits, icon: Building2, iconClassName: "bg-[#E7F2FF] text-[#1479E8]", comparison: "Latest 30 scheduled days compared with the previous 30 days" },
     { label: "Teleconsultations", value: stats.teleconsultations, trend: trends.teleconsultations, icon: Video, iconClassName: "bg-[#E7F2FF] text-[#1479E8]", comparison: "Latest 30 scheduled days compared with the previous 30 days" },
     { label: "Pending Approval", value: stats.pendingApproval, trend: trends.pendingApproval, icon: Timer, iconClassName: "bg-[#FFF1D8] text-[#F59E0B]", comparison: "Latest 30 scheduled days compared with the previous 30 days" },
   ];
@@ -256,7 +259,7 @@ export default function AppointmentStats({ values, refreshKey = 0 }: Appointment
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
       {cards.map(({ label, value, trend, icon: Icon, iconClassName, comparison }) => (
-        <div key={label} className="rounded-lg border border-border bg-card p-4 shadow-sm md:p-6">
+        <div key={label} className="flex min-h-[136px] h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", iconClassName)}>
               <Icon className="h-4.5 w-4.5" />
@@ -271,7 +274,7 @@ export default function AppointmentStats({ values, refreshKey = 0 }: Appointment
               {isLoading ? "..." : error ? "--" : trend.change}
             </span>
           </div>
-          <p className="mt-6 text-sm font-medium text-[#71809B]">{label}</p>
+          <p className="mt-4 whitespace-nowrap text-[15px] font-medium leading-tight text-[#71809B]">{label}</p>
           <StatValue isLoading={isLoading} value={value} />
         </div>
       ))}

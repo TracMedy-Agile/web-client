@@ -464,7 +464,7 @@ export function AddPatientModal({ open, onOpenChange, facilityId, onCreated }: A
         clinicianId: selectedClinicianId,
         tracmedyPatientId: formData.tracmedyPatientId.trim() || undefined,
         encounterType: formData.encounterType,
-        conditionSeverity: formData.conditionSeverity.toLowerCase(),
+        conditionSeverity: formData.conditionSeverity === "Mild" ? "mild" : formData.conditionSeverity === "Moderate" ? "moderate" : "severe",
         clinicalConcern: formData.clinicalConcern,
         followUpReasons: formData.reasons.map((reason) => CARE_EPISODE_REASON_SLUGS[reason]),
         consultationDate: new Date(`${consultationDate}T12:00:00`).toISOString(),

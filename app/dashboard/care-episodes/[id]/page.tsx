@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -17,6 +18,8 @@ import {
   Minus,
   Phone,
   Pill,
+  Send,
+  Sparkles,
   Stethoscope,
   TrendingUp,
   UsersRound,
@@ -34,8 +37,10 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { askCareAssistant, getCareAssistantHistory, getCareAssistantSuggestions, type CareAssistantMessage, type CareAssistantSuggestion } from "@/lib/api/care-assistant";
 import {
   asRecord,
   closeCareEpisode,
@@ -392,6 +397,14 @@ export default function CareEpisodeDetailPage() {
   const [metricMenuOpen, setMetricMenuOpen] = useState(false);
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [assistantDialogOpen, setAssistantDialogOpen] = useState(false);
+  const [assistantSuggestions, setAssistantSuggestions] = useState<CareAssistantSuggestion[]>([]);
+  const [assistantMessages, setAssistantMessages] = useState<CareAssistantMessage[]>([]);
+  const [assistantConversationId, setAssistantConversationId] = useState<string | undefined>();
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantLoadingContext, setAssistantLoadingContext] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
@@ -675,7 +688,22 @@ export default function CareEpisodeDetailPage() {
     }
   };
 
-  if (isLoading && !episode) {
+  useEffect(() => {
+    if (!assistantDialogOpen || !episodeId) return;
+    let active = true;
+    Promise.allSettled([getCareAssistantSuggestions(episodeId), getCareAssistantHistory(episodeId)]).then(([suggestionsResult, historyResult]) => {
+      if (!active) return;
+      if (suggestionsResult.status === "fulfilled") setAssistantSuggestions(suggestionsResult.value.suggestions);
+      if (historyResult.status === "fulfilled") {
+        setAssistantMessages(historyResult.value.messages);
+        setAssistantConversationId(historyResult.value.conversationId ?? undefined);
+      }
+      if (suggestionsResult.status === "rejected" && historyResult.status === "rejected") setAssistantError("Unable to load assistant context for this episode.");
+      setAssistantLoadingContext(false);
+    });
+    return () => { active = false; };
+  }, [assistantDialogOpen, episodeId]);
+    if (isLoading && !episode) {
     return <DetailSkeleton />;
   }
 
@@ -708,10 +736,27 @@ export default function CareEpisodeDetailPage() {
   if (!episode) return null;
 
   const patient = episode.patient;
-  const patientName = patient?.name || "Unknown Patient";
+const patientName = patient?.name || "Unknown Patient";
   const patientGender = formatPatientGender(patient?.gender);
   const riskBadge = getHeaderRiskBadge(episode.riskCategory);
   const recoveryDay = getCurrentRecoveryDay(episode.currentDay, episode.createdAt, episode.expectedDurationDays);
+  const submitAssistantQuestion = async (question: string) => {
+    const trimmed = question.trim();
+    if (!trimmed || assistantLoading) return;
+    setAssistantInput("");
+    const userMessage: CareAssistantMessage = { id: `local-user-${assistantMessages.length}`, role: "user", content: trimmed, retrievedSources: [], createdAt: new Date().toISOString() };
+    setAssistantMessages((current) => [...current, userMessage]);
+    setAssistantLoading(true);
+    try {
+      const response = await askCareAssistant(episodeId, trimmed, assistantConversationId);
+      setAssistantConversationId(response.conversationId);
+      setAssistantMessages((current) => [...current, { id: response.messageId, role: "assistant", content: response.answer, retrievedSources: response.evidence, createdAt: response.createdAt }]);
+    } catch (requestError) {
+      setAssistantError(requestError instanceof Error ? requestError.message : "Unable to get an assistant response.");
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
   const progressPercent = getProgressPercent(recoveryDay, episode.expectedDurationDays);
   const visibleCareTeam = episode.careTeam.slice(0, 3);
   const extraCareTeamCount = Math.max(episode.careTeam.length - visibleCareTeam.length, 0);
@@ -1187,6 +1232,120 @@ export default function CareEpisodeDetailPage() {
         summary={closureSummary}
         onConfirm={(payload) => void handleCloseEpisode(payload)}
       />
+      <Button
+        type="button"
+        onClick={() => { setAssistantLoadingContext(true); setAssistantError(""); setAssistantDialogOpen(true); }}
+        aria-label="Open Care Episode Assistant"
+        className="fixed bottom-5 right-5 z-40 h-[100px] w-[96px] rounded-full bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      >
+        <Image
+          src="/Button - Open Care Episode Assistant.svg"
+          alt=""
+          width={96}
+          height={100}
+          priority
+        />
+      </Button>
+
+      {assistantDialogOpen ? (
+        <section
+          role="complementary"
+          aria-label="Care Episode Assistant"
+          className="fixed bottom-6 right-6 z-40 flex h-[min(680px,calc(100vh-8rem))] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        >
+          <header className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+                <Sparkles className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Care Episode Assistant</h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">Your clinical companion for this care episode</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssistantDialogOpen(false)}
+              aria-label="Close Care Episode Assistant"
+              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </header>
+
+          <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6">
+              <div className="flex items-start gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="max-w-[calc(100%-3rem)] rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100">
+                  <p className="text-sm font-medium leading-6 text-slate-700">
+                    Hi, I&apos;m your Care Episode Assistant. I can help you review {patientName}&apos;s episode information.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-primary">Current episode</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{patientName}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">
+                  {episode.diagnosis || "Care episode"} <span className="mx-1 text-slate-400">•</span> Recovery day {recoveryDay ?? "--"}
+                </p>
+              </div>
+
+              {assistantLoadingContext ? <p className="px-1 text-xs font-medium text-slate-500">Loading episode context...</p> : null}
+
+            {assistantMessages.map((message) => (
+              <div key={message.id} className={message.role === "user" ? "flex justify-end" : "flex items-start gap-3"}>
+                {message.role === "assistant" ? <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white"><Sparkles className="h-4 w-4" aria-hidden="true" /></span> : null}
+                <div className={message.role === "user" ? "max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm font-medium leading-6 text-white" : "max-w-[calc(100%-3rem)] rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100"}>
+                  <p className={message.role === "assistant" ? "text-sm font-medium leading-6 text-slate-700" : undefined}>{message.content}</p>
+                  {message.role === "assistant" && message.retrievedSources.length > 0 ? <div className="mt-3 border-t border-slate-100 pt-2"><p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Evidence</p><div className="mt-1 space-y-1">{message.retrievedSources.slice(0, 3).map((evidence) => <p key={evidence.key} className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">{evidence.label}:</span> {evidence.value}</p>)}</div></div> : null}
+                </div>
+              </div>
+            ))}
+
+            {assistantMessages.length === 0 ? <>
+              <p className="px-1 text-xs font-semibold text-slate-500">Suggested inquiries</p>
+              <div className="grid gap-2">
+                {(assistantSuggestions.length > 0 ? assistantSuggestions : [{ id: "fallback-summary", question: "Summarize this care episode", intent: "summary", reason: "Review the available episode record." }]).map((suggestion) => (
+                  <button key={suggestion.id} type="button" onClick={() => void submitAssistantQuestion(suggestion.question)} disabled={assistantLoading || assistantLoadingContext} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:border-primary/40 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60">{suggestion.question}</button>
+                ))}
+              </div>
+            </> : null}
+
+            {assistantLoading ? <div className="flex items-center gap-2 text-xs font-medium text-slate-500"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />Assistant is reviewing the episode record...</div> : null}
+            {assistantError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{assistantError}</p> : null}
+          </div>
+
+            <form
+              className="shrink-0 border-t border-slate-200 bg-white p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAssistantQuestion(assistantInput);
+              }}
+            >
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10">
+                <Input
+                  aria-label="Ask the Care Episode Assistant"
+                  value={assistantInput}
+                  onChange={(event) => setAssistantInput(event.target.value)}
+                  placeholder="Ask about this care episode..."
+                  disabled={assistantLoading}
+                  className="h-9 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
+                />
+                <Button type="submit" aria-label="Send question" size="icon" className="h-9 w-9 shrink-0 rounded-lg">
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+              <p className="mt-2 text-center text-[11px] font-medium text-slate-400">
+                Review assistant responses before making clinical decisions.
+              </p>
+            </form>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

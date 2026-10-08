@@ -149,6 +149,14 @@ export function MonitoringScheduleSection({
   return (
     <SectionFrame icon={<Activity className="h-4 w-4" />} title="Monitoring schedule" subtitle="Check-ins and vitals frequency">
       <div className="space-y-4">
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center">
+            <p className="text-[11px] font-semibold text-foreground">No monitoring items added</p>
+            <p className="mx-auto mt-1 max-w-[360px] text-[10px] leading-5 text-muted-foreground">
+              Add a monitoring item when this patient&apos;s care plan requires check-ins or vital tracking.
+            </p>
+          </div>
+        ) : null}
         {items.map((item, itemIndex) => {
           const expanded = expandedIds.includes(item.id);
           const profile = profileFor(item.name);

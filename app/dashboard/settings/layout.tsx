@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { AlertTriangle, Building2, Cable, CreditCard, LockKeyhole, SlidersHorizontal, UsersRound } from "lucide-react";
+import { Building2, Cable, CreditCard, Headphones, LockKeyhole, SlidersHorizontal, UsersRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/dashboard/settings", label: "Hospital Profile", icon: Building2 },
   { href: "/dashboard/settings/configuration", label: "Configuration Control", icon: SlidersHorizontal },
-  { href: "/dashboard/settings/notifications", label: "Notification Preferences", icon: AlertTriangle },
+  { href: "/dashboard/settings/help-support", label: "Help & Support", icon: Headphones },
   { href: "/dashboard/settings/security", label: "Security", icon: LockKeyhole },
   { href: "/dashboard/settings/integrations", label: "Integrations", icon: Cable },
   { href: "/dashboard/settings/billing", label: "Billing & Subscription", icon: CreditCard },

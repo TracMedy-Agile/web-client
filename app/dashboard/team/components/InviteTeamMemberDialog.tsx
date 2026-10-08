@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -413,7 +414,7 @@ export default function InviteTeamMemberDialog({
                           if (value !== "full") setFullAccessConfirmed(false);
                         }}
                         className={cn(
-                          "relative flex items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "relative flex min-h-[96px] items-center gap-3 rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           selected ? "border-[#023E8A] bg-[#023E8A]/5" : "border-border bg-card hover:border-[#023E8A]/40",
                         )}
                       >
@@ -422,11 +423,11 @@ export default function InviteTeamMemberDialog({
                         </span>
                         <div className="min-w-0 flex-1">
                           <span className={cn("block text-sm font-semibold", selected ? "text-[#023E8A]" : "text-foreground")}>{title}</span>
-                          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">{description}</span>
+                          <span className="mt-1 block text-xs leading-4 text-muted-foreground">{description}</span>
                         </div>
                         <span
                           className={cn(
-                            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
                             selected ? "border-[#023E8A] bg-[#023E8A] text-white" : "border-border",
                           )}
                         >
@@ -446,7 +447,7 @@ export default function InviteTeamMemberDialog({
                     <p className="text-sm font-semibold text-[#023E8A]">Standard Set Implementation</p>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                       This member will receive the standard permission set configured for the selected role. Existing role defaults can be managed from{" "}
-                      <span className="font-medium text-[#023E8A] underline">Roles & Permissions.</span>
+                      <Link href="/dashboard/settings/roles" className="font-medium text-[#023E8A] underline underline-offset-2 hover:text-[#012f68]">Roles &amp; Permissions.</Link>
                     </p>
                   </div>
                 </div>

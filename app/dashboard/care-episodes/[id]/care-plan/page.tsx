@@ -108,7 +108,7 @@ export default function AdjustCarePlanPage() {
       toast.error("Every care task needs a label before saving.");
       return;
     }
-    capturePostHogEvent("care_plan_save_opened", { episode_id: episodeId, mode: "new_version", surface: "care_plan" });
+    capturePostHogEvent("care_plan_save_opened", { episode_id: episodeId, mode: plan?.carePlanState === "no_plan" ? "initial" : "new_version", surface: "care_plan" });
     setIsModalOpen(true);
   };
 
@@ -128,10 +128,10 @@ export default function AdjustCarePlanPage() {
       setTasks(nextTasks);
       setInitialTasks(JSON.stringify(nextTasks));
       setIsModalOpen(false);
-      toast.success("Care plan updated", {
+      toast.success(isFirstCarePlanSetup ? "Care plan created" : "Care plan updated", {
         description: `Version ${saved.version} is active.`,
       });
-      capturePostHogEvent("care_plan_version_created", { episode_id: episodeId, version: saved.version, surface: "care_plan" });
+      capturePostHogEvent(isFirstCarePlanSetup ? "care_plan_created" : "care_plan_version_created", { episode_id: episodeId, version: saved.version, surface: "care_plan" });
     } catch (requestError) {
       toast.error(requestError instanceof Error ? requestError.message : "Failed to save the care plan.");
     } finally {
@@ -173,7 +173,8 @@ export default function AdjustCarePlanPage() {
 
   const patientName = episode?.patient?.name || "this patient";
   const patientCode = episode?.patient?.hospitalId || episode?.patientId || "--";
-  const version = plan.version || 1;
+  const isFirstCarePlanSetup = plan.carePlanState === "no_plan" || plan.version < 1;
+  const version = isFirstCarePlanSetup ? 0 : plan.version;
 
   return (
     <div className="mx-auto max-w-[1080px] space-y-5 pb-8">
@@ -353,6 +354,7 @@ export default function AdjustCarePlanPage() {
         onOpenChange={setIsModalOpen}
         currentVersion={version}
         nextVersion={version + 1}
+        isInitialSetup={isFirstCarePlanSetup}
         patientName={patientName}
         isSaving={isSaving}
         onConfirm={handleConfirmSave}

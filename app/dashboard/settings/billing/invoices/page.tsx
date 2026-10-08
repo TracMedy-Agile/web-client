@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Eye, Search } from "lucide-react";
 
 import { Field, inputClassName, selectClassName, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
-import { BillingTabs, downloadInvoice, formatInvoiceMoney, invoiceHistory, unavailableBillingAction } from "@/app/dashboard/settings/billing/components";
+import { BillingTabs, downloadInvoice, formatInvoiceDate, formatInvoiceMoney, formatInvoicePeriod, invoiceHistory, unavailableBillingAction } from "@/app/dashboard/settings/billing/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,7 +68,7 @@ export default function InvoicesPage() {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-background">
-          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-card text-xs uppercase text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Invoice ID</th><th className="px-5 py-3 font-bold">Period</th><th className="px-5 py-3 font-bold">Status</th><th className="px-5 py-3 font-bold">Due Date</th><th className="px-5 py-3 text-right font-bold">Amount</th><th className="px-5 py-3 text-right font-bold">Actions</th></tr></thead><tbody className="divide-y divide-border">{visibleInvoices.map((invoice) => <tr key={invoice.id}><td className="px-5 py-4 font-bold text-foreground">{invoice.id}</td><td className="px-5 py-4 text-muted-foreground">{invoice.period}</td><td className="px-5 py-4"><span className={statusClass(invoice.status)}>{invoice.status}</span></td><td className="px-5 py-4 text-muted-foreground">{invoice.dueAt}</td><td className="px-5 py-4 text-right font-bold text-foreground">{formatInvoiceMoney(invoice.amount, invoice.currency)}</td><td className="px-5 py-4"><div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => unavailableBillingAction("View invoice", invoice.id)} className="h-9 rounded-lg"><Eye className="h-4 w-4" />View</Button><Button type="button" variant="outline" size="sm" onClick={() => downloadInvoice(invoice)} className="h-9 rounded-lg"><Download className="h-4 w-4" />Download</Button>{invoice.status !== "paid" ? <Button type="button" size="sm" onClick={() => unavailableBillingAction("Pay invoice", invoice.id)} className="h-9 rounded-lg">Pay</Button> : null}</div></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table aria-label="Invoice history" className="w-full min-w-[980px] table-fixed text-left text-sm"><colgroup><col className="w-[18%]" /><col className="w-[25%]" /><col className="w-[14%]" /><col className="w-[15%]" /><col className="w-[12%]" /><col className="w-[30%]" /></colgroup><thead className="bg-card text-xs uppercase text-muted-foreground"><tr><th className="whitespace-nowrap px-5 py-3 font-bold">Invoice ID</th><th className="whitespace-nowrap px-5 py-3 font-bold">Period</th><th className="whitespace-nowrap px-5 py-3 font-bold">Status</th><th className="whitespace-nowrap px-5 py-3 font-bold">Due Date</th><th className="whitespace-nowrap px-5 py-3 text-right font-bold">Amount</th><th className="min-w-[300px] whitespace-nowrap px-4 py-3 text-right font-bold">Actions</th></tr></thead><tbody className="divide-y divide-border">{visibleInvoices.map((invoice) => <tr key={invoice.id}><td className="whitespace-nowrap px-4 py-4 font-bold text-foreground">{invoice.id}</td><td className="whitespace-nowrap px-4 py-4 text-muted-foreground">{formatInvoicePeriod(invoice.period)}</td><td className="whitespace-nowrap px-4 py-4"><span className={statusClass(invoice.status)}>{statusLabel(invoice.status)}</span></td><td className="whitespace-nowrap px-4 py-4 text-muted-foreground">{formatInvoiceDate(invoice.dueAt)}</td><td className="whitespace-nowrap px-4 py-4 text-right font-bold text-foreground">{formatInvoiceMoney(invoice.amount, invoice.currency)}</td><td className="min-w-[300px] whitespace-nowrap px-4 py-4"><div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" onClick={() => unavailableBillingAction("View invoice", invoice.id)} className="h-9 rounded-lg"><Eye className="h-4 w-4" />View</Button><Button type="button" variant="outline" size="sm" onClick={() => downloadInvoice(invoice)} className="h-9 rounded-lg"><Download className="h-4 w-4" />Download</Button>{invoice.status !== "paid" ? <Button type="button" size="sm" onClick={() => unavailableBillingAction("Pay invoice", invoice.id)} className="h-9 rounded-lg">Pay</Button> : null}</div></td></tr>)}</tbody></table></div>
           {visibleInvoices.length === 0 ? <p className="px-5 py-10 text-center text-sm font-semibold text-muted-foreground">No invoices match your filters.</p> : null}
         </div>
 
@@ -78,8 +78,13 @@ export default function InvoicesPage() {
   );
 }
 
+function statusLabel(status: string) {
+  if (status === "paid") return "Paid";
+  if (status === "overdue") return "Overdue";
+  return "Pending";
+}
 function statusClass(status: string) {
-  if (status === "paid") return "rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold capitalize text-emerald-700";
-  if (status === "overdue") return "rounded-full bg-destructive/10 px-3 py-1 text-xs font-bold capitalize text-destructive";
-  return "rounded-full bg-primary/10 px-3 py-1 text-xs font-bold capitalize text-primary";
+  if (status === "paid") return "inline-flex items-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700";
+  if (status === "overdue") return "inline-flex items-center whitespace-nowrap rounded-full bg-destructive/10 px-3 py-1 text-xs font-bold text-destructive";
+  return "inline-flex items-center whitespace-nowrap rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary";
 }

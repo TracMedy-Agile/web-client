@@ -44,7 +44,7 @@ const departmentOptions = [
 ];
 
 const typeOptions = [
-  { label: "Appointment type", value: "all" },
+  { label: "Appointment Type", value: "all" },
   { label: "Physical Visit", value: "in_person" },
   { label: "Teleconsultation", value: "teleconsultation" },
   { label: "Nurse Check-in", value: "nurse_checkin" },
@@ -72,11 +72,11 @@ function FilterButton({
     <button
       type="button"
       className={cn(
-        "flex h-10 items-center justify-between gap-3 rounded-md border border-border bg-white px-3 text-sm font-medium text-[#71809B]",
+        "flex h-10 min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-white px-3 text-[14px] font-medium text-[#71809B]",
         className,
       )}
     >
-      <span className="truncate">{children}</span>
+      <span className="min-w-0 truncate">{children}</span>
       {hasChevron ? <ChevronDown className="h-4 w-4 shrink-0" /> : null}
     </button>
   );
@@ -98,7 +98,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-md border border-border bg-white px-3 pr-9 text-sm font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-white px-3 pr-9 text-[14px] font-medium text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -125,24 +125,24 @@ export default function AppointmentFilters({
 
   if (view === "calendar") {
     return (
-      <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <FilterButton className="w-full sm:w-[120px]">All Status</FilterButton>
-          <FilterButton className="w-full sm:w-[155px]">All Departments</FilterButton>
-          <FilterButton className="w-full sm:w-[170px]">Appointment type</FilterButton>
+      <div className="mb-7 flex flex-col gap-2 xl:flex-row xl:flex-nowrap xl:items-center xl:justify-between">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap xl:flex-nowrap">
+          <FilterButton className="w-full sm:w-[130px]">All Status</FilterButton>
+          <FilterButton className="w-full sm:w-[170px]">All Departments</FilterButton>
+          <FilterButton className="w-full sm:w-[180px]">Appointment Type</FilterButton>
         </div>
 
-        <div className="flex items-center justify-center gap-5 text-[#111827]">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-3 text-[#111827]">
           <button type="button" aria-label="Previous day" className="text-[#111827]">
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <p className="whitespace-nowrap text-lg font-bold md:text-xl">Monday,Oct 21, 2024</p>
+          <p className="min-w-0 truncate whitespace-nowrap text-center text-lg font-bold md:text-xl">Monday, Oct 21, 2024</p>
           <button type="button" aria-label="Next day" className="text-[#111827]">
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="inline-flex h-10 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
+        <div className="inline-flex h-10 shrink-0 self-start rounded-xl bg-[#E7F2FF] p-1 xl:self-auto">
           <button
             type="button"
             onClick={() => onCalendarModeChange("day")}
@@ -169,21 +169,21 @@ export default function AppointmentFilters({
   }
 
   return (
-    <div className="mb-7 flex flex-col gap-3 xl:flex-row xl:items-center">
-      <div className="relative h-10 w-full xl:max-w-[330px]">
+    <div className="mb-7 flex min-w-0 flex-col gap-3 xl:flex-row xl:flex-nowrap xl:items-center">
+      <div className="relative h-10 min-w-0 w-full shrink xl:flex-1 xl:w-auto xl:min-w-[180px] xl:max-w-[300px]">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#71809B]" />
         <input
           type="text"
           placeholder="Search by name, ID, Department"
           value={filters.search}
           onChange={(event) => updateFilter("search", event.target.value)}
-          className="h-full w-full rounded-md border border-border bg-white pl-10 pr-3 text-sm font-medium text-[#344054] placeholder:text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="h-full min-w-0 w-full rounded-md border border-border bg-white pl-10 pr-3 text-[14px] font-medium text-[#344054] placeholder:text-[#71809B] focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
       </div>
 
-      <FilterSelect className="w-full xl:w-[120px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
-      <FilterSelect className="w-full xl:w-[155px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
-      <FilterSelect className="w-full xl:w-[170px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
+      <FilterSelect className="w-full shrink-0 xl:w-[120px]" value={filters.status} options={statusOptions} onChange={(value) => updateFilter("status", value)} />
+      <FilterSelect className="w-full shrink-0 xl:w-[145px]" value={filters.department} options={departmentOptions} onChange={(value) => updateFilter("department", value)} />
+      <FilterSelect className="w-full shrink-0 xl:w-[155px]" value={filters.type} options={typeOptions} onChange={(value) => updateFilter("type", value)} />
       <AppointmentDateRangePicker
         dateFrom={filters.dateFrom}
         dateTo={filters.dateTo}
@@ -193,7 +193,7 @@ export default function AppointmentFilters({
       <button
         type="button"
         onClick={onExport}
-        className="flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#111827] xl:ml-auto"
+        className="flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-semibold text-[#111827]"
       >
         <Download className="h-4 w-4" />
         Export
