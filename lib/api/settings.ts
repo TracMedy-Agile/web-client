@@ -32,8 +32,12 @@ export type SubscriptionSummary = {
   estimatedTotal: number;
   currency: string;
   renewalDate: string;
+  monthlyFeeLabel: string;
+  estimatedInvoiceDate: string;
+  episodeRate: number | null;
   usage: {
     activeCareEpisodes: number;
+    billableEpisodes: number;
     appointments: number;
     activeClinicians: number;
   };
@@ -65,8 +69,12 @@ const defaultSubscriptionSummary: SubscriptionSummary = {
   estimatedTotal: 0,
   currency: "NGN",
   renewalDate: "--",
+  monthlyFeeLabel: "Not supplied",
+  estimatedInvoiceDate: "--",
+  episodeRate: null,
   usage: {
     activeCareEpisodes: 0,
+    billableEpisodes: 0,
     appointments: 0,
     activeClinicians: 0,
   },
@@ -81,7 +89,7 @@ function unwrapData(value: unknown): unknown {
   return record && "data" in record ? record.data : value;
 }
 
-function firstString(record: Record<string, unknown> | null, keys: string[], fallback = "") {
+function firstString(record: Record<string, unknown> | null, keys: string[], fallback = ""): string {
   if (!record) return fallback;
   for (const key of keys) {
     const value = record[key];
@@ -90,7 +98,7 @@ function firstString(record: Record<string, unknown> | null, keys: string[], fal
   return fallback;
 }
 
-function nullableString(record: Record<string, unknown> | null, keys: string[], fallback = "") {
+function nullableString(record: Record<string, unknown> | null, keys: string[], fallback = ""): string {
   if (!record) return fallback;
   for (const key of keys) {
     const value = record[key];
@@ -99,7 +107,7 @@ function nullableString(record: Record<string, unknown> | null, keys: string[], 
   return fallback;
 }
 
-function nullableNumber(record: Record<string, unknown> | null, keys: string[], fallback: number | null = null) {
+function nullableNumber(record: Record<string, unknown> | null, keys: string[], fallback: number | null = null): number | null {
   if (!record) return fallback;
   for (const key of keys) {
     const value = record[key];
@@ -109,7 +117,7 @@ function nullableNumber(record: Record<string, unknown> | null, keys: string[], 
   return fallback;
 }
 
-function booleanFrom(record: Record<string, unknown>, keys: string[], fallback: boolean) {
+function booleanFrom(record: Record<string, unknown>, keys: string[], fallback: boolean): boolean {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "boolean") return value;
@@ -117,7 +125,7 @@ function booleanFrom(record: Record<string, unknown>, keys: string[], fallback: 
   return fallback;
 }
 
-function numberFrom(record: Record<string, unknown>, keys: string[], fallback: number) {
+function numberFrom(record: Record<string, unknown>, keys: string[], fallback: number): number {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -275,10 +283,137 @@ export async function getSubscriptionSummary(): Promise<SubscriptionSummary> {
     estimatedTotal: numberFrom(payload, ["estimatedTotal", "amount", "total"], defaultSubscriptionSummary.estimatedTotal),
     currency: firstString(payload, ["currency"], defaultSubscriptionSummary.currency),
     renewalDate: firstString(payload, ["renewalDate", "currentPeriodEnd", "nextBillingDate"], defaultSubscriptionSummary.renewalDate),
+    monthlyFeeLabel: firstString(plan, ["priceLabel", "monthlyPrice", "price"], firstString(payload, ["priceLabel", "monthlyPrice"], defaultSubscriptionSummary.monthlyFeeLabel)),
+    estimatedInvoiceDate: firstString(payload, ["estimatedInvoiceDate", "nextBillingAt", "nextBillingDate", "currentPeriodEnd"], defaultSubscriptionSummary.estimatedInvoiceDate),
+    episodeRate: nullableNumber(payload, ["episodeRate", "careEpisodeRate", "pricePerEpisode"], defaultSubscriptionSummary.episodeRate),
     usage: {
       activeCareEpisodes: numberFrom(usage, ["activeCareEpisodes", "careEpisodes"], defaultSubscriptionSummary.usage.activeCareEpisodes),
+      billableEpisodes: numberFrom(usage, ["billableEpisodes", "activeCareEpisodes", "careEpisodes"], defaultSubscriptionSummary.usage.billableEpisodes),
       appointments: numberFrom(usage, ["appointments", "appointmentCount"], defaultSubscriptionSummary.usage.appointments),
       activeClinicians: numberFrom(usage, ["activeClinicians", "clinicians"], defaultSubscriptionSummary.usage.activeClinicians),
     },
   };
+}
+export type FacilityBillingSubscription = components["schemas"]["FacilityBillingSubscriptionDto"];
+export type FacilityBillingEstimate = components["schemas"]["FacilityBillingEstimateDto"];
+export type FacilityUsageSummary = components["schemas"]["FacilityUsageSummaryDto"];
+export type FacilityInvoice = components["schemas"]["FacilityInvoiceDto"];
+export type FacilityInvoiceList = components["schemas"]["FacilityInvoiceListDto"];
+export type FacilityCheckout = components["schemas"]["FacilityCheckoutDto"];
+export type FacilityPaymentVerification = components["schemas"]["FacilityPaymentVerifyDto"];
+export type FacilityPaymentMethod = components["schemas"]["FacilityPaymentMethodDto"];
+export type ActivateFacilityBillingDto = components["schemas"]["ActivateFacilityBillingDto"];
+
+export async function getFacilityPaymentMethod(): Promise<FacilityPaymentMethod | null> {
+  return (await request("/billing/payment-method")) as FacilityPaymentMethod | null;
+}
+export async function getFacilityBillingSubscription(): Promise<FacilityBillingSubscription> {
+  return (await request("/billing/subscription")) as FacilityBillingSubscription;
+}
+
+export async function getFacilityBillingEstimate(): Promise<FacilityBillingEstimate> {
+  return (await request("/billing/estimate")) as FacilityBillingEstimate;
+}
+
+export async function getFacilityUsageSummary(): Promise<FacilityUsageSummary> {
+  return (await request("/billing/usage")) as FacilityUsageSummary;
+}
+export async function getFacilityInvoices(input: { page?: number; limit?: number; status?: "DRAFT" | "PENDING_PAYMENT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN" } = {}): Promise<FacilityInvoiceList> {
+  const params = new URLSearchParams();
+  if (input.page) params.set("page", String(input.page));
+  if (input.limit) params.set("limit", String(input.limit));
+  if (input.status) params.set("status", input.status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return (await request(`/billing/invoices${suffix}`)) as FacilityInvoiceList;
+}
+
+export async function payFacilityInvoice(invoiceId: string, callbackUrl?: string): Promise<FacilityCheckout> {
+  if (!invoiceId) throw new Error("An invoice ID is required to start payment.");
+  return (await request(`/billing/invoices/${encodeURIComponent(invoiceId)}/pay`, {
+    method: "POST",
+    body: JSON.stringify({ callbackUrl: callbackUrl ?? null }),
+  })) as FacilityCheckout;
+}
+
+export async function verifyFacilityPayment(reference: string): Promise<FacilityPaymentVerification> {
+  if (!reference.trim()) throw new Error("A payment reference is required to verify the invoice payment.");
+  return (await request("/billing/payments/verify", {
+    method: "POST",
+    body: JSON.stringify({ reference: reference.trim() }),
+  })) as FacilityPaymentVerification;
+}
+
+export type SubscriptionCheckoutInput = {
+  planCode: string;
+  billingCadence: "MONTHLY" | "YEARLY";
+  callbackUrl?: string;
+};
+
+export type SubscriptionCheckoutResult = {
+  authorizationUrl: string;
+  gatewayReference: string;
+  planCode: string;
+  amountKobo: number;
+  currency: string;
+  status: string;
+};
+
+export type SubscriptionVerifyResult = {
+  status: string;
+  reference: string;
+  planCode: string | null;
+  tier: string | null;
+};
+
+export type CancelFacilityBillingDto = components["schemas"]["CancelFacilityBillingDto"];
+export type FacilityBillingMessage = components["schemas"]["FacilityBillingMessageDto"];
+
+export async function startSubscriptionCheckout(input: SubscriptionCheckoutInput): Promise<SubscriptionCheckoutResult> {
+  const payload = asRecord(await request("/subscriptions/checkout", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })) ?? {};
+  return {
+    authorizationUrl: firstString(payload, ["authorizationUrl"]),
+    gatewayReference: firstString(payload, ["gatewayReference"]),
+    planCode: firstString(payload, ["planCode"], input.planCode),
+    amountKobo: numberFrom(payload, ["amountKobo"], 0),
+    currency: firstString(payload, ["currency"], "NGN"),
+    status: firstString(payload, ["status"], "initialized"),
+  };
+}
+
+export async function verifySubscriptionCheckout(reference: string): Promise<SubscriptionVerifyResult> {
+  if (!reference.trim()) throw new Error("A payment reference is required to verify the subscription.");
+  const payload = asRecord(await request("/subscriptions/verify", {
+    method: "POST",
+    body: JSON.stringify({ reference: reference.trim() }),
+  })) ?? {};
+  return {
+    status: firstString(payload, ["status"], "unknown"),
+    reference: firstString(payload, ["reference"], reference),
+    planCode: nullableString(payload, ["planCode"], "") || null,
+    tier: nullableString(payload, ["tier"], "") || null,
+  };
+}
+
+export async function cancelSubscription(input: CancelFacilityBillingDto): Promise<FacilityBillingMessage> {
+  return (await request("/billing/cancel", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })) as FacilityBillingMessage;
+}
+
+export async function reactivateSubscription(): Promise<FacilityBillingMessage> {
+  return (await request("/billing/reactivate", {
+    method: "POST",
+  })) as FacilityBillingMessage;
+}
+
+export async function activateFacilityBilling(callbackUrl?: string): Promise<FacilityCheckout> {
+  const body: ActivateFacilityBillingDto = callbackUrl ? { callbackUrl } : {};
+  return (await request("/billing/activate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  })) as FacilityCheckout;
 }

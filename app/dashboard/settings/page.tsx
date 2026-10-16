@@ -5,6 +5,7 @@ import { ImagePlus, Loader2, RotateCcw, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Field, inputClassName, SaveNotice, selectClassName, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
+import { FACILITY_LOCATION_SELECTED_EVENT, FacilityLocationPicker } from "@/components/dashboard/FacilityLocationPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,7 +29,6 @@ const timezones = ["Africa/Lagos", "Africa/Accra", "Africa/Nairobi", "Europe/Lon
 type HospitalProfileTextField = "name" | "contactEmail" | "contactPhone" | "timezone";
 type FacilityLocationSelection = { address?: string; latitude?: number; longitude?: number };
 
-const FACILITY_LOCATION_SELECTED_EVENT = "tracmedy:facility-location-selected";
 
 function initials(name: string) {
   return name
@@ -279,6 +279,10 @@ export default function SettingsPage() {
               <Field label="Address" className="md:col-span-2">
                 <Input value={profile.address} onChange={(event) => updateAddress(event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
+              <div className="space-y-2 md:col-span-2" role="group" aria-labelledby="hospital-map-location-label">
+                <span id="hospital-map-location-label" className="text-sm font-bold text-foreground">Map Location</span>
+                <FacilityLocationPicker latitude={profile.latitude} longitude={profile.longitude} address={profile.address} disabled={isSaving || isLoading} />
+              </div>
               <Field label="Contact Email">
                 <Input type="email" value={profile.contactEmail} onChange={(event) => updateField("contactEmail", event.target.value)} disabled={isSaving} className={inputClassName} />
               </Field>
