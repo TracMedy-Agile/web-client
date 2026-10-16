@@ -51,14 +51,9 @@ function cookieValue(headers: Headers, cookieName: string) {
   return '';
 }
 
-function tokenFromPayload(payload: unknown, key: 'accessToken' | 'refreshToken') {
-  const data = payloadData(payload);
-  return stringValue(data?.[key]);
-}
-
 function parseTokens(response: Response, payload: unknown): AuthTokens | null {
-  const accessToken = cookieValue(response.headers, 'accessToken') || tokenFromPayload(payload, 'accessToken');
-  const refreshToken = cookieValue(response.headers, 'refreshToken') || tokenFromPayload(payload, 'refreshToken');
+  const accessToken = cookieValue(response.headers, 'accessToken')
+  const refreshToken = cookieValue(response.headers, 'refreshToken')
   const expiresIn = numberValue(payloadData(payload)?.expiresIn) ?? ACCESS_TOKEN_MAX_AGE_SECONDS;
 
   if (!accessToken || !refreshToken) return null;

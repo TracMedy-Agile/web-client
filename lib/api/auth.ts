@@ -56,7 +56,7 @@ async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 }
 
 export const apiRegister = (data: { name: string; email: string; hospitalId: string; password: string }) =>
-  post<{ userId: string }>('/auth/hospital/register', data)
+  post<{ userId: string; registrationToken: string }>('/auth/hospital/register', data)
 
 export type HospitalLoginSession = {
   user: SafeUser | null
@@ -106,10 +106,10 @@ export async function apiHospitalLogin(data: { email: string; password: string }
 }
 
 
-export const apiVerifyOtp = (data: { userId: string; otp: string }) =>
+export const apiVerifyOtp = (data: { registrationToken: string; otp: string }) =>
   post('/auth/verify-otp', data)
 
-export const apiResendOtp = (data: { userId: string }) =>
+export const apiResendOtp = (data: { registrationToken: string }) =>
   post('/auth/resend-otp', data)
 
 export const apiForgotPassword = (data: { email: string }) =>

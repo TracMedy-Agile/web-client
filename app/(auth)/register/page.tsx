@@ -153,6 +153,10 @@ export default function RegisterPage() {
         return
       }
       const userId = (result.data as { userId?: string })?.userId ?? ''
+      const registrationToken = (result.data as { registrationToken?: string })?.registrationToken ?? ''
+      if (registrationToken) {
+        sessionStorage.setItem('tracmedy_registration_token', registrationToken)
+      }
       capturePostHogEvent('hospital_registered')
       router.push(`/verify-email?userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}`)
     } finally {
