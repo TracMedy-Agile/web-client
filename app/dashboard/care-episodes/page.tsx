@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { downloadServerReportExport } from "@/lib/api/reports";
 import {
   getCareEpisodes,
   getHospitalFacilityId,
@@ -325,6 +326,7 @@ export default function CareEpisodesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [reviewEpisodeId, setReviewEpisodeId] = useState<string | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     capturePostHogEvent("care_episodes_viewed");
@@ -447,56 +449,36 @@ export default function CareEpisodesPage() {
     });
   }, [activeTab, dateFrom, dateTo, isEmpty, riskFilter]);
 
-  const csvRows = useMemo(() => {
-    if (activeTab === "active") {
-      const header = ["Patient", "Diagnosis", "Assigned Clinician", "Status", "Progress", "Risk Level"];
-      const rows = episodes.map((episode) => [
-        getPatientName(patientDirectory, episode.patientId),
-        episode.diagnosis ?? "",
-        getClinicianLabel(clinicianDirectory, episode.clinicianId),
-        getCarePhaseBadge(episode.carePhase).label,
-        `Day ${episode.currentDay ?? (episode.expectedDurationDays ? getCurrentEpisodeDay(episode.createdAt, episode.dayStart) : episode.dayStart) ?? 0}/${episode.expectedDurationDays ?? 0}`,
-        getRiskBadge(episode.riskCategory).label,
-      ]);
-      return [header, ...rows];
+  const exportCsv = async () => {
+    setIsExporting(true);
+    setError("");
+    try {
+      const reportByTab = {
+        active: "active_care_episodes",
+        pending: "pending_care_episodes",
+        closed: "closed_care_episodes",
+      } as const;
+      const dateToValue = dateTo || new Date().toISOString().slice(0, 10);
+      await downloadServerReportExport(
+        { dateFrom: dateFrom || "1970-01-01", dateTo: dateToValue },
+        {
+          report: reportByTab[activeTab],
+          format: "csv",
+          filters: {
+            riskLevel: riskFilter !== "all" ? riskFilter : undefined,
+          },
+        },
+      );
+      capturePostHogEvent("care_episodes_exported", {
+        tab: activeTab,
+        row_count: episodes.length,
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to export care episodes.");
+    } finally {
+      setIsExporting(false);
     }
-    if (activeTab === "pending") {
-      const header = ["Patient", "Diagnosis", "Consultation Date", "Recommendation"];
-      const rows = episodes.map((episode) => [
-        getPatientName(patientDirectory, episode.patientId),
-        episode.diagnosis ?? "",
-        formatDate(episode.createdAt),
-        getRecommendation(episode.riskCategory),
-      ]);
-      return [header, ...rows];
-    }
-    const header = ["Patient", "Closed Date", "Episode Duration", "Closure Reason"];
-    const rows = episodes.map((episode) => [
-      getPatientName(patientDirectory, episode.patientId),
-      formatDate(episode.closedAt || episode.updatedAt),
-      getEpisodeDuration(episode.createdAt, episode.closedAt, episode.expectedDurationDays) + " days",
-      getClosureInfo(episode.closureReason).label,
-    ]);
-    return [header, ...rows];
-  }, [activeTab, episodes, clinicianDirectory, patientDirectory]);
-
-  const exportCsv = () => {
-    const csv = csvRows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `care-episodes-${activeTab}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    capturePostHogEvent("care_episodes_exported", {
-      tab: activeTab,
-      row_count: episodes.length,
-    });
   };
-
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -655,8 +637,8 @@ export default function CareEpisodesPage() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={exportCsv}
-                disabled={episodes.length === 0}
+                onClick={() => void exportCsv()}
+                disabled={isExporting || episodes.length === 0}
                 className="h-10 shrink-0 self-center gap-1.5 whitespace-nowrap px-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
               >
                 <Download className="h-4 w-4" />

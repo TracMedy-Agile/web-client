@@ -750,7 +750,7 @@ const patientName = patient?.name || "Unknown Patient";
     try {
       const response = await askCareAssistant(episodeId, trimmed, assistantConversationId);
       setAssistantConversationId(response.conversationId);
-      setAssistantMessages((current) => [...current, { id: response.messageId, role: "assistant", content: response.answer, retrievedSources: response.evidence, createdAt: response.createdAt }]);
+      setAssistantMessages((current) => [...current, { id: response.messageId, role: "assistant", content: response.answer, retrievedSources: response.evidence, createdAt: response.createdAt, answerStatus: response.answerStatus, safetyLevel: response.safetyLevel, dataSufficiency: response.dataSufficiency, dataConfidence: response.dataConfidence, sources: response.sources, missingData: response.missingData }]);
     } catch (requestError) {
       setAssistantError(requestError instanceof Error ? requestError.message : "Unable to get an assistant response.");
     } finally {
@@ -1300,8 +1300,20 @@ const patientName = patient?.name || "Unknown Patient";
               <div key={message.id} className={message.role === "user" ? "flex justify-end" : "flex items-start gap-3"}>
                 {message.role === "assistant" ? <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-white"><Sparkles className="h-4 w-4" aria-hidden="true" /></span> : null}
                 <div className={message.role === "user" ? "max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm font-medium leading-6 text-white" : "max-w-[calc(100%-3rem)] rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100"}>
-                  <p className={message.role === "assistant" ? "text-sm font-medium leading-6 text-slate-700" : undefined}>{message.content}</p>
-                  {message.role === "assistant" && message.retrievedSources.length > 0 ? <div className="mt-3 border-t border-slate-100 pt-2"><p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Evidence</p><div className="mt-1 space-y-1">{message.retrievedSources.slice(0, 3).map((evidence) => <p key={evidence.key} className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">{evidence.label}:</span> {evidence.value}</p>)}</div></div> : null}
+                  <p className={message.role === "assistant" ? "text-sm font-medium leading-6 text-slate-700" : undefined}>{message.content}</p>                  {message.role === "assistant" && (message.answerStatus || message.safetyLevel || message.dataSufficiency || message.sources?.length || message.missingData?.length) ? (
+                    <div className="mt-3 space-y-2 border-t border-slate-100 pt-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {message.answerStatus ? <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">Status: {message.answerStatus}</span> : null}
+                        {message.safetyLevel ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Safety: {message.safetyLevel}</span> : null}
+                        {message.dataSufficiency ? <span className={cn("rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide", message.dataSufficiency.toLowerCase() === "insufficient" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600")}>Data: {message.dataSufficiency}</span> : null}
+                        {typeof message.dataConfidence === "number" ? <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Confidence: {Math.round(message.dataConfidence * 100)}%</span> : null}
+                      </div>
+                      {message.dataSufficiency?.toLowerCase() === "insufficient" ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">Insufficient data is available for a reliable clinical answer. Review the episode record before acting.</p> : null}
+                      {message.missingData?.length ? <p className="text-xs font-medium leading-5 text-slate-500">Missing data: {message.missingData.join(", ")}</p> : null}
+                      {message.sources?.length ? <div><p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Sources</p><div className="mt-1 space-y-1">{message.sources.map((source) => <p key={`${source.type}-${source.label}`} className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">{source.label}</span> ({source.count}){source.latestAt ? ` · ${source.latestAt}` : ""}</p>)}</div></div> : null}
+                    </div>
+                  ) : null}
+                  {message.role === "assistant" && message.retrievedSources.length > 0 ? <div className="mt-3 border-t border-slate-100 pt-2"><p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Evidence</p><div className="mt-1 space-y-1">{message.retrievedSources.slice(0, 3).map((evidence) => <p key={evidence.key} className="text-xs leading-5 text-slate-500"><span className="font-semibold text-slate-700">{evidence.label}:</span> {evidence.value}{evidence.timestamp ? <span className="text-slate-400"> · {evidence.timestamp}</span> : null}</p>)}</div></div> : null}
                 </div>
               </div>
             ))}

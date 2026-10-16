@@ -1826,6 +1826,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subscriptions/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active subscription plans
+         * @description Returns the active (non-archived) plan catalogue — latest version per code with price, billing cadence and entitlements. Readable by any authenticated user so Free users can see upgrade options.
+         */
+        get: operations["SubscriptionsController_getPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user subscription
+         * @description Returns the authenticated user’s real tier, plan, price label and entitlements. Legacy fields (planName, planTier, priceLabel, canUpgrade) are preserved; tier limits are additive.
+         */
+        get: operations["SubscriptionsController_getMySubscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a subscription checkout
+         * @description Creates/updates the caller’s subscription intent and returns a Paystack hosted checkout URL plus the gateway reference. Duplicate checkout while an ACTIVE subscription exists is refused with 409 SUBSCRIPTION_ALREADY_ACTIVE.
+         */
+        post: operations["SubscriptionsController_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify a subscription checkout
+         * @description Verifies the Paystack transaction for the caller, transitions the subscription to ACTIVE and writes the first SUBSCRIPTION ledger row. Safe to replay (idempotent by gateway reference).
+         */
+        post: operations["SubscriptionsController_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/paystack/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paystack billing webhook receiver
+         * @description Signature-verified (HMAC-SHA512 over the raw body) Paystack webhook for subscription and invoice events. Public by design — no JWT, but per-IP rate limited. Bad signatures are rejected 403 before any state change; valid events are acknowledged 200 and processed asynchronously.
+         */
+        post: operations["PaystackWebhookController_paystackWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/my/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List my transactions
+         * @description Returns the authenticated caller’s own immutable money ledger, newest first. Filtered strictly by the caller — no PII is accepted in query params.
+         */
+        get: operations["PaymentsController_myTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alerts": {
         parameters: {
             query?: never;
@@ -1980,6 +2100,271 @@ export interface paths {
         get: operations["RiskScoresController_getRiskScore"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Facility billing status, cycle, payment method + overdue banner */
+        get: operations["FacilityBillingController_getSubscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate facility billing (Paystack checkout of the platform fee)
+         * @description Requires a valid Paystack-backed payment method: the returned hosted checkout captures it (initiated checkout counts as initiated-with-method-consent). The subscription row is anchored to the first successful activation payment (webhook confirmation). Returns 400 PAYMENT_NOT_CONFIGURED / PAYMENT_PROVIDER_ERROR when the gateway is unavailable.
+         */
+        post: operations["FacilityBillingController_activate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current-cycle estimated invoice (Billing Breakdown card)
+         * @description Estimated total, platform subscription line, active-episode count + line math, estimated generation date. Updates live during the cycle.
+         */
+        get: operations["FacilityBillingController_estimate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Usage Summary (active episodes + completed appointments)
+         * @description Usage visibility only — no invoice semantics (PRD 02 Usage Summary).
+         */
+        get: operations["FacilityBillingController_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Invoice history (pagination + status filter) */
+        get: operations["FacilityBillingController_invoices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/invoices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Invoice detail (View Invoice action) */
+        get: operations["FacilityBillingController_invoiceDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/invoices/{id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pay Now via Paystack hosted checkout (Pending invoices only)
+         * @description Reuses the existing gateway checkout/verify pipeline; a successful payment settles through the webhook or client verify and is ledgered (kind FACILITY). Returns the Paystack authorization URL — Pay Now is available only after an invoice has been generated (PRD Payment Processing).
+         */
+        post: operations["FacilityBillingController_payInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/payments/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify an invoice/activation payment with the gateway
+         * @description Called when the hospital returns from Paystack; safe alongside the webhook (idempotent on PAID invoices and ACTIVE subscriptions).
+         */
+        post: operations["FacilityBillingController_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/payment-method": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payment method surface (provider + masked metadata only)
+         * @description Provider, channel, last-four digits and brand from the Paystack authorization — never card numbers. Updating the method happens through the gateway (the next Pay Now / activation captures refreshed authorization metadata); no card endpoints exist here by design.
+         */
+        get: operations["FacilityBillingController_paymentMethod"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/billing-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Full billing history lines (admin mirror: /admin/payments) */
+        get: operations["FacilityBillingController_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Schedule cancellation at period end (blocked while overdue)
+         * @description Typed 400 CANCELLATION_BLOCKED_OVERDUE while payment is overdue. Access is preserved until the current period ends; auto-renewal is disabled (PRD Cancellation Behaviour).
+         */
+        post: operations["FacilityBillingController_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove the scheduled cancellation and restore auto-renewal */
+        post: operations["FacilityBillingController_reactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/auto-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable/enable auto-renewal (both web-client buttons need this)
+         * @description Disable schedules the same end-of-period stop as cancel (no reason recorded); enable clears a scheduled cancellation and restores auto-renewal.
+         */
+        post: operations["FacilityBillingController_autoRenew"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/payments/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paystack webhook receiver (facility billing events)
+         * @description Signature-verified (HMAC-SHA512 over the raw body). Handles charge.success / charge.failed carrying metadata {kind: facility_invoice | facility_activation}. Bad signatures are rejected 403 before any state change; settlement re-verifies with the gateway and enforces the amount guard.
+         */
+        post: operations["FacilityBillingWebhookController_paystackWebhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2203,7 +2588,7 @@ export interface paths {
         };
         /**
          * Get directions from patient location to facility
-         * @description Server-side proxy to Google Routes API v2 (computeRoutes). Returns distance, duration and an encoded polyline for the hospital directions map screen. Any authenticated role may call it; the facility must be active and have coordinates set. Results are cached in-memory for 5 minutes.
+         * @description Server-side proxy to the active routing provider (TomTom Orbis Calculate Route by default; Google Routes API v2 when MAP_PROVIDER=google). Returns distance, duration, a GeoJSON LineString geometry and a retained Google-encoded polyline for the hospital directions map screen. Any authenticated role may call it; the facility must be active and have coordinates set. Results are cached in-memory for 5 minutes (keyed by provider and rounded coordinates).
          */
         get: operations["FacilityController_getDirections"];
         put?: never;
@@ -4012,26 +4397,6 @@ export interface paths {
          * @description Returns referral code, link, counts, and reward balance for the authenticated user.
          */
         get: operations["ReferralsController_getMyReferrals"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/subscriptions/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get current user subscription
-         * @description Returns the current subscription plan for the authenticated user. Stub for Phase 14 — returns free plan by default.
-         */
-        get: operations["SubscriptionsController_getMySubscription"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7049,6 +7414,447 @@ export interface paths {
         patch: operations["AdminSupportController_updatePriority"];
         trace?: never;
     };
+    "/admin/payments/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pricing plans (current version each) with ledger subscribers/revenue */
+        get: operations["AdminPaymentsController_listPlans"];
+        put?: never;
+        /** Create a pricing plan (default version 1) */
+        post: operations["AdminPaymentsController_createPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/plans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit a plan — creates a NEW version
+         * @description Price/benefit edits archive the current version and create a new one (G5). Existing subscribers keep the current price until their next billing period (D4 — propagated to Paystack with update_existing_subscriptions).
+         */
+        put: operations["AdminPaymentsController_updatePlan"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/plans/{id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate a plan
+         * @description Blocks NEW subscriptions only; existing subscribers are unaffected (D4).
+         */
+        post: operations["AdminPaymentsController_deactivatePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/plans/{id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reactivate a deactivated plan */
+        post: operations["AdminPaymentsController_activatePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/plans/facility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Facility plan catalogue (Starter / Professional / Enterprise) */
+        get: operations["AdminPaymentsController_listFacilityPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch a facility plan + billing history
+         * @description Changes the facility subscription plan (non-retroactive to completed periods, 14C applies billing) and records an audit event.
+         */
+        patch: operations["AdminPaymentsController_patchFacilityPlan"];
+        trace?: never;
+    };
+    "/admin/payments/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Consolidated transaction ledger with filters
+         * @description Filters: status, range (7/30/90/custom), payer type, category, gateway reference; paginated.
+         */
+        get: operations["AdminPaymentsController_listTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/transactions/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export the filtered transaction view as CSV
+         * @description Permission-gated; returns CSV (UTF-8 BOM) of the same filters as the list endpoint.
+         */
+        get: operations["AdminPaymentsController_exportTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/transactions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Transaction detail (safe subset)
+         * @description Safe subset only — gateway ref, amount, status, kind, source, timestamps, payer tier. No card data, no PII beyond payer id/tier.
+         */
+        get: operations["AdminPaymentsController_transactionDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/transactions/{id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify a transaction with Paystack (fulfilment-refusal rules)
+         * @description Refuses with typed 4xx on unverifiable ref / amount-currency mismatch / already-used reference / non-success. Ledger updated from gateway truth on success; replay-safe.
+         */
+        post: operations["AdminPaymentsController_verifyTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overdue facility invoices
+         * @description Facility invoices with due date passed, outstanding balance, not cancelled; statuses Overdue/Escalated/Payment-Plan-Active.
+         */
+        get: operations["AdminPaymentsController_listOverdue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/overdue/{invoiceId}/reminder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an overdue invoice reminder
+         * @description Records recipient/channel/admin/delivery immutably; idempotent per 24h window (409 otherwise). Actual dispatch is the notifications slice.
+         */
+        post: operations["AdminPaymentsController_sendReminder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/overdue/{invoiceId}/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Escalate an overdue facility invoice
+         * @description Records reason/note/assignee/follow-up and sets the invoice status to ESCALATED.
+         */
+        post: operations["AdminPaymentsController_escalateInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/overdue/{invoiceId}/invoice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Invoice view (14A Invoice reuse) */
+        get: operations["AdminPaymentsController_invoiceView"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payout queue with provider detail
+         * @description Queue rows with statuses Pending → Processing → Paid, plus On Hold / Disputed / Reversed / Cancelled, and an awaitingCompletion count.
+         */
+        get: operations["AdminPaymentsController_listPayouts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate the payout queue from eligible completed home-care work
+         * @description Creates PENDING payouts where payment + completed visit + verified docs + verified provider + no hold all hold (03 L1955-1961). Formula: Gross − commission − adjustments (reversals). Duplicate-prevention keyed by request.
+         */
+        post: operations["AdminPaymentsController_generatePayouts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Onboard a provider payout recipient (Paystack Transfers)
+         * @description Verifies the bank account (GET /bank/resolve) and creates the transfer recipient (POST /transferrecipient). Persists only the recipient code + masked account metadata — the full account number is never stored. Idempotent: an existing verified recipient returns 200-style with alreadyOnboarded. Audit: payout_recipient_onboarded.
+         */
+        post: operations["AdminPaymentsController_onboardPayoutRecipient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Payout detail (provider detail panel) */
+        get: operations["AdminPaymentsController_payoutDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a payout (PENDING → PROCESSING) */
+        post: operations["AdminPaymentsController_confirmPayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}/hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hold a payout (PENDING/PROCESSING → ON_HOLD) */
+        post: operations["AdminPaymentsController_holdPayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release a payout (PROCESSING → PAID)
+         * @description Enforces the holding period; executes Paystack Transfers when viable, otherwise records the ledger intent explicitly.
+         */
+        post: operations["AdminPaymentsController_releasePayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a held payout (ON_HOLD → PROCESSING) */
+        post: operations["AdminPaymentsController_retryPayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/payouts/{id}/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reverse a paid payout
+         * @description Marks the payout REVERSED and records a separate reversal row deductible from future payouts (G4).
+         */
+        post: operations["AdminPaymentsController_reversePayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/revenue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Revenue analytics from the ledger
+         * @description Gross vs processing fees vs net, MTD + growth, avg txn, collection rate, plan distribution, facility-vs-user split, trend (daily/weekly/monthly).
+         */
+        get: operations["AdminPaymentsController_revenue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dev/test-push": {
         parameters: {
             query?: never;
@@ -9763,6 +10569,26 @@ export interface components {
             /** @description Assistant message ID (for deletion) */
             messageId?: string;
         };
+        AiDailyLimitExceptionDto: {
+            /**
+             * @description Typed block code
+             * @example UPGRADE_REQUIRED
+             */
+            code: string;
+            /** @description Human-readable block copy */
+            message: string;
+            /**
+             * @description Effective tier daily cap
+             * @example 20
+             */
+            limit: number;
+            /**
+             * @description Effective tier at the time of the block
+             * @example FREE
+             * @enum {string}
+             */
+            tier: "FREE" | "PLUS" | "unknown";
+        };
         KeyDriverDto: {
             /** @description Driver name */
             factor: string;
@@ -10000,6 +10826,356 @@ export interface components {
             /** @description Human-readable confirmation message */
             message: string;
         };
+        PlanBenefitsDto: {
+            /**
+             * @description AI assistant messages allowed per day
+             * @example 500
+             */
+            aiDailyMessages: number;
+            /**
+             * @description Maximum caregivers (active + pending)
+             * @example 2
+             */
+            caregiverLimit: number;
+            /**
+             * @description Total storage quota in bytes
+             * @example 5368709120
+             */
+            storageBytes: number;
+            /**
+             * @description Export quality granted by the plan
+             * @example professional
+             * @enum {string}
+             */
+            exportTier: "basic" | "professional";
+            /**
+             * @description Trend-analysis history window in days; null means full history
+             * @example 30
+             */
+            trendHistoryDays: number | null;
+            /**
+             * @description Human-readable feature keys included in the plan
+             * @example [
+             *       "ai_health_assistant",
+             *       "care_circle_plus"
+             *     ]
+             */
+            features: string[];
+        };
+        PricingPlanDto: {
+            /** @description Pricing plan row id */
+            id: string;
+            /**
+             * @description Stable plan code
+             * @example plus_monthly
+             */
+            code: string;
+            /**
+             * @description Display name
+             * @example Tracmedy Plus (Monthly)
+             */
+            name: string;
+            /**
+             * @description Plan tier
+             * @example PLUS
+             * @enum {string}
+             */
+            tier: "FREE" | "PLUS";
+            /**
+             * @description Catalogue version
+             * @example 1
+             */
+            version: number;
+            /**
+             * @description Billing cadence
+             * @enum {string}
+             */
+            billingCadence: "MONTHLY" | "YEARLY";
+            /**
+             * @description Price in kobo (subunit)
+             * @example 350000
+             */
+            priceKobo: number;
+            /**
+             * @description Human display price
+             * @example ₦3,500/month
+             */
+            priceLabel: string;
+            /** @description Entitlements granted by this plan */
+            benefits: components["schemas"]["PlanBenefitsDto"];
+            /**
+             * Format: date-time
+             * @description When this version became effective
+             */
+            effectiveAt: string;
+        };
+        PlusPlanSummaryDto: {
+            /**
+             * @description Legacy plan id used by the mobile client
+             * @example plus
+             */
+            id: string;
+            /**
+             * @description Display name
+             * @example Tracmedy Plus
+             */
+            name: string;
+            /** @description Marketing subtitle */
+            subtitle: string;
+            /**
+             * @description Monthly price label
+             * @example ₦3,500/month
+             */
+            monthlyPrice: string;
+            /**
+             * @description Yearly price label
+             * @example ₦35,000/year
+             */
+            yearlyPrice: string;
+        };
+        SubscriptionPlansResponseDto: {
+            /** @description Active plan catalogue (latest version per code) */
+            plans: components["schemas"]["PricingPlanDto"][];
+            /** @description Plus summary convenience view */
+            plusPlan: components["schemas"]["PlusPlanSummaryDto"];
+        };
+        SubscriptionLimitsDto: {
+            /**
+             * @description AI assistant messages per day
+             * @example 20
+             */
+            aiDailyMessages: number;
+            /**
+             * @description Maximum caregivers
+             * @example 0
+             */
+            caregiverLimit: number;
+            /**
+             * @description Storage quota in bytes
+             * @example 524288000
+             */
+            storageBytes: number;
+            /**
+             * @description Export quality
+             * @example basic
+             * @enum {string}
+             */
+            exportTier: "basic" | "professional";
+            /**
+             * @description Trend-analysis history window in days; null = full
+             * @example 30
+             */
+            trendHistoryDays: number | null;
+        };
+        SubscriptionsDunningStateDto: {
+            /**
+             * @description Effective lifecycle status driving the banner
+             * @enum {string}
+             */
+            status: "ACTIVE" | "GRACE" | "RESTRICTED" | "CANCELLED";
+            /**
+             * @description Grace days remaining (0 at expiry)
+             * @example 3
+             */
+            graceDaysLeft: number;
+            /**
+             * @description Client banner copy (server-derived, no PII)
+             * @example Update payment to restore your Tracmedy Plus benefits.
+             */
+            banner: string;
+        };
+        SubscriptionMeResponseDto: {
+            /**
+             * @description Human plan name
+             * @example Tracmedy Free
+             */
+            planName: string;
+            /**
+             * @description Plan tier token (legacy casing preserved)
+             * @example free
+             */
+            planTier: string;
+            /**
+             * @description Display price
+             * @example Free Plan
+             */
+            priceLabel: string;
+            /**
+             * @description Whether the caller can upgrade
+             * @example true
+             */
+            canUpgrade: boolean;
+            /**
+             * @description Canonical tier enum
+             * @example FREE
+             * @enum {string}
+             */
+            tier: "FREE" | "PLUS";
+            /**
+             * @description Current subscription lifecycle status
+             * @example null
+             * @enum {string|null}
+             */
+            status: "ACTIVE" | "GRACE" | "RESTRICTED" | "CANCELLED" | null;
+            /**
+             * @description Active plan code, if any
+             * @example plus_monthly
+             */
+            planCode: string | null;
+            /**
+             * Format: date-time
+             * @description Current paid period end
+             */
+            currentPeriodEnd: string | null;
+            /**
+             * Format: date-time
+             * @description Next billing date
+             */
+            nextBillingAt: string | null;
+            /** @description Caller entitlements (so clients render honestly) */
+            limits: components["schemas"]["SubscriptionLimitsDto"];
+            /** @description 14C P6 — G3 dunning state (additive). GRACE/RESTRICTED banner input for mobile; null outside dunning states. */
+            dunning: components["schemas"]["SubscriptionsDunningStateDto"] | null;
+        };
+        SubscriptionCheckoutDto: {
+            /**
+             * @description Plan code
+             * @example plus_monthly
+             */
+            planCode?: string;
+            /**
+             * @description Billing cadence
+             * @enum {string}
+             */
+            billingCadence?: "MONTHLY" | "YEARLY";
+            /**
+             * @description Legacy mobile plan id (e.g. "plus")
+             * @example plus
+             */
+            planId?: string;
+            /**
+             * @description Legacy mobile billing interval
+             * @example monthly
+             * @enum {string}
+             */
+            billingInterval?: "monthly" | "yearly";
+            /** @description Optional client callback URL */
+            callbackUrl?: string;
+        };
+        SubscriptionCheckoutResponseDto: {
+            /** @description Paystack hosted checkout URL the client must open */
+            authorizationUrl: string;
+            /** @description Gateway reference to verify after payment */
+            gatewayReference: string;
+            /**
+             * @description Resolved plan code
+             * @example plus_monthly
+             */
+            planCode: string;
+            /**
+             * @description Amount in kobo
+             * @example 350000
+             */
+            amountKobo: number;
+            /**
+             * @description Currency
+             * @example NGN
+             */
+            currency: string;
+            /**
+             * @description Checkout state
+             * @example initialized
+             */
+            status: string;
+        };
+        SubscriptionVerifyDto: {
+            /** @description Paystack transaction reference returned by checkout */
+            reference: string;
+        };
+        SubscriptionVerifyResponseDto: {
+            /**
+             * @description Verification result status
+             * @example active
+             */
+            status: string;
+            /** @description Gateway reference verified */
+            reference: string;
+            /** @description Resolved plan code */
+            planCode: string | null;
+            /**
+             * @description Effective tier after verification
+             * @enum {string}
+             */
+            tier: "FREE" | "PLUS";
+            /**
+             * Format: date-time
+             * @description Current period end
+             */
+            currentPeriodEnd: string | null;
+        };
+        TransactionResponseDto: {
+            /** @description Ledger row id */
+            id: string;
+            /**
+             * @description Amount in kobo
+             * @example 350000
+             */
+            amountKobo: number;
+            /**
+             * @description Currency
+             * @example NGN
+             */
+            currency: string;
+            /**
+             * @description Ledger status
+             * @enum {string}
+             */
+            status: "INITIALIZED" | "SUCCESS" | "FAILED" | "REFUNDED";
+            /**
+             * @description What the row represents
+             * @enum {string}
+             */
+            kind: "SUBSCRIPTION" | "HOME_CARE" | "FACILITY" | "PAYOUT";
+            /**
+             * @description Gateway reference
+             * @example PAY-abc123
+             */
+            gatewayReference: string;
+            /**
+             * @description Source type
+             * @example quote
+             */
+            sourceType?: string | null;
+            /**
+             * @description Source id
+             * @example quote-1
+             */
+            sourceId?: string | null;
+            /**
+             * Format: date-time
+             * @description Created at
+             */
+            createdAt: string;
+        };
+        TransactionsPageResponseDto: {
+            /** @description Ledger rows (own only) */
+            items: components["schemas"]["TransactionResponseDto"][];
+            /**
+             * @description Total matching rows
+             * @example 3
+             */
+            total: number;
+            /**
+             * @description Current page
+             * @example 1
+             */
+            page: number;
+            /**
+             * @description Page size
+             * @example 20
+             */
+            limit: number;
+        };
         AlertTriggerDataSymptomDto: {
             /** @description Symptom type */
             type?: string;
@@ -10202,6 +11378,297 @@ export interface components {
              * @example Patient reported chest pain this morning
              */
             notes?: string;
+        };
+        FacilityPaymentMethodDto: {
+            /**
+             * @description Payment provider
+             * @example paystack
+             */
+            provider: string;
+            /**
+             * @description Gateway method surface (card/bank/ussd…) or null before activation
+             * @example card
+             */
+            channel: string | null;
+            /**
+             * @description Masked card/network metadata (last four digits only)
+             * @example 4084
+             */
+            last4: string | null;
+            /**
+             * @description Card/network type label, gateway-masked
+             * @example visa
+             */
+            brand: string | null;
+            /** @description When the gateway last confirmed this method on a payment */
+            confirmedAt: string | null;
+        };
+        FacilityOutstandingBannerDto: {
+            /** @description True when an overdue banner must render */
+            present: boolean;
+            /** @description Invoice number */
+            invoiceNumber: string | null;
+            /** @description Outstanding amount (kobo) */
+            amountKobo: number | null;
+            /** @description Invoice due date (ISO) */
+            dueAt: string | null;
+            /**
+             * @description Days overdue
+             * @example 4
+             */
+            daysOverdue: number | null;
+            /**
+             * @description Grace days remaining
+             * @example 3
+             */
+            graceDaysLeft: number | null;
+            /** @description Invoice id for the Pay Now action */
+            invoiceId: string | null;
+        };
+        FacilityBillingSubscriptionDto: {
+            /**
+             * @description Facility billing status
+             * @enum {string}
+             */
+            status: "NO_SUBSCRIPTION" | "PENDING_ACTIVATION" | "ACTIVE" | "GRACE" | "RESTRICTED" | "CANCELLED";
+            /** @description Facility plan (Starter | Professional | Enterprise) */
+            plan: string;
+            /** @description Subscription start / activation anchor (ISO) */
+            cycleAnchorDate: string | null;
+            /** @description Current period start (ISO) */
+            currentPeriodStart: string | null;
+            /** @description Current period end / access expiry (ISO) */
+            currentPeriodEnd: string | null;
+            /** @description Auto-renewal enabled */
+            autoRenew: boolean;
+            /** @description Scheduled cancellation date (ISO) */
+            scheduledCancelAt: string | null;
+            /** @description Cancel reason when scheduled */
+            cancelReason: string | null;
+            /** @description Cancellation feedback */
+            cancelFeedback: string | null;
+            /** @description Next invoice generation date (ISO) */
+            nextInvoiceDate: string | null;
+            /** @description Default payment method surface (single object or null before activation) */
+            paymentMethod: components["schemas"]["FacilityPaymentMethodDto"] | null;
+            outstandingBanner: components["schemas"]["FacilityOutstandingBannerDto"];
+            /**
+             * @description Grace period days (config-driven)
+             * @example 7
+             */
+            gracePeriodDays: number;
+            /**
+             * @description Configured due-date offset in days after generation
+             * @example 14
+             */
+            dueDateOffsetDays: number;
+        };
+        ActivateFacilityBillingDto: {
+            /** @description Checkout callback URL */
+            callbackUrl?: string;
+        };
+        FacilityCheckoutDto: {
+            /** @description Paystack hosted-checkout URL */
+            authorizationUrl: string;
+            /** @description Gateway reference to verify with */
+            gatewayReference: string;
+            /** @description Amount in kobo */
+            amountKobo: number;
+            /**
+             * @description Currency
+             * @example NGN
+             */
+            currency: string;
+            /**
+             * @description What this checkout settles
+             * @enum {string}
+             */
+            purpose: "activation" | "invoice";
+            /** @description Invoice id when purpose = invoice */
+            invoiceId: string | null;
+        };
+        FacilityBillingBreakdownLineDto: {
+            /**
+             * @description Line label
+             * @example Platform Subscription
+             */
+            label: string;
+            /**
+             * @description Line amount in kobo
+             * @example 5000000
+             */
+            amountKobo: number;
+            /**
+             * @description Unit price in kobo (episode line only)
+             * @example 500000
+             */
+            unitPriceKobo?: number | null;
+            /**
+             * @description Unit count (episode line only)
+             * @example 38
+             */
+            quantity?: number | null;
+        };
+        FacilityBillingEstimateDto: {
+            /** @description Billing period start (ISO) */
+            periodStart: string;
+            /** @description Billing period end (ISO) */
+            periodEnd: string;
+            /**
+             * @description Estimated total in kobo
+             * @example 12000000
+             */
+            estimatedTotalKobo: number;
+            lines: components["schemas"]["FacilityBillingBreakdownLineDto"][];
+            /**
+             * @description Active care episodes counted in this cycle
+             * @example 38
+             */
+            activeEpisodeCount: number;
+            /** @description Estimated invoice generation date (ISO) — cycle end */
+            estimatedGenerationDate: string;
+            /**
+             * @description Billing status behind this estimate
+             * @enum {string}
+             */
+            status: "NO_SUBSCRIPTION" | "PENDING_ACTIVATION" | "ACTIVE" | "GRACE" | "RESTRICTED" | "CANCELLED";
+        };
+        FacilityUsageSummaryDto: {
+            /** @description Billing period start (ISO) */
+            periodStart: string;
+            /** @description Billing period end (ISO) */
+            periodEnd: string;
+            /**
+             * @description Active care episodes in the cycle
+             * @example 38
+             */
+            activeEpisodes: number;
+            /**
+             * @description Appointments completed during the current cycle
+             * @example 121
+             */
+            appointmentsCompleted: number;
+            /**
+             * @description No invoice semantics — usage visibility only (PRD 02)
+             * @example true
+             */
+            informationalOnly: boolean;
+        };
+        FacilityInvoiceDto: {
+            /** @description Invoice row id */
+            id: string;
+            /** @description Invoice number (INV-####) */
+            invoiceNumber: string | null;
+            /** @description Billing period start (ISO) */
+            periodStart: string | null;
+            /** @description Billing period end (ISO) */
+            periodEnd: string | null;
+            /** @description Platform subscription fee (kobo) */
+            platformFeeKobo: number;
+            /** @description Billed active episodes in the period */
+            episodeCount: number;
+            /** @description Active-episode charge line (kobo) */
+            episodeChargeKobo: number;
+            /** @description Invoice total (kobo) */
+            amountKobo: number;
+            /**
+             * @description Payment status (PRD 02): Draft | Pending Payment | Paid | Overdue | Cancelled
+             * @enum {string}
+             */
+            status: "DRAFT" | "PENDING_PAYMENT" | "PAID" | "OVERDUE" | "CANCELLED";
+            /** @description Invoice due date (ISO) */
+            dueAt: string | null;
+            /** @description Payment date (ISO) */
+            paidAt: string | null;
+            /** @description Paystack transaction reference when known */
+            paystackReference: string | null;
+            /** @description Download invoice URL — Paystack/managed surface or null */
+            downloadUrl: string | null;
+            /** @description True when Pay Now is available (PENDING_PAYMENT/OVERDUE) */
+            canPay: boolean;
+            /** @description Invoice created at (ISO) */
+            createdAt: string;
+        };
+        FacilityInvoiceListDto: {
+            /** @description Invoice history rows */
+            invoices: components["schemas"]["FacilityInvoiceDto"][];
+            /** @description Invoices in the payment statuses (true when any) */
+            hasOutstanding: boolean;
+            /** @description Total matching rows */
+            total: number;
+            /** @description Current page */
+            page: number;
+            /** @description Page size */
+            limit: number;
+        };
+        VerifyFacilityPaymentDto: {
+            /**
+             * @description Gateway reference returned by pay/activate checkout
+             * @example FINV-8fa13bc1d2e4
+             */
+            reference: string;
+        };
+        FacilityPaymentVerifyDto: {
+            /**
+             * @description Gateway status
+             * @enum {string}
+             */
+            status: "success" | "failed" | "abandoned" | "pending" | "unknown_reference";
+            /** @description Reference checked */
+            reference: string;
+            /** @description Invoice id settled (success only) */
+            invoiceId: string | null;
+        };
+        FacilityBillingHistoryRowDto: {
+            /** @description Invoice number (INV-####) */
+            invoiceNumber: string | null;
+            /** @description Billing period start (ISO) */
+            periodStart: string | null;
+            /** @description Billing period end (ISO) */
+            periodEnd: string | null;
+            /** @description Platform subscription fee (kobo) */
+            platformFeeKobo: number;
+            /** @description Active care episodes billed */
+            episodeCount: number;
+            /** @description Active-episode charges (kobo) */
+            episodeChargeKobo: number;
+            /** @description Invoice amount (kobo) */
+            amountKobo: number;
+            /**
+             * @description Payment status
+             * @enum {string}
+             */
+            status: "DRAFT" | "PENDING_PAYMENT" | "PAID" | "OVERDUE" | "CANCELLED";
+            /** @description Payment date (ISO) */
+            paymentDate: string | null;
+            /** @description Paystack reference */
+            paystackReference: string | null;
+        };
+        FacilityBillingHistoryDto: {
+            /** @description Facility billing history rows */
+            entries: components["schemas"]["FacilityBillingHistoryRowDto"][];
+            /** @description Total history rows */
+            total: number;
+        };
+        CancelFacilityBillingDto: {
+            /** @enum {string} */
+            reason: "too_expensive" | "missing_features" | "switching" | "temporary_pause" | "low_usage" | "technical_issues" | "poor_ux" | "other";
+            /** @description Optional free-text feedback (PRD: optional even for "other") */
+            feedback?: string;
+        };
+        FacilityBillingMessageDto: {
+            /** @description Short result code */
+            code: string;
+            /** @description Human-readable result */
+            message: string;
+        };
+        SetAutoRenewDto: {
+            /** @description Desired auto-renewal state */
+            enabled: boolean;
+        };
+        FacilityBillingAckDto: {
+            /** @description Webhook acknowledged */
+            received: boolean;
         };
         FacilityResponseDto: {
             /** @description Facility ID */
@@ -10532,6 +11999,28 @@ export interface components {
              */
             longitude?: number;
         };
+        GeoJsonLineStringDto: {
+            /**
+             * @description GeoJSON geometry type
+             * @example LineString
+             * @enum {string}
+             */
+            type: "LineString";
+            /**
+             * @description Ordered [longitude, latitude] pairs forming the route
+             * @example [
+             *       [
+             *         3.349,
+             *         6.501
+             *       ],
+             *       [
+             *         3.3792,
+             *         6.5244
+             *       ]
+             *     ]
+             */
+            coordinates: number[][];
+        };
         DirectionsResponseDto: {
             /**
              * @description Route distance in meters
@@ -10543,8 +12032,10 @@ export interface components {
              * @example 720
              */
             durationSeconds: number;
+            /** @description Route geometry as a GeoJSON LineString ([lng, lat] pairs) for map rendering */
+            geometry: components["schemas"]["GeoJsonLineStringDto"];
             /**
-             * @description Google-encoded polyline (decode client-side)
+             * @description Google-encoded polyline (decode client-side) — retained for already-shipped builds
              * @example }w{eF~wzhUo@_B
              */
             polyline: string;
@@ -16130,7 +17621,7 @@ export interface components {
         };
         UpdateSettingItemDto: {
             /** @enum {string} */
-            section: "general" | "security" | "home_care" | "integrations" | "platform_info";
+            section: "general" | "security" | "home_care" | "billing" | "integrations" | "platform_info";
             /** @description Setting key (validated against known keys for the section) */
             key: string;
             /** @description JSON-serializable value */
@@ -16253,6 +17744,475 @@ export interface components {
             url: string;
             /** Format: date-time */
             expiresAt: string;
+        };
+        AdminPlanBenefitsDto: {
+            /** @example 500 */
+            aiDailyMessages?: number;
+            /** @example 2 */
+            caregiverLimit?: number;
+            /** @example 5368709120 */
+            storageBytes?: number;
+            /**
+             * @example professional
+             * @enum {string}
+             */
+            exportTier?: "basic" | "professional";
+            /** @example null */
+            trendHistoryDays?: number | null;
+            /**
+             * @example [
+             *       "AI health assistant"
+             *     ]
+             */
+            features?: string[];
+        };
+        AdminPlanDto: {
+            id: string;
+            /** @example plus_monthly */
+            code: string;
+            /** @example Tracmedy Plus (Monthly) */
+            name: string;
+            /** @enum {string} */
+            tier: "FREE" | "PLUS";
+            /**
+             * @example patients
+             * @enum {string}
+             */
+            audience: "patients" | "facility";
+            /** @example ₦3,500/month */
+            priceLabel: string;
+            /** @example 350000 */
+            priceKobo: number;
+            /** @enum {string} */
+            billingCadence: "MONTHLY" | "YEARLY";
+            /** @example 1 */
+            version: number;
+            /** @example ACTIVE */
+            status: string;
+            /** @example 12 */
+            subscribers: number;
+            /** @example ₦420,000 */
+            revenueLabel: string;
+            /** @example 42000000 */
+            revenueKobo: number;
+            /** @description Entitlement benefits JSON as a typed object. */
+            benefits: components["schemas"]["AdminPlanBenefitsDto"] | null;
+            /**
+             * @example [
+             *       "AI health assistant"
+             *     ]
+             */
+            features: string[];
+            /** Format: date-time */
+            effectiveAt?: string;
+            /** Format: date-time */
+            archivedAt?: string | null;
+        };
+        AdminPlansListDto: {
+            plans: components["schemas"]["AdminPlanDto"][];
+            /** @example patients */
+            audience: string;
+        };
+        CreatePlanDto: {
+            /** @example plus_monthly */
+            code: string;
+            /** @example Tracmedy Plus (Monthly) */
+            name: string;
+            /**
+             * @example PLUS
+             * @enum {string}
+             */
+            tier: "FREE" | "PLUS";
+            /** @example 350000 */
+            priceKobo: number;
+            /**
+             * @example MONTHLY
+             * @enum {string}
+             */
+            billingCadence: "MONTHLY" | "YEARLY";
+            /**
+             * @description Entitlement benefits JSON (aiDailyMessages, caregiverLimit, storageBytes, exportTier, trendHistoryDays, features). Stored as-is on the PricingPlan.benefits blob.
+             * @example {
+             *       "aiDailyMessages": 500
+             *     }
+             */
+            benefits?: components["schemas"]["AdminPlanBenefitsDto"] | null;
+        };
+        UpdatePlanDto: {
+            /** @example Tracmedy Plus (Monthly) */
+            name?: string;
+            /** @example 400000 */
+            priceKobo?: number;
+            /** @enum {string} */
+            billingCadence?: "MONTHLY" | "YEARLY";
+            /** @description Entitlement benefits JSON for the new version. Stored as-is on the PricingPlan.benefits blob. */
+            benefits?: components["schemas"]["AdminPlanBenefitsDto"] | null;
+            /** @description When the new version becomes effective (default now). */
+            effectiveAt?: string;
+        };
+        FacilityPlanSummaryDto: {
+            /** @enum {string} */
+            plan: "starter" | "professional" | "enterprise";
+            /** @example Professional */
+            label: string;
+            /** @example 3 */
+            facilities: number;
+            monthlyFeeLabel?: string;
+        };
+        FacilityPlansListDto: {
+            plans: components["schemas"]["FacilityPlanSummaryDto"][];
+        };
+        FacilityPlanPatchDto: {
+            /** @example facility-cuid */
+            facilityId: string;
+            /**
+             * @example professional
+             * @enum {string}
+             */
+            plan: "starter" | "professional" | "enterprise";
+            /** @description Optional note recorded in audit. */
+            note?: string;
+        };
+        FacilityPlanFacilityDto: {
+            id: string;
+            name: string;
+            tracId: string;
+            /** @enum {string} */
+            plan: "starter" | "professional" | "enterprise";
+        };
+        FacilityBillingHistoryEntryDto: {
+            id: string;
+            /** @example FAC-2504-123 */
+            invoiceCode: string | null;
+            /** @example 5000000 */
+            amountKobo: number;
+            /** @enum {string} */
+            status: "DRAFT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+            /** Format: date-time */
+            dueAt?: string | null;
+            /** Format: date-time */
+            paidAt?: string | null;
+            description?: string | null;
+        };
+        FacilityPlanResponseDto: {
+            facility: components["schemas"]["FacilityPlanFacilityDto"];
+            billingHistory: components["schemas"]["FacilityBillingHistoryEntryDto"][];
+        };
+        AdminTransactionDto: {
+            id: string;
+            /** @example PAY-9f3ab2c41d6e */
+            gatewayReference: string;
+            /** @example 350000 */
+            amountKobo: number;
+            /** @example NGN */
+            currency: string;
+            /** @enum {string} */
+            status: "INITIALIZED" | "SUCCESS" | "FAILED" | "REFUNDED";
+            /** @example paystack */
+            gateway: string;
+            /** @enum {string} */
+            kind: "SUBSCRIPTION" | "HOME_CARE" | "FACILITY" | "PAYOUT";
+            sourceId?: string | null;
+            sourceType?: string | null;
+            patientId?: string | null;
+            facilityId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminTransactionsPageDto: {
+            items: components["schemas"]["AdminTransactionDto"][];
+            /** @example 42 */
+            total: number;
+            /** @example 1 */
+            page: number;
+            /** @example 20 */
+            limit: number;
+            /** @example 3 */
+            pages: number;
+        };
+        AdminTransactionDetailDto: {
+            id: string;
+            /** @example PAY-9f3ab2c41d6e */
+            gatewayReference: string;
+            /** @example 350000 */
+            amountKobo: number;
+            /** @example NGN */
+            currency: string;
+            /** @enum {string} */
+            status: "INITIALIZED" | "SUCCESS" | "FAILED" | "REFUNDED";
+            /** @example paystack */
+            gateway: string;
+            /** @enum {string} */
+            kind: "SUBSCRIPTION" | "HOME_CARE" | "FACILITY" | "PAYOUT";
+            sourceId?: string | null;
+            sourceType?: string | null;
+            patientId?: string | null;
+            facilityId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * @description Payer tier when patient-led.
+             * @enum {string|null}
+             */
+            payerTier?: "FREE" | "PLUS" | null;
+            /** @description Verified-against-gateway flag (14B). */
+            verifiedAgainstGateway?: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last successful verify.
+             */
+            lastVerifiedAt?: string | null;
+        };
+        VerifyTransactionDto: {
+            /** @description Audit note attached to the verify event. */
+            note?: string;
+        };
+        VerifyRefusalDto: {
+            /** @example REFUSED_AMOUNT_MISMATCH */
+            code: string;
+            message: string;
+        };
+        GatewayVerificationDto: {
+            status: string;
+            reference: string;
+            amountKobo: number;
+            currency: string;
+            /** Format: date-time */
+            paidAt: string | null;
+            gatewayResponse: string | null;
+        };
+        VerifyResponseDto: {
+            /**
+             * @example verified
+             * @enum {string}
+             */
+            result: "verified" | "refused";
+            refusals?: components["schemas"]["VerifyRefusalDto"][];
+            /** @description Gateway truth returned by Paystack. */
+            gateway?: components["schemas"]["GatewayVerificationDto"] | null;
+            ledger?: components["schemas"]["AdminTransactionDetailDto"];
+            /** @description True when the ledger row was already SUCCESS (no-op replay). */
+            alreadyVerified?: boolean;
+        };
+        AdminOverdueInvoiceDto: {
+            id: string;
+            /** @example FAC-2504-123 */
+            invoiceCode: string | null;
+            /** @enum {string} */
+            payerType: "PATIENT" | "FACILITY";
+            payerId: string;
+            payerName?: string | null;
+            /** @example 5000000 */
+            amountKobo: number;
+            /** @example 5000000 */
+            balanceKobo: number;
+            /** @enum {string} */
+            status: "DRAFT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+            /** Format: date-time */
+            dueAt: string;
+            /** Format: date-time */
+            paidAt?: string | null;
+            description?: string | null;
+            /** @example 12 */
+            daysOverdue: number;
+        };
+        AdminOverduePageDto: {
+            items: components["schemas"]["AdminOverdueInvoiceDto"][];
+            /** @example 5 */
+            total: number;
+            /** @example 1 */
+            page: number;
+            /** @example 20 */
+            limit: number;
+            /** @example 1 */
+            pages: number;
+        };
+        OverdueReminderDto: {
+            /** @description Channel the reminder is recorded for. */
+            channel?: string;
+        };
+        OverdueActionDto: {
+            /** @example reminder recorded */
+            message: string;
+            invoiceId: string;
+            /** @enum {string} */
+            status: "DRAFT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+            recipient?: string | null;
+            channel?: string | null;
+            delivery?: string | null;
+        };
+        EscalateInvoiceDto: {
+            /** @example Facility unreachable — escalated to collections. */
+            reason: string;
+            /** @description Free-form note. */
+            note?: string;
+            /** @description Assignee tracmedy_admin id. */
+            assigneeId?: string;
+            /** @description Follow-up due date (ISO). */
+            followUpAt?: string;
+        };
+        InvoiceViewDto: {
+            id: string;
+            invoiceCode?: string | null;
+            /** @enum {string} */
+            payerType: "PATIENT" | "FACILITY";
+            payerId: string;
+            payerName?: string | null;
+            /** @example 5000000 */
+            amountKobo: number;
+            /** @example NGN */
+            currency: string;
+            /** @enum {string} */
+            status: "DRAFT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+            /** Format: date-time */
+            dueAt: string;
+            /** Format: date-time */
+            paidAt?: string | null;
+            paystackReference?: string | null;
+            description?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Ledger rows linked to this invoice. */
+            relatedTransactions: components["schemas"]["AdminTransactionDto"][];
+        };
+        AdminPayoutDto: {
+            id: string;
+            providerId: string;
+            providerName?: string | null;
+            providerRole?: string | null;
+            /** @example 1516000 */
+            grossKobo: number;
+            /** @example 50000 */
+            commissionKobo: number;
+            /** @example 0 */
+            adjustmentsKobo: number;
+            /** @example 1466000 */
+            netKobo: number;
+            /** @enum {string} */
+            status: "PENDING" | "PROCESSING" | "PAID" | "ON_HOLD" | "REVERSED" | "DISPUTED" | "CANCELLED";
+            /** Format: date-time */
+            holdingUntil?: string | null;
+            /** Format: date-time */
+            paidAt?: string | null;
+            reference?: string | null;
+            sourceRequestId?: string | null;
+            sourceInvoiceId?: string | null;
+            transferReference?: string | null;
+            failureReason?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminPayoutsPageDto: {
+            items: components["schemas"]["AdminPayoutDto"][];
+            /** @example 8 */
+            total: number;
+            /** @example 1 */
+            page: number;
+            /** @example 20 */
+            limit: number;
+            /** @example 1 */
+            pages: number;
+            /** @example 4 */
+            awaitingCompletion: number;
+        };
+        PayoutGenerateResultDto: {
+            /** @example Payout queue generated from eligible completed home-care work. */
+            message: string;
+            /** @example 2 */
+            generated: number;
+            /** @example 1 */
+            skipped: number;
+            items: components["schemas"]["AdminPayoutDto"][];
+        };
+        PayoutRecipientDto: {
+            /** @description Home-care provider id */
+            providerId: string;
+            /**
+             * @description Bank account number (verified with the gateway; never stored)
+             * @example 0123456789
+             */
+            accountNumber: string;
+            /** @description Bank code (Paystack bank id code) */
+            bankCode: string;
+            /** @description Account name override; falls back to the gateway-verified name */
+            accountName?: string;
+        };
+        PayoutRecipientResponseDto: {
+            /** @example PAYOUT_RECIPIENT_ONBOARDED */
+            code: string;
+            message: string;
+            recipientCode?: string | null;
+            bankAccountName?: string | null;
+            /** @example ****1234 */
+            maskedAccountNumber: string;
+            bankCode: string;
+            /** @description true when a verified recipient already existed */
+            alreadyOnboarded: boolean;
+        };
+        PayoutActionDto: {
+            /** @example PAYOUT_RELEASED */
+            code: string;
+            message: string;
+            transferReference?: string | null;
+            /** @description true when only the ledger intent was recorded (transfer rails not viable). */
+            ledgerIntentOnly?: boolean;
+        };
+        PayoutHoldDto: {
+            /** @description Reason recorded for the hold. */
+            reason?: string;
+        };
+        PayoutReverseDto: {
+            /** @example Duplicate payment — invoice refunded. */
+            reason: string;
+            /** @description Amount to reverse in kobo; defaults to the full net of the payout. */
+            amountKobo?: number;
+        };
+        RevenueSummaryDto: {
+            /** @example 12500000 */
+            grossKobo: number;
+            /** @example 187500 */
+            processingFeesKobo: number;
+            /** @example 12312500 */
+            netKobo: number;
+            /** @example 64 */
+            transactionCount: number;
+            /** @example 195312 */
+            avgTransactionKobo: number;
+            /** @example 3100000 */
+            mtdKobo: number;
+            mtdGrowthPercent?: number | null;
+            /** @example 82.4 */
+            collectionRatePercent: number;
+        };
+        RevenueByPayerDto: {
+            /** @example 3000000 */
+            facility: number;
+            /** @example 3500000 */
+            patient: number;
+        };
+        RevenueDistributionDto: {
+            /** @description By plan code (SUBSCRIPTION ledger). */
+            byPlan: {
+                [key: string]: number;
+            };
+            byPayer: components["schemas"]["RevenueByPayerDto"];
+        };
+        RevenueTrendPointDto: {
+            /** @example 2026-10-05 */
+            bucket: string;
+            /** @example 2500000 */
+            grossKobo: number;
+            /** @example 37500 */
+            feesKobo: number;
+            /** @example 2462500 */
+            netKobo: number;
+            /** @example 9 */
+            count: number;
+        };
+        RevenueResponseDto: {
+            summary: components["schemas"]["RevenueSummaryDto"];
+            distribution: components["schemas"]["RevenueDistributionDto"];
+            trend: components["schemas"]["RevenueTrendPointDto"][];
         };
         TestPushDto: {
             /**
@@ -19561,6 +21521,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Image file plus optional imageType (check_in | lab_result | wound_photo) and JSON metadata (e.g. {"caption":"…"}). */
         requestBody: {
             content: {
                 "multipart/form-data": {
@@ -19569,6 +21530,13 @@ export interface operations {
                      * @description Image file to upload
                      */
                     file?: string;
+                    /**
+                     * @description Image category (stored as a Cloudinary tag)
+                     * @enum {string}
+                     */
+                    imageType?: "check_in" | "lab_result" | "wound_photo";
+                    /** @description JSON-encoded metadata (stored as Cloudinary context), e.g. {"caption":"Day 3 dressing"} */
+                    metadata?: string;
                 };
             };
         };
@@ -19581,6 +21549,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         url?: string;
+                        imageType?: string | null;
+                        metadata?: {
+                            [key: string]: unknown;
+                        } | null;
                     };
                 };
             };
@@ -20252,7 +22224,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
             };
         };
     };
@@ -20303,7 +22277,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
             };
             /** @description Service unavailable — AI not configured */
             503: {
@@ -20449,7 +22425,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
             };
             /** @description Service unavailable — AI not configured */
             503: {
@@ -20510,7 +22488,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
             };
             /** @description Service unavailable — AI not configured */
             503: {
@@ -20568,7 +22548,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
             };
             /** @description Service unavailable — AI not configured */
             503: {
@@ -20634,6 +22616,235 @@ export interface operations {
             };
             /** @description Too Many Requests — request limit exceeded */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiDailyLimitExceptionDto"];
+                };
+            };
+        };
+    };
+    SubscriptionsController_getPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plan catalogue */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPlansResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SubscriptionsController_getMySubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscription data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionMeResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SubscriptionsController_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionCheckoutDto"];
+            };
+        };
+        responses: {
+            /** @description Checkout initialized */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionCheckoutResponseDto"];
+                };
+            };
+            /** @description Unknown or missing plan */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An active subscription already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SubscriptionsController_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionVerifyDto"];
+            };
+        };
+        responses: {
+            /** @description Verification result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionVerifyResponseDto"];
+                };
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PaystackWebhookController_paystackWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description HMAC-SHA512 hex digest of the raw request body */
+                "x-paystack-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paystack event payload (subscription.create, invoice.payment_failed, invoice.update, charge.success, subscription.not_renew, subscription.disable, …) */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example invoice.payment_failed */
+                    event?: string;
+                    data?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook acknowledged (signature valid; event queued) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example true */
+                        received?: boolean;
+                    };
+                };
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid signature */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests — per-IP webhook flood ceiling */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PaymentsController_myTransactions: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-based) */
+                page?: number;
+                /** @description Page size */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated ledger */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionsPageResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21064,6 +23275,363 @@ export interface operations {
             };
             /** @description Internal server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityBillingController_getSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingSubscriptionDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_activate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateFacilityBillingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityCheckoutDto"];
+                };
+            };
+            /** @description Already active */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityBillingController_estimate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingEstimateDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityUsageSummaryDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_invoices: {
+        parameters: {
+            query?: {
+                /** @description Invoice status filter. Accepts the response-contract token PENDING_PAYMENT (mapped to the persisted OPEN) — or the legacy DB members OPEN / ESCALATED / PAYMENT_PLAN. PAID / OVERDUE / DRAFT / CANCELLED pass through. */
+                status?: "DRAFT" | "PENDING_PAYMENT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+                /** @description 1-based page */
+                page?: number;
+                /** @description Page size (max 50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityInvoiceListDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_invoiceDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityInvoiceDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_payInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Invoice id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    callbackUrl?: string | null;
+                };
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityCheckoutDto"];
+                };
+            };
+            /** @description INVOICE_NOT_PAYABLE / PAYMENT_NOT_CONFIGURED / PAYMENT_PROVIDER_ERROR */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityBillingController_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyFacilityPaymentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPaymentVerifyDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_paymentMethod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPaymentMethodDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingHistoryDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelFacilityBillingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingMessageDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingController_reactivate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingMessageDto"];
+                };
+            };
+            /** @description NOT_SCHEDULED_TO_CANCEL / REACTIVATION_WINDOW_CLOSED */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FacilityBillingController_autoRenew: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAutoRenewDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingMessageDto"];
+                };
+            };
+        };
+    };
+    FacilityBillingWebhookController_paystackWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description HMAC-SHA512 hex digest of the raw request body */
+                "x-paystack-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paystack event payload (charge.success, charge.failed) */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example charge.success */
+                    event?: string;
+                    data?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityBillingAckDto"];
+                };
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid signature */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -26006,31 +28574,6 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Referral data returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    SubscriptionsController_getMySubscription: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Subscription data */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -31649,7 +34192,7 @@ export interface operations {
     AdminSettingsController_revisions: {
         parameters: {
             query?: {
-                section?: "general" | "security" | "home_care" | "integrations" | "platform_info";
+                section?: "general" | "security" | "home_care" | "billing" | "integrations" | "platform_info";
                 page?: number;
                 limit?: number;
             };
@@ -31888,6 +34431,658 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupportTicketMessageDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_listPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlansListDto"];
+                };
+            };
+            /** @description Finance permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_createPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlanDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanDto"];
+                };
+            };
+            /** @description Plan code already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_updatePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlanDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_deactivatePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_activatePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_listFacilityPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPlansListDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_patchFacilityPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacilityPlanPatchDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPlanResponseDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_listTransactions: {
+        parameters: {
+            query?: {
+                /** @description Ledger row status filter. */
+                status?: "INITIALIZED" | "SUCCESS" | "FAILED" | "REFUNDED";
+                /** @description Date-range preset (7/30/90d) or custom with startDate/endDate. */
+                range?: "7" | "30" | "90" | "custom";
+                /** @description Custom range start (ISO date). */
+                startDate?: string;
+                /** @description Custom range end (ISO date). */
+                endDate?: string;
+                /** @description Payer type filter. */
+                payerType?: "patient" | "facility";
+                /** @description Ledger category filter. */
+                category?: "SUBSCRIPTION" | "HOME_CARE" | "FACILITY" | "PAYOUT";
+                /** @description Gateway reference substring search. */
+                gatewayRef?: string;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTransactionsPageDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_exportTransactions: {
+        parameters: {
+            query?: {
+                /** @description Ledger row status filter. */
+                status?: "INITIALIZED" | "SUCCESS" | "FAILED" | "REFUNDED";
+                /** @description Date-range preset (7/30/90d) or custom with startDate/endDate. */
+                range?: "7" | "30" | "90" | "custom";
+                /** @description Custom range start (ISO date). */
+                startDate?: string;
+                /** @description Custom range end (ISO date). */
+                endDate?: string;
+                /** @description Payer type filter. */
+                payerType?: "patient" | "facility";
+                /** @description Ledger category filter. */
+                category?: "SUBSCRIPTION" | "HOME_CARE" | "FACILITY" | "PAYOUT";
+                /** @description Gateway reference substring search. */
+                gatewayRef?: string;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_transactionDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTransactionDetailDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_verifyTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyTransactionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyResponseDto"];
+                };
+            };
+            /** @description PAYMENT_PROVIDER_ERROR */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description PAYMENT_NOT_CONFIGURED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_listOverdue: {
+        parameters: {
+            query?: {
+                /** @description Only OPEN/OVERDUE/ESCALATED/PAYMENT_PLAN are valid overdue filters. */
+                status?: "DRAFT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN";
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverduePageDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_sendReminder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverdueReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverdueActionDto"];
+                };
+            };
+            /** @description REMINDER_ALREADY_SENT within window */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_escalateInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EscalateInvoiceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverdueActionDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_invoiceView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceViewDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_listPayouts: {
+        parameters: {
+            query?: {
+                status?: "PENDING" | "PROCESSING" | "PAID" | "ON_HOLD" | "REVERSED" | "DISPUTED" | "CANCELLED";
+                /** @description Provider id filter. */
+                providerId?: string;
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPayoutsPageDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_generatePayouts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutGenerateResultDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_onboardPayoutRecipient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutRecipientDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutRecipientResponseDto"];
+                };
+            };
+            /** @description BANK_ACCOUNT_VERIFICATION_FAILED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description PROVIDER_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description PAYMENT_NOT_CONFIGURED (surfaced as conflict type) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_payoutDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPayoutDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_confirmPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutActionDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_holdPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutHoldDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutActionDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_releasePayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutActionDto"];
+                };
+            };
+            /** @description PAYOUT_HELD inside holding period */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPaymentsController_retryPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutActionDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_reversePayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutReverseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutActionDto"];
+                };
+            };
+        };
+    };
+    AdminPaymentsController_revenue: {
+        parameters: {
+            query?: {
+                period?: "daily" | "weekly" | "monthly";
+                /** @description Range start (ISO date). Defaults to 12 months ago. */
+                from?: string;
+                /** @description Range end (ISO date). Defaults to now. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueResponseDto"];
                 };
             };
         };

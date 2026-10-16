@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
+import { downloadServerReportExport } from "@/lib/api/reports";
 import {
   getConnectedPatients,
   getHospitalFacility,
@@ -173,6 +174,7 @@ export default function ConnectedPatientsPage() {
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [error, setError] = useState("");
   const [isConnectionDialogOpen, setIsConnectionDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     capturePostHogEvent("connected_patients_viewed");
@@ -293,30 +295,30 @@ export default function ConnectedPatientsPage() {
   const rangeStart = filteredByDate.length > 0 ? (meta.page - 1) * meta.limit + 1 : 0;
   const rangeEnd = (meta.page - 1) * meta.limit + filteredByDate.length;
 
-  const exportCsv = () => {
-    const rows = [["Patient Name", "Tracmedy ID", "Hospital ID", "Status", "Connected Since"]];
-    for (const record of filteredByDate) {
-      rows.push([
-        record.name ?? "",
-        record.tracmedyPatientId || "--",
-        record.externalPatientId || "N/A",
-        formatStatus(record.status),
-        formatDate(record.connectedAt),
-      ]);
+  const exportCsv = async () => {
+    setIsExporting(true);
+    setError("");
+    try {
+      const dateToValue = dateTo || new Date().toISOString().slice(0, 10);
+      await downloadServerReportExport(
+        { dateFrom: dateFrom || "1970-01-01", dateTo: dateToValue },
+        {
+          report: "connected_patients",
+          format: "csv",
+          filters: {
+            status: statusFilter !== "all" ? statusFilter : undefined,
+          },
+        },
+      );
+      capturePostHogEvent("connected_patients_exported", {
+        result_count: filteredByDate.length,
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to export connected patients.");
+    } finally {
+      setIsExporting(false);
     }
-    const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "connected-patients.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-    capturePostHogEvent("connected_patients_exported", {
-      result_count: filteredByDate.length,
-    });
   };
-
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -451,12 +453,12 @@ export default function ConnectedPatientsPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={exportCsv}
-                  disabled={filteredByDate.length === 0}
+                  onClick={() => void exportCsv()}
+                  disabled={isExporting || filteredByDate.length === 0}
                   className="h-10 gap-2 px-2 text-sm font-medium text-slate-900 hover:bg-slate-50 lg:ml-auto"
                 >
                   <Download className="h-4 w-4" />
-                  Export
+                  {isExporting ? "Exporting…" : "Export"}
                 </Button>
               </div>
 

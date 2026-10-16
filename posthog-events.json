@@ -118,6 +118,7 @@
       "settings_hospital_profile_saved": "User saved hospital profile settings",
       "settings_hospital_profile_reset": "User reset hospital profile settings",
       "settings_logo_selected": "User selected a hospital logo image",
+      "settings_hospital_location_pinned": "User pinned the hospital location on the settings map",
       "settings_configuration_viewed": "User viewed configuration settings",
       "settings_configuration_saved": "User saved configuration settings",
       "settings_configuration_reset": "User reset configuration settings",

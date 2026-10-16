@@ -31,6 +31,12 @@ export type CareAssistantMessage = {
   content: string;
   retrievedSources: CareAssistantEvidence[];
   createdAt: string;
+  answerStatus?: string;
+  safetyLevel?: string;
+  dataSufficiency?: string;
+  dataConfidence?: number;
+  sources?: CareAssistantSource[];
+  missingData?: string[];
 };
 
 export type CareAssistantSuggestionsResponse = {
