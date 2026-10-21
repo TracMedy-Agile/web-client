@@ -4,8 +4,25 @@ import type { RecoveryTrendPoint } from "@/components/dashboard/RecoveryTrend";
 import type { ClinicianWorkload as DashboardClinicianWorkload } from "@/components/dashboard/WorkloadStatus";
 import { getAlertsSnapshot } from "@/lib/api/alerts";
 import { getCareEpisodes } from "@/lib/api/care-episodes";
-import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
+import { getReportsDateRange, getReportsSnapshot, type ReportsDateRange } from "@/lib/api/reports";
+import { sharedRequest } from "@/lib/api/request-cache";
 import { apiClient } from "@/lib/services/auth/api-client";
+
+// The dashboard's metric cards and panels load the same heavy bundles on the same 60s cycle;
+// sharing them for a few seconds collapses the duplicate fan-out into one set of requests.
+const DASHBOARD_SHARE_MS = 15_000;
+
+export function getDashboardAlertsSnapshot() {
+  return sharedRequest("dashboard:alerts", DASHBOARD_SHARE_MS, getAlertsSnapshot);
+}
+
+export function getDashboardReportsSnapshot(range: ReportsDateRange = getReportsDateRange(30)) {
+  return sharedRequest(`dashboard:reports:${range.dateFrom}:${range.dateTo}`, DASHBOARD_SHARE_MS, () => getReportsSnapshot(range));
+}
+
+export function getDashboardEpisodes() {
+  return sharedRequest("dashboard:episodes", DASHBOARD_SHARE_MS, () => getCareEpisodes({ page: 1, limit: 500 }));
+}
 
 type FacilityForecastSummary = components["schemas"]["FacilityForecastSummaryDto"];
 type FacilityRecoveryTrend = components["schemas"]["FacilityRecoveryTrendDto"];
@@ -67,10 +84,10 @@ function relativeTime(value: string) {
 }
 
 export async function getDashboardLiveAlerts(limit = 6, clinicianId?: string): Promise<LiveAlert[]> {
-  const snapshot = await getAlertsSnapshot();
+  const snapshot = await getDashboardAlertsSnapshot();
   let activeAlerts = snapshot.active;
   if (clinicianId) {
-    const episodes = await getCareEpisodes({ page: 1, limit: 500 }).catch(() => null);
+    const episodes = await getDashboardEpisodes().catch(() => null);
     if (!episodes) return [];
     const assignedEpisodeIds = new Set(episodes.data.filter((episode) => episode.clinicianId === clinicianId).map((episode) => episode.id));
     activeAlerts = activeAlerts.filter((alert) => assignedEpisodeIds.has(alert.episodeId));
@@ -97,7 +114,7 @@ function normalizeLoad(value: string): DashboardClinicianWorkload["load"] {
 
 export async function getDashboardClinicianWorkload(limit = 4, clinicianId?: string, clinicianName?: string): Promise<DashboardClinicianWorkload[]> {
   try {
-    const snapshot = await getReportsSnapshot(getReportsDateRange(30));
+    const snapshot = await getDashboardReportsSnapshot();
     const clinicians = clinicianId ? snapshot.clinicians.filter((clinician) => clinician.id === clinicianId) : snapshot.clinicians;
     if (clinicians.length > 0 || !clinicianId) {
       return clinicians.slice(0, limit).map((clinician) => ({
@@ -115,8 +132,8 @@ export async function getDashboardClinicianWorkload(limit = 4, clinicianId?: str
 
   if (!clinicianId) return [];
   const [episodes, alerts] = await Promise.all([
-    getCareEpisodes({ page: 1, limit: 500 }).catch(() => null),
-    getAlertsSnapshot().catch(() => null),
+    getDashboardEpisodes().catch(() => null),
+    getDashboardAlertsSnapshot().catch(() => null),
   ]);
   const assignedEpisodes = episodes?.data.filter((episode) => episode.clinicianId === clinicianId && episode.status.toLowerCase() === "active") ?? [];
   const assignedEpisodeIds = new Set(assignedEpisodes.map((episode) => episode.id));

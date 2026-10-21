@@ -2,6 +2,8 @@
 
 import { useEffect, type ReactNode } from "react";
 
+import { clearBrowserAccessToken, clearSessionCaches, getBrowserAccessToken } from "@/lib/services/auth/browser-token";
+
 const SESSION_EXPIRED_EVENT = "tracmedy:session-expired";
 const MAX_TIMER_DELAY = 2_147_000_000;
 const REFRESH_EARLY_MS = 30_000;
@@ -28,6 +30,7 @@ function getTokenExpiration(accessToken: string) {
 }
 
 async function endExpiredSession() {
+  clearSessionCaches();
   try {
     await fetch("/api/auth/logout", {
       method: "POST",
@@ -57,6 +60,8 @@ export default function SessionExpiryGuard({ children }: { children: ReactNode }
           handleExpiredSession();
           return;
         }
+        // The cookie now holds a new access token — drop the cached one.
+        clearBrowserAccessToken();
         await scheduleExpirationCheck();
       } catch {
         handleExpiredSession();
@@ -65,18 +70,7 @@ export default function SessionExpiryGuard({ children }: { children: ReactNode }
 
     async function scheduleExpirationCheck() {
       try {
-        const response = await fetch("/api/auth/get-token", {
-          credentials: "include",
-          cache: "no-store",
-        });
-        const payload: unknown = await response.json();
-        const accessToken =
-          typeof payload === "object" &&
-          payload !== null &&
-          "accessToken" in payload &&
-          typeof payload.accessToken === "string"
-            ? payload.accessToken
-            : null;
+        const accessToken = await getBrowserAccessToken();
         if (!accessToken || !isActive) return;
 
         const expiration = getTokenExpiration(accessToken);

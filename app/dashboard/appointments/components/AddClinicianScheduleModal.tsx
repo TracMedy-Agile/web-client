@@ -1,4 +1,6 @@
-﻿"use client";
+"use client";
+
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Check, Clock3, Coffee, Loader2, X } from "lucide-react";
@@ -137,15 +139,6 @@ function normalizeClinician(record: ApiRecord): ClinicianOption {
   };
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function authorizedRequest(path: string, init?: RequestInit) {
   const accessToken = await getAccessToken();

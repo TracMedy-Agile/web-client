@@ -1,3 +1,5 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+import { sharedRequest } from "@/lib/api/request-cache";
 import type { components } from "@/docs/types/api";
 
 // Facility-scoped patient list, profile, and invite endpoints are defined in Back-end/openapi.yaml.
@@ -83,15 +85,6 @@ export type HospitalFacility = {
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, init?: RequestInit, query?: URLSearchParams) {
   const accessToken = await getAccessToken();
@@ -155,8 +148,9 @@ function getRecordArray(value: unknown): ApiRecord[] {
   return value.map(asRecord).filter((item): item is ApiRecord => Boolean(item));
 }
 
+// Facility identity is stable for the session (cleared on sign-in/out); share it across callers.
 export async function getHospitalFacility(): Promise<HospitalFacility> {
-  const payload = await request("/auth/hospital");
+  const payload = await sharedRequest("session:auth-hospital:connected-patients", 5 * 60_000, () => request("/auth/hospital"));
   const outer = asRecord(payload);
   const record = asRecord(outer?.data) ?? outer;
   const facility = record?.facility && typeof record.facility === "object" ? (record.facility as Record<string, unknown>) : null;

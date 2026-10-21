@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, HeartPulse, ShieldAlert, TrendingUp, Users } from "lucide-react";
 import MetricCard from "@/components/dashboard/MetricCard";
 
-import { getAlertsSnapshot } from "@/lib/api/alerts";
-import { getCareEpisodes, type CareEpisodeRecord } from "@/lib/api/care-episodes";
-import { getFacilityForecastSummary } from "@/lib/api/dashboard";
-import { getReportsDateRange, getReportsSnapshot } from "@/lib/api/reports";
+import { type CareEpisodeRecord } from "@/lib/api/care-episodes";
+import { getDashboardAlertsSnapshot, getDashboardEpisodes, getDashboardReportsSnapshot, getFacilityForecastSummary } from "@/lib/api/dashboard";
+import { startVisiblePolling } from "@/lib/visible-polling";
 
 type Trend = { change: string; type: "positive" | "negative" };
 type DashboardMetrics = {
@@ -98,9 +97,9 @@ function isHighRiskEpisode(episode: CareEpisodeRecord) {
 }
 
 function buildMetrics(
-  episodes: Awaited<ReturnType<typeof getCareEpisodes>>,
-  alerts: Awaited<ReturnType<typeof getAlertsSnapshot>>,
-  report: Awaited<ReturnType<typeof getReportsSnapshot>> | null,
+  episodes: Awaited<ReturnType<typeof getDashboardEpisodes>>,
+  alerts: Awaited<ReturnType<typeof getDashboardAlertsSnapshot>>,
+  report: Awaited<ReturnType<typeof getDashboardReportsSnapshot>> | null,
   forecast: Awaited<ReturnType<typeof getFacilityForecastSummary>> | null,
 ): DashboardMetrics {
   const today = dateKeyForOffset(0);
@@ -150,10 +149,11 @@ export default function DashboardMetricCards() {
       if (showLoading) setIsLoading(true);
       setHasError(false);
       try {
+        // Shared with the dashboard panels (same 60s cycle) — see lib/api/dashboard.ts.
         const [episodes, alerts, report, forecast] = await Promise.all([
-          getCareEpisodes({ page: 1, limit: 500 }),
-          getAlertsSnapshot(),
-          getReportsSnapshot(getReportsDateRange(30)).catch(() => null),
+          getDashboardEpisodes(),
+          getDashboardAlertsSnapshot(),
+          getDashboardReportsSnapshot().catch(() => null),
           getFacilityForecastSummary().catch(() => null),
         ]);
         if (!ignore) {
@@ -171,10 +171,10 @@ export default function DashboardMetricCards() {
     };
 
     void loadMetrics(true);
-    const interval = window.setInterval(() => void loadMetrics(false), POLL_INTERVAL_MS);
+    const stopPolling = startVisiblePolling(() => void loadMetrics(false), POLL_INTERVAL_MS);
     return () => {
       ignore = true;
-      window.clearInterval(interval);
+      stopPolling();
     };
   }, []);
 

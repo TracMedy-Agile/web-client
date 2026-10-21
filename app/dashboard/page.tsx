@@ -12,6 +12,7 @@ import {
   getDashboardRecoveryTrend,
   type DashboardRecoveryTrendRange,
 } from "@/lib/api/dashboard";
+import { startVisiblePolling } from "@/lib/visible-polling";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -42,10 +43,10 @@ export default function DashboardPage() {
     };
 
     void loadDashboardPanels(true);
-    const interval = window.setInterval(() => void loadDashboardPanels(false), POLL_INTERVAL_MS);
+    const stopPolling = startVisiblePolling(() => void loadDashboardPanels(false), POLL_INTERVAL_MS);
     return () => {
       ignore = true;
-      window.clearInterval(interval);
+      stopPolling();
     };
   }, [isClinician, user?.id, user?.name]);
 

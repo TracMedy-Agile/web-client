@@ -1,3 +1,4 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import type { components } from "@/docs/types/api";
 
 type ApiAuditLog = components["schemas"]["AuditLogResponseDto"];
@@ -90,9 +91,7 @@ function humanize(value: string) {
 }
 
 async function request(path: string, query?: URLSearchParams): Promise<unknown> {
-  const tokenResponse = await fetch("/api/auth/get-token");
-  const tokenPayload = await tokenResponse.json().catch(() => null);
-  const accessToken = stringValue(asRecord(tokenPayload)?.accessToken);
+  const accessToken = await getAccessToken();
   const response = await fetch(`${BASE}${path}${query?.toString() ? `?${query}` : ""}`, {
     cache: "no-store",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,

@@ -37,6 +37,7 @@
       "care_episode_message_opened": "User opened messaging from a care episode",
       "care_episode_close_opened": "User opened care episode closure",
       "clinical_media_viewed": "User viewed clinical media details",
+      "clinical_media_reviewed": "Clinician marked a check-in image as reviewed",
       "clinical_media_downloaded": "User downloaded clinical media",
       "care_team_viewed": "User viewed a care episode team",
       "add_clinician_opened": "User opened the add clinician directory",
@@ -118,6 +119,7 @@
       "settings_hospital_profile_saved": "User saved hospital profile settings",
       "settings_hospital_profile_reset": "User reset hospital profile settings",
       "settings_logo_selected": "User selected a hospital logo image",
+      "settings_cover_selected": "User selected a hospital cover photo",
       "settings_hospital_location_pinned": "User pinned the hospital location on the settings map",
       "settings_configuration_viewed": "User viewed configuration settings",
       "settings_configuration_saved": "User saved configuration settings",
@@ -145,6 +147,7 @@
       "settings_post_cancellation_overdue_viewed": "User viewed overdue invoice after cancellation",
       "settings_roles_viewed": "User viewed roles and permissions settings",
       "settings_roles_reset": "User reset roles and permissions changes",
+      "settings_roles_saved": "User saved permission policies",
       "settings_roles_action_unavailable": "User clicked an unavailable roles and permissions action"
     },
     "system": {

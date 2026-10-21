@@ -29,6 +29,7 @@ import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import {
   generateEpisodeInsight,
   getLatestRecoverySummary,
+  getRecoverySummarySourceLabels,
   type EpisodeInsightPayload,
 } from "@/lib/api/ai";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ import {
   getCareEpisodeDailyVitals,
   getCareEpisodeLabResults,
   getCareEpisodeMedia,
+  reviewCareEpisodeMedia,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeMedicationLogs,
   getCareEpisodeTimelinePage,
@@ -362,12 +364,13 @@ function buildMediaHistory(items: EpisodeMediaItem[], patientCode: string): Clin
   return items
     .filter((item) => Boolean(item.url))
     .map((item, index) => ({
-      id: `${item.checkInId}-${index}`,
+      id: item.mediaId || `${item.checkInId}-${index}`,
       source: "checkin" as const,
-      sourceId: item.checkInId,
+      // Check-in images are reviewed by their stable `{checkInId}:{index}` media ID.
+      sourceId: item.mediaId || null,
       title: item.caption || `Check-in Upload ${index + 1}`,
       type: item.type || "Check-in Image",
-      status: "Pending review" as const,
+      status: item.reviewStatus === "reviewed" ? "Reviewed" as const : "Pending review" as const,
       priority: null,
       uploadedAt: formatUploadedAt(item.submittedAt),
       kind: "image" as const,
@@ -595,6 +598,8 @@ export default function CareEpisodeInsightsPage() {
   const [mediaStatusOverrides, setMediaStatusOverrides] = useState<Record<string, ClinicalMediaItem["status"]>>({});
   const [mediaReviewError, setMediaReviewError] = useState("");
   const [aiSummary, setAiSummary] = useState<EpisodeInsightPayload | null>(null);
+  // Backend-attributed sources for the current summary; null until known.
+  const [aiSourceLabels, setAiSourceLabels] = useState<string[] | null>(null);
   const [aiGeneratedAt, setAiGeneratedAt] = useState("");
   const [aiSuggestionId, setAiSuggestionId] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "generating" | "error">("idle");
@@ -625,6 +630,19 @@ export default function CareEpisodeInsightsPage() {
       }
     }
 
+    if (media.status === "Pending review" && media.source === "checkin" && media.sourceId) {
+      try {
+        const reviewed = await reviewCareEpisodeMedia(episodeId, media.sourceId, { status: "reviewed" });
+        setMediaHistory((current) => current.map((item) => item.mediaId === reviewed.mediaId ? reviewed : item));
+        capturePostHogEvent("clinical_media_reviewed", { episode_id: episodeId, source: "checkin" });
+        setActiveMedia({ ...media, status: "Reviewed" });
+      } catch (requestError) {
+        setMediaReviewError(requestError instanceof Error ? requestError.message : "Unable to mark this image as reviewed.");
+      }
+      return;
+    }
+
+    // Latest-check-in fallback images carry no media ID, so their badge can only change locally.
     if (media.status === "Pending review") {
       setMediaStatusOverrides((current) => ({ ...current, [media.id]: "Reviewed" }));
       setActiveMedia({ ...media, status: "Reviewed" });
@@ -644,7 +662,12 @@ export default function CareEpisodeInsightsPage() {
         setAiSuggestionId(response.suggestionId ?? null);
         setAiGeneratedAt(new Date().toISOString());
         setAiDataNotice(aiDataNoticeForInsight(response.insight));
+        setAiSourceLabels(null);
         capturePostHogEvent("ai_insight_viewed", { source: "episode", episode_id: episodeId });
+        // The generate response carries no source attribution; read it from the stored summary.
+        getLatestRecoverySummary(episodeId)
+          .then((latest) => setAiSourceLabels(getRecoverySummarySourceLabels(latest)))
+          .catch(() => setAiSourceLabels(null));
       } else {
         setAiDataNotice(aiDataNoticeForInsight(response.insight));
         setAiError("AI could not generate a usable insight from the available episode data.");
@@ -676,12 +699,14 @@ export default function CareEpisodeInsightsPage() {
           setAiSuggestionId(response.suggestionId ?? null);
           setAiGeneratedAt(response.generatedAt ?? "");
           setAiDataNotice(aiDataNoticeForInsight(response.summary));
+          setAiSourceLabels(getRecoverySummarySourceLabels(response));
           capturePostHogEvent("ai_insight_viewed", { source: "recovery_summary", episode_id: episodeId });
         } else {
           setAiSummary(null);
           setAiSuggestionId(null);
           setAiGeneratedAt("");
           setAiDataNotice(aiDataNoticeForInsight(null));
+          setAiSourceLabels(null);
         }
       } catch (requestError) {
         if (!ignore) setAiError(requestError instanceof Error ? requestError.message : "Unable to load latest AI summary.");
@@ -830,6 +855,11 @@ export default function CareEpisodeInsightsPage() {
     symptoms.length > 0 ? "Symptoms" : null,
     patientNotes.length > 0 ? "Patient Notes" : null,
   ].filter((source): source is string => Boolean(source));
+  // With a summary, list only what the backend says fed it; before one exists, list available data.
+  const integratedSources = aiSummary && aiSourceLabels ? aiSourceLabels : availableDataSources;
+  const integratedSourcesEmptyText = aiSummary && aiSourceLabels
+    ? "Sources were not recorded for this summary. Refresh it to see which data the AI used."
+    : "No integrated sources available yet.";
   const summaryTags = [
     severeCount > 0 ? { label: "SEVERE SYMPTOMS", className: "bg-red-50 text-red-500" } : null,
     worseningCount > 0 ? { label: "WORSENING SYMPTOMS", className: "bg-red-50 text-red-500" } : null,
@@ -931,14 +961,14 @@ export default function CareEpisodeInsightsPage() {
             <div className="rounded-lg bg-slate-50 p-4">
               <p className="mb-3 text-xs font-bold uppercase tracking-[0.04em] text-slate-500">Data Sources Integrated</p>
               <div className="grid grid-cols-2 gap-2">
-                {availableDataSources.map((source) => (
+                {integratedSources.map((source) => (
                   <span key={source} className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
                     <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                     {source}
                   </span>
                 ))}
-                {availableDataSources.length === 0 ? (
-                  <span className="col-span-2 text-sm font-medium text-slate-500">No integrated sources available yet.</span>
+                {integratedSources.length === 0 ? (
+                  <span className="col-span-2 text-sm font-medium text-slate-500">{integratedSourcesEmptyText}</span>
                 ) : null}
               </div>
             </div>

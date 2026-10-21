@@ -12,8 +12,8 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { rescheduleAppointment } from "@/lib/api/appointments";
-import { getFacilityClinician } from "@/lib/api/clinicians";
+import { getAppointmentAvailability, rescheduleAppointment, type AppointmentAvailability } from "@/lib/api/appointments";
+import { getHospitalFacilityId } from "@/lib/api/care-episodes";
 import { cn } from "@/lib/utils";
 
 type AppointmentType = "physical" | "teleconsultation";
@@ -94,35 +94,46 @@ function getPatientInitials(name: string) {
   return `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase() || "PT";
 }
 
-function buildQuickSlots(value: string, weeklyAvailability: Record<string, unknown> | null): QuickSlotOption[] {
-  if (!weeklyAvailability) return [];
+const QUICK_SLOT_COUNT = 3;
+// Look-ahead window for free slots (the availability endpoint caps ranges at 31 days).
+const QUICK_SLOT_RANGE_DAYS = 14;
 
+function toLocalIsoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Range starts at the original appointment date, or today if that has passed.
+function getQuickSlotRange(value: string) {
   const parsed = Date.parse(toInputDate(value));
   const parsedDate = Number.isFinite(parsed) ? new Date(parsed) : new Date();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const baseDate = parsedDate < today ? new Date(today) : parsedDate;
-  baseDate.setHours(12, 0, 0, 0);
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const slots: QuickSlotOption[] = [];
+  const start = parsedDate < today ? today : parsedDate;
+  start.setHours(12, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + QUICK_SLOT_RANGE_DAYS - 1);
+  return { dateFrom: toLocalIsoDate(start), dateTo: toLocalIsoDate(end) };
+}
 
-  for (let offset = 0; offset < 14 && slots.length < 3; offset += 1) {
-    const date = new Date(baseDate);
-    date.setDate(baseDate.getDate() + offset);
-    const schedule = weeklyAvailability[dayNames[date.getDay()]];
-    if (!schedule || typeof schedule !== "object" || Array.isArray(schedule)) continue;
-    const day = schedule as Record<string, unknown>;
-    if (day.isWorking !== true || typeof day.start !== "string" || !day.start) continue;
-    const inputDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const time = toInputTime(day.start);
+// First truly free slot on each of the next few days (backend-computed, so never already booked).
+function buildQuickSlots(availability: AppointmentAvailability | null): QuickSlotOption[] {
+  if (!availability) return [];
+  const slots: QuickSlotOption[] = [];
+  const seenDates = new Set<string>();
+  const ordered = [...availability.slots].sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
+  for (const slot of ordered) {
+    if (slots.length >= QUICK_SLOT_COUNT) break;
+    if (seenDates.has(slot.date)) continue;
+    seenDates.add(slot.date);
+    const date = new Date(`${slot.date}T12:00:00`);
+    const time = toInputTime(slot.startTime);
     slots.push({
-      value: `${inputDate}-${time}`,
+      value: `${slot.date}-${time}`,
       date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date).toUpperCase(),
       time,
-      inputDate,
+      inputDate: slot.date,
     });
   }
-
   return slots;
 }
 
@@ -236,28 +247,46 @@ export default function RescheduleAppointmentModal({
   onClose,
   onSuccess,
 }: RescheduleAppointmentModalProps) {
-  const [weeklyAvailability, setWeeklyAvailability] = useState<Record<string, unknown> | null>(null);
+  const [appointmentType, setAppointmentType] = useState<AppointmentType>(initialAppointmentType);
+  // Keyed by the request it answers, so a stale result is never shown for a new type/clinician.
+  const [availabilityResult, setAvailabilityResult] = useState<{ key: string; availability: AppointmentAvailability | null } | null>(null);
+  const availabilityKey = `${clinicianId ?? ""}|${appointmentType}|${appointmentDate}`;
   useEffect(() => {
     if (!isOpen || !clinicianId) return;
     let active = true;
-    getFacilityClinician(clinicianId).then((profile) => {
-      if (active) setWeeklyAvailability(profile.weeklyAvailability as unknown as Record<string, unknown>);
-    }).catch(() => {
-      if (active) setWeeklyAvailability({});
-    });
+    const { dateFrom, dateTo } = getQuickSlotRange(appointmentDate);
+    getHospitalFacilityId()
+      .then((facilityId) => getAppointmentAvailability({
+        clinicianId,
+        facilityId,
+        dateFrom,
+        dateTo,
+        type: appointmentType === "physical" ? "in_person" : "teleconsultation",
+      }))
+      .then((availability) => {
+        if (active) setAvailabilityResult({ key: availabilityKey, availability });
+      })
+      .catch(() => {
+        // 404 = no working schedule configured; treat like any failure: no suggestions.
+        if (active) setAvailabilityResult({ key: availabilityKey, availability: null });
+      });
     return () => { active = false; };
-  }, [clinicianId, isOpen]);
-  const availabilityLoading = Boolean(isOpen && clinicianId && weeklyAvailability === null);
-  const quickSlots = useMemo(() => buildQuickSlots(appointmentDate, weeklyAvailability), [appointmentDate, weeklyAvailability]);
+  }, [appointmentDate, appointmentType, availabilityKey, clinicianId, isOpen]);
+  const availability = availabilityResult?.key === availabilityKey ? availabilityResult.availability : null;
+  const availabilityLoading = Boolean(isOpen && clinicianId && availabilityResult?.key !== availabilityKey);
+  const quickSlots = useMemo(() => buildQuickSlots(availability), [availability]);
   const todayIso = useMemo(() => toInputDate(new Date().toISOString()), []);
   const patientInitials = getPatientInitials(patientName);
-  const [appointmentType, setAppointmentType] = useState<AppointmentType>(initialAppointmentType);
-  const [quickSlot, setQuickSlot] = useState(() => quickSlots[0]?.value ?? "");
-  // Keep these in sync with whichever quick slot is shown pre-selected above — otherwise
-  // confirming without touching the form submits the original (possibly already-past) date/time
-  // instead of the highlighted recommendation.
-  const [selectedDate, setSelectedDate] = useState(() => quickSlots[0]?.inputDate ?? toInputDate(appointmentDate));
-  const [selectedTime, setSelectedTime] = useState(() => toInputTime(quickSlots[0]?.time ?? (appointmentTime || appointmentDate)));
+  // null = the user hasn't picked yet, so the recommended (first free) slot is used;
+  // "" = they typed a custom date/time, so no quick slot is highlighted.
+  const [pickedSlot, setPickedSlot] = useState<string | null>(null);
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
+  const [pickedTime, setPickedTime] = useState<string | null>(null);
+  const quickSlot = pickedSlot ?? quickSlots[0]?.value ?? "";
+  // Default to the recommended free slot so confirming without touching the form never
+  // submits the original (possibly already-past or now-booked) date/time.
+  const selectedDate = pickedDate ?? quickSlots[0]?.inputDate ?? toInputDate(appointmentDate);
+  const selectedTime = pickedTime ?? toInputTime(quickSlots[0]?.time ?? (appointmentTime || appointmentDate));
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -339,7 +368,7 @@ export default function RescheduleAppointmentModal({
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               {availabilityLoading ? <p className="col-span-full text-xs font-medium text-[#71809B]">Loading available slots...</p> : null}
-              {!availabilityLoading && quickSlots.length === 0 ? <p className="col-span-full text-xs font-medium text-[#71809B]">No clinician availability is configured for this period.</p> : null}
+              {!availabilityLoading && quickSlots.length === 0 ? <p className="col-span-full text-xs font-medium text-[#71809B]">No free slots found for this clinician in the next {QUICK_SLOT_RANGE_DAYS} days.</p> : null}
               {quickSlots.map((slot) => (
                 <QuickSlotButton
                   key={slot.value}
@@ -347,9 +376,9 @@ export default function RescheduleAppointmentModal({
                   active={quickSlot === slot.value}
                   recommended={slot === quickSlots[0]}
                   onClick={() => {
-                    setQuickSlot(slot.value);
-                    setSelectedDate(slot.inputDate);
-                    setSelectedTime(toInputTime(slot.time));
+                    setPickedSlot(slot.value);
+                    setPickedDate(slot.inputDate);
+                    setPickedTime(toInputTime(slot.time));
                   }}
                 />
               ))}
@@ -364,7 +393,7 @@ export default function RescheduleAppointmentModal({
                   type="date"
                   value={selectedDate}
                   min={todayIso}
-                  onChange={(event) => setSelectedDate(event.target.value)}
+                  onChange={(event) => { setPickedSlot(""); setPickedDate(event.target.value); setPickedTime(selectedTime); }}
                   aria-label="Select new appointment date"
                   className={cn(
                     inputClass,
@@ -381,7 +410,7 @@ export default function RescheduleAppointmentModal({
                 <input
                   type="time"
                   value={selectedTime}
-                  onChange={(event) => setSelectedTime(event.target.value)}
+                  onChange={(event) => { setPickedSlot(""); setPickedTime(event.target.value); setPickedDate(selectedDate); }}
                   step={900}
                   aria-label="Select new appointment time"
                   className={cn(

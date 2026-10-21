@@ -55,6 +55,28 @@ export async function getLatestRecoverySummary(episodeId: string): Promise<Recov
   return requestAi<RecoverySummaryResponse>(`/ai/episodes/${encodeURIComponent(episodeId)}/recovery-summary`);
 }
 
+export type AiSummarySource = components["schemas"]["AiSummarySourceDto"]["source"];
+
+const AI_SUMMARY_SOURCE_LABELS: Record<AiSummarySource, string> = {
+  vitals: "Vitals",
+  check_ins: "Check-ins",
+  medications: "Medications",
+  notes: "Clinical Notes",
+  media: "Clinical Media",
+  labs: "Lab Results",
+  recovery_scores: "Recovery Scores",
+  alerts: "Alerts",
+};
+
+// Labels for the data sources the backend says actually informed the summary.
+// Empty when the summary predates source tracking — callers must not substitute local data.
+export function getRecoverySummarySourceLabels(response: Pick<RecoverySummaryResponse, "sources"> | null | undefined): string[] {
+  const labels = (response?.sources ?? [])
+    .map((item) => AI_SUMMARY_SOURCE_LABELS[item.source])
+    .filter((label): label is string => Boolean(label));
+  return Array.from(new Set(labels));
+}
+
 export async function getEpisodeSuggestions(episodeId: string): Promise<SuggestionListResponse> {
   return requestAi<SuggestionListResponse>(`/ai/episodes/${encodeURIComponent(episodeId)}/suggestions`);
 }

@@ -51,9 +51,9 @@ import {
   getCareEpisodeForecast,
   getCareEpisodeMedicationAdherence,
   getCareEpisodeTaskCompletion,
+  getCareEpisodeTaskCompletionRange,
   getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
-  getNumber,
   getString,
   type ApiRecord,
   type CareEpisodeDetail,
@@ -90,6 +90,13 @@ type TimelineEntry = {
   source: string;
   time: string;
   category: "critical" | "completed" | "clinician" | "missed";
+};
+
+// Engagement score inputs named in `engagementScoreBasis` (backend engagement-score.util.ts).
+const ENGAGEMENT_INPUT_LABELS: Record<string, string> = {
+  checkInConsistency: "check-ins",
+  medicationAdherence: "medication",
+  taskCompletion: "tasks",
 };
 
 function clamp(value: number, min = 0, max = 100) {
@@ -137,12 +144,6 @@ function localDateKey(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function getPercentField(record: ApiRecord | null, keys: string[]): number | null {
-  const value = getNumber(record, keys);
-  if (value === null) return null;
-  return clamp(value <= 1 ? Math.round(value * 100) : Math.round(value));
 }
 
 
@@ -525,29 +526,22 @@ export default function CareEpisodeDetailPage() {
         elapsedDays,
       )),
     );
-    const dates = Array.from({ length: episodeDays }, (_, index) => {
-      const date = new Date(Number.isFinite(startedAt) ? startedAt : Date.now());
-      date.setDate(date.getDate() + index);
-      return localDateKey(date);
-    });
+    const firstDay = new Date(Number.isFinite(startedAt) ? startedAt : Date.now());
+    const lastDay = new Date(firstDay);
+    lastDay.setDate(lastDay.getDate() + episodeDays - 1);
 
-    Promise.all(dates.map((date) => getCareEpisodeTaskCompletion(episodeId, date).catch(() => null))).then((records) => {
-      if (ignore) return;
-      const availableRecords = records.filter((record): record is TaskCompletionRecord => record !== null);
-      setEpisodeMissedTasksCount(
-        availableRecords.length > 0
-          ? availableRecords.reduce((total, record) => total + record.missed, 0)
-          : null,
-      );
-      setEpisodeTaskProgress(
-        availableRecords.length > 0
-          ? {
-              completed: availableRecords.reduce((total, record) => total + record.completed, 0),
-              total: availableRecords.reduce((total, record) => total + record.totalDue, 0),
-            }
-          : null,
-      );
-    });
+    // One period-aggregate request (backend sums missed/completed across the range).
+    getCareEpisodeTaskCompletionRange(episodeId, localDateKey(firstDay), localDateKey(lastDay))
+      .then((range) => {
+        if (ignore) return;
+        setEpisodeMissedTasksCount(range.totals.missed);
+        setEpisodeTaskProgress({ completed: range.totals.completed, total: range.totals.totalDue });
+      })
+      .catch(() => {
+        if (ignore) return;
+        setEpisodeMissedTasksCount(null);
+        setEpisodeTaskProgress(null);
+      });
 
     return () => {
       ignore = true;
@@ -595,16 +589,8 @@ export default function CareEpisodeDetailPage() {
     if (!episode) return null;
 
     const latestCheckin = episode.latestCheckin;
-    const checkinDates = new Set([
-      ...checkinHistory.map((checkin) => checkin.submittedAt),
-      ...(checkinHistory.length === 0 ? [getString(latestCheckin, ["submittedAt"])] : []),
-    ].map((submittedAt) => {
-      const parsed = Date.parse(submittedAt);
-      return Number.isFinite(parsed) ? localDateKey(new Date(parsed)) : "";
-    }).filter(Boolean));
-    const currentRecoveryDay = getCurrentRecoveryDay(episode.currentDay ?? episode.dayStart, episode.createdAt, episode.expectedDurationDays);
-    const expectedCheckins = Math.max(1, currentRecoveryDay ?? checkinDates.size);
-    const checkInConsistency = clamp(Math.round((Math.min(checkinDates.size, expectedCheckins) / expectedCheckins) * 100));
+    // Backend-computed from the care plan's prescribed cadence (not a daily-check-in assumption).
+    const checkInConsistency = episode.checkInConsistencyPercent === null ? null : clamp(Math.round(episode.checkInConsistencyPercent));
     const checkInTrend = getTrendMeta(getString(latestCheckin, ["trend", "consistencyTrend"]));
 
     const totalMedicationDoses = medicationRecords.reduce((total, medication) => total + medication.totalDoses, 0);
@@ -619,7 +605,11 @@ export default function CareEpisodeDetailPage() {
     const lastMissedLabel = lastMissed?.label ?? "";
 
     const completedTasks = taskCompletion?.completed ?? careTaskRows.filter((task) => task.done).length;
-    const engagementScore = getPercentField(episode.riskData, ["engagementScore", "engagement", "engagementRate"]);
+    // Backend-defined score (ADR-031); never derived client-side.
+    const engagementScore = episode.engagementScore === null ? null : clamp(Math.round(episode.engagementScore));
+    const engagementMissingInputs = episode.engagementScoreBasis
+      .filter((entry) => entry.endsWith(":unavailable"))
+      .map((entry) => ENGAGEMENT_INPUT_LABELS[entry.split(":")[0]] ?? entry.split(":")[0]);
     const engagementTier = engagementScore === null ? "Unavailable" : engagementScore >= 75 ? "High" : engagementScore >= 45 ? "Moderate" : "Low";
     const engagementTrend = getTrendMeta(getString(episode.riskData, ["engagementTrend"]));
 
@@ -632,10 +622,11 @@ export default function CareEpisodeDetailPage() {
       lastMissedLabel,
       completedTasks,
       engagementScore,
+      engagementMissingInputs,
       engagementTier,
       engagementTrend,
     };
-  }, [careTaskRows, checkinHistory, episode, episodeMissedTasksCount, medicationRecords, taskCompletion]);
+  }, [careTaskRows, episode, episodeMissedTasksCount, medicationRecords, taskCompletion]);
 
   const medicationCompletionTimeline = useMemo(() => {
     if (!episode) return [];
@@ -652,7 +643,10 @@ export default function CareEpisodeDetailPage() {
     const recoveryProbability = episodeForecast?.recoveryForecast.dataSufficiency === "insufficient"
       ? null
       : episodeForecast?.recoveryProbability ?? episodeForecast?.recoveryForecast.currentRecoveryPercentage ?? null;
-    const deteriorationRisk = episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
+    // insufficient_data must render as "no score", never as a 0–100 value.
+    const deteriorationRisk = episodeForecast?.deterioration.dataSufficiency === "insufficient_data"
+      ? null
+      : episodeForecast?.deteriorationRisk ?? episodeForecast?.deterioration.probabilityPercent ?? null;
     const relapseRisk = episodeForecast?.relapseRisk ?? episodeForecast?.relapse.probabilityPercent ?? null;
 
     return { recoveryProbability, deteriorationRisk, relapseRisk };
@@ -921,7 +915,7 @@ const patientName = patient?.name || "Unknown Patient";
         <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             label="Check-in Consistency"
-            value={`${monitoring?.checkInConsistency ?? 0}%`}
+            value={monitoring?.checkInConsistency == null ? "--" : `${monitoring.checkInConsistency}%`}
             trend={monitoring?.checkInTrend}
             isLoading={isLoading}
           >
@@ -962,7 +956,11 @@ const patientName = patient?.name || "Unknown Patient";
             trend={monitoring?.engagementTrend}
             isLoading={isLoading}
           >
-            <p className="text-xs font-medium text-slate-500">{monitoring?.engagementScore == null ? "Engagement formula unavailable" : `${monitoring.engagementTier} engagement`}</p>
+            <p className="text-xs font-medium text-slate-500">{monitoring?.engagementScore == null
+                ? monitoring?.engagementMissingInputs.length
+                  ? `Not enough data yet: ${monitoring.engagementMissingInputs.join(", ")}`
+                  : "Not enough data yet"
+                : `${monitoring.engagementTier} engagement`}</p>
           </MetricCard>
         </div>
         </CardContent>
@@ -1150,7 +1148,9 @@ const patientName = patient?.name || "Unknown Patient";
                 <p className="mt-4 text-xs font-medium text-slate-500">
                   {!episodeForecast
                     ? forecastError || "Forecast unavailable"
-                    : `${episodeForecast.deterioration.horizonDays}-day forecast · ${episodeForecast.deterioration.confidence}% confidence`}
+                    : outcomes.deteriorationRisk === null
+                      ? "Insufficient data"
+                      : `${episodeForecast.deterioration.horizonDays}-day forecast · ${episodeForecast.deterioration.confidence == null ? "Confidence unavailable" : `${episodeForecast.deterioration.confidence}% confidence`}`}
                 </p>
               </CardContent>
             </Card>

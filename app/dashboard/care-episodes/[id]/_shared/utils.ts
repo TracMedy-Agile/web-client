@@ -32,6 +32,12 @@ export function createPlaceholderEpisode(episodeId: string): CareEpisodeDetail {
     riskData: null,
     riskHistory: [],
     dayProgress: null,
+    engagementScore: null,
+    engagementScoreBasis: [],
+    expectedCheckInCount: null,
+    checkInCadence: null,
+    checkInConsistencyPercent: null,
+    missedCheckInPercent: null,
     facility: null,
     closure: null,
   };

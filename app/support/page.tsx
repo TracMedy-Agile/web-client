@@ -10,19 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getSupportFaq, submitSupportTicket, type SupportFaq } from "@/lib/api/support";
+import { getBrowserAccessToken } from "@/lib/services/auth/browser-token";
 
 async function hasAccessToken() {
-  const response = await fetch("/api/auth/get-token").catch(() => null);
-  if (!response?.ok) return false;
-
-  const payload: unknown = await response.json().catch(() => null);
-  return Boolean(
-    payload &&
-      typeof payload === "object" &&
-      !Array.isArray(payload) &&
-      typeof (payload as { accessToken?: unknown }).accessToken === "string" &&
-      (payload as { accessToken: string }).accessToken.trim(),
-  );
+  return Boolean((await getBrowserAccessToken())?.trim());
 }
 
 export default function SupportPage() {

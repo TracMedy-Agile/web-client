@@ -384,7 +384,8 @@ export default function CareEpisodeRecoveryPage() {
   const componentBreakdown = recoveryComponents ? [recoveryComponents.clinicalStatus, recoveryComponents.adherence, recoveryComponents.functional, recoveryComponents.milestone] : [];
   const recoveryProgressScore = currentRecovery ? currentRecovery.recoveryProgressScore : (recoveryForecast?.currentRecoveryPercentage ?? null);
   const recoveryProbability = currentRecovery ? currentRecovery.recoveryProbability : (recoveryForecast?.dataSufficiency === "insufficient" ? null : (episodeForecast?.recoveryProbability ?? recoveryForecast?.currentRecoveryPercentage ?? null));
-  const deteriorationRisk = currentRecovery ? currentRecovery.deteriorationRisk : (episodeForecast?.deteriorationRisk ?? deteriorationForecast?.probabilityPercent ?? null);
+  const deteriorationInsufficient = deteriorationForecast?.dataSufficiency === "insufficient_data";
+  const deteriorationRisk = currentRecovery ? currentRecovery.deteriorationRisk : deteriorationInsufficient ? null : (episodeForecast?.deteriorationRisk ?? deteriorationForecast?.probabilityPercent ?? null);
   const relapseRisk = currentRecovery ? currentRecovery.relapseRisk : (episodeForecast?.relapseRisk ?? relapseForecast?.probabilityPercent ?? null);
   const recoveryVariance = currentRecovery?.recoveryVariance ?? null;
   const recoveryDataIncomplete = Boolean(currentRecovery && (currentRecovery.status === "insufficient_data" || currentRecovery.dataCompleteness < 100));
@@ -393,7 +394,8 @@ export default function CareEpisodeRecoveryPage() {
     : !episodeForecast ? forecastError || "Forecast unavailable" : recoveryForecast?.dataSufficiency === "insufficient" ? "Insufficient data" : recoveryForecast?.confidence == null || !recoveryForecast.dataSufficiency ? "Forecast details unavailable" : `${recoveryForecast.confidence}% confidence - ${recoveryForecast.dataSufficiency} data`;
   const deteriorationOutcomeDetail = currentRecovery
     ? currentRecovery.deteriorationRisk == null ? "Insufficient data" : `${currentRecovery.deteriorationRiskBand || "Risk undetermined"} - ${currentRecovery.deteriorationHorizonDays}-day horizon`
-    : !episodeForecast || deteriorationForecast?.probabilityPercent == null ? forecastError || "Insufficient data" : `${(deteriorationForecast.riskLevel || "undetermined").toUpperCase()} risk - ${deteriorationForecast.horizonDays == null ? "Forecast horizon unavailable" : `${deteriorationForecast.horizonDays}-day forecast`} - ${deteriorationForecast.confidence == null ? "Confidence unavailable" : `${deteriorationForecast.confidence}% confidence`}`;
+    : !episodeForecast ? forecastError || "Forecast unavailable"
+    : deteriorationInsufficient || deteriorationForecast?.probabilityPercent == null ? "Insufficient data" : `${(deteriorationForecast.riskLevel || "undetermined").toUpperCase()} risk - ${deteriorationForecast.horizonDays == null ? "Forecast horizon unavailable" : `${deteriorationForecast.horizonDays}-day forecast`} - ${deteriorationForecast.confidence == null ? "Confidence unavailable" : `${deteriorationForecast.confidence}% confidence`}`;
   const relapseOutcomeDetail = currentRecovery
     ? currentRecovery.relapseApplicability !== "applicable" ? (currentRecovery.relapseApplicabilityReason || "Insufficient data") : `${currentRecovery.relapseRiskBand || "Risk undetermined"} - ${currentRecovery.relapseHorizonDays}-day horizon`
     : !episodeForecast || relapseRisk == null || relapseForecast?.dataSufficiency === "insufficient" ? forecastError || "Insufficient data" : `${(relapseForecast?.riskLevel || "undetermined").toUpperCase()} risk - ${relapseForecast?.horizonDays == null ? "Forecast horizon unavailable" : `${relapseForecast?.horizonDays}-day forecast`} - ${relapseForecast?.confidence == null ? "Confidence unavailable" : `${relapseForecast?.confidence}% confidence`}`;

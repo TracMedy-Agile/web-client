@@ -1,3 +1,4 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import type { Clinician } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
 import type { components } from "@/docs/types/api";
 import { apiClient } from "@/lib/services/auth/api-client";
@@ -24,9 +25,7 @@ function numberValue(record: UnknownRecord, key: string, fallback = 0) {
 // Shared GET /clinicians fetch Ã¢â‚¬â€ CliniciansController_findAll (Back-end/openapi.yaml), scoped to
 // the authenticated staff member's facility. Returns ClinicianListResponseDto ({ data, meta }).
 async function fetchClinicianList(params: URLSearchParams): Promise<UnknownRecord[]> {
-  const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
-  const tokenPayload = tokenResponse ? await tokenResponse.json().catch(() => ({})) : {};
-  const token = typeof tokenPayload.accessToken === "string" ? tokenPayload.accessToken : null;
+  const token = await getAccessToken();
 
   const response = await fetch(`${BASE}/clinicians?${params}`, {
     cache: "no-store",
@@ -109,9 +108,7 @@ export async function getFacilityClinicians(params?: {
 }
 
 export async function getFacilityClinician(id: string): Promise<ClinicianProfile> {
-  const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
-  const tokenPayload = tokenResponse ? await tokenResponse.json().catch(() => ({})) : {};
-  const token = typeof tokenPayload.accessToken === "string" ? tokenPayload.accessToken : null;
+  const token = await getAccessToken();
 
   const response = await fetch(`${BASE}/clinicians/${encodeURIComponent(id)}`, {
     cache: "no-store",
@@ -134,9 +131,7 @@ export async function getTeamMemberActivity(
   id: string,
   params: { page?: number; limit?: number; action?: string } = {},
 ): Promise<TeamMemberActivityResponse> {
-  const tokenResponse = await fetch("/api/auth/get-token").catch(() => null);
-  const tokenPayload = tokenResponse ? await tokenResponse.json().catch(() => ({})) : {};
-  const token = typeof tokenPayload.accessToken === "string" ? tokenPayload.accessToken : null;
+  const token = await getAccessToken();
   const query = new URLSearchParams();
   if (params.page) query.set("page", String(params.page));
   if (params.limit) query.set("limit", String(params.limit));

@@ -1,3 +1,5 @@
+import { clearBrowserAccessToken, getBrowserAccessToken } from './browser-token'
+
 const BASE = process.env.NEXT_PUBLIC_API_URL
 let refreshPromise: Promise<boolean> | null = null
 
@@ -12,13 +14,7 @@ async function getAccessToken(): Promise<string | null> {
     }
   }
 
-  try {
-    const res = await fetch('/api/auth/get-token')
-    const { accessToken } = await res.json()
-    return typeof accessToken === 'string' ? accessToken : null
-  } catch {
-    return null
-  }
+  return getBrowserAccessToken()
 }
 
 async function refreshAccessToken() {
@@ -55,6 +51,7 @@ async function request(path: string, options?: RequestInit, allowRefresh = true)
   })
 
   if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
+    clearBrowserAccessToken()
     if (allowRefresh && await refreshAccessToken()) {
       return request(path, options, false)
     }

@@ -25,6 +25,7 @@ import {
   getCareEpisodeTaskCompletionLog,
   getCareEpisodeTimelinePage,
   getString,
+  getTimelineEventCategories,
   type CareEpisodeDetail,
   type MedicationAdherenceRecord,
   type TaskCompletionLog,
@@ -41,18 +42,89 @@ type EventCategory = "critical" | "completed" | "clinician" | "missed" | "pendin
 
 const PAGE_SIZE = 10;
 
-type EventTypeOption = { value: string; label: string };
+// `value` is the category key; `eventTypes` are the canonical event types it covers.
+type EventTypeOption = { value: string; label: string; eventTypes: string[] };
 
-const EVENT_TYPE_OPTIONS: EventTypeOption[] = [
-  { value: "medication_taken", label: "Medication" },
-  { value: "clinical_assessment", label: "Clinical Assessment" },
-  { value: "follow_up_scheduled", label: "Follow-up Appointment" },
-  { value: "message_sent", label: "Messaging" },
-  { value: "ai_follow_up", label: "AI Follow-up Agent" },
-  { value: "alert_acknowledged", label: "Alert Acknowledged" },
+// Used only until GET /care-episodes/timeline-event-types responds (or if it fails).
+const FALLBACK_EVENT_TYPE_OPTIONS: EventTypeOption[] = [
+  { value: "medication", label: "Medication", eventTypes: ["medication_taken"] },
+  {
+    value: "clinical_assessment",
+    label: "Clinical Assessment",
+    eventTypes: ["checkin_submitted", "lab_result_uploaded", "lab_result_reviewed", "patient_note", "care_plan_created", "care_plan_updated", "task_completed"],
+  },
+  { value: "follow_up_appointment", label: "Follow-up Appointment", eventTypes: ["follow_up_scheduled"] },
+  { value: "messaging", label: "Messaging", eventTypes: ["message_sent"] },
+  { value: "ai_follow_up", label: "AI Follow-up Agent", eventTypes: ["ai_follow_up_call"] },
+  { value: "alert", label: "Alert Acknowledged", eventTypes: ["alert_acknowledged"] },
 ];
 
+// Keep the design's filter wording where it differs from the backend's category label.
+const CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
+  ai_follow_up: "AI Follow-up Agent",
+  alert: "Alert Acknowledged",
+};
+
+// The timeline endpoint filters one exact eventType per request; multi-type categories
+// are fetched per type (up to this many each), merged newest-first and paged client-side.
+const CATEGORY_FETCH_LIMIT = 500;
+
+// Canonical AI follow-up contract (backend `care-timeline-event-types.ts`, PRD 18):
+// the outcome lives in the payload; transcripts/content are never sent.
+const AI_FOLLOW_UP_EVENT_TYPE = "ai_follow_up_call";
+
+type AiFollowUpOutcome = "significant" | "completed" | "unsuccessful" | "cancelled" | "scheduled" | "in_progress";
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function getAiFollowUpOutcome(event: TimelineEventRecord): AiFollowUpOutcome | null {
+  if (normalizeKey(event.eventType) !== AI_FOLLOW_UP_EVENT_TYPE) return null;
+  const callStatus = normalizeKey(getString(event.payload, ["callStatus"]));
+  const patientStatus = normalizeKey(getString(event.payload, ["patientStatus"]));
+  if (callStatus === "no_answer" || callStatus === "failed") return "unsuccessful";
+  if (callStatus === "cancelled") return "cancelled";
+  if (callStatus === "scheduled" || callStatus === "in_progress") return callStatus;
+  // Clinically significant == patientStatus in {worse, needs_attention} (PRD 18 FR-24).
+  if (patientStatus === "worse" || patientStatus === "needs_attention") return "significant";
+  return "completed";
+}
+
+const AI_FOLLOW_UP_CATEGORY: Record<AiFollowUpOutcome, EventCategory> = {
+  significant: "critical",
+  completed: "completed",
+  unsuccessful: "missed",
+  cancelled: "pending",
+  scheduled: "pending",
+  in_progress: "pending",
+};
+
+const AI_FOLLOW_UP_STATUS_LABEL: Record<AiFollowUpOutcome, string> = {
+  significant: "Clinically significant",
+  completed: "Completed",
+  unsuccessful: "Not reached",
+  cancelled: "Cancelled",
+  scheduled: "Scheduled",
+  in_progress: "In progress",
+};
+
+function getAiFollowUpTitle(event: TimelineEventRecord, outcome: AiFollowUpOutcome) {
+  if (outcome === "significant") {
+    return normalizeKey(getString(event.payload, ["patientStatus"])) === "worse"
+      ? "AI follow-up: patient reports feeling worse"
+      : "AI follow-up: patient needs attention";
+  }
+  if (outcome === "unsuccessful") return "AI follow-up unsuccessful";
+  if (outcome === "cancelled") return "AI follow-up cancelled";
+  if (outcome === "scheduled") return "AI follow-up scheduled";
+  if (outcome === "in_progress") return "AI follow-up in progress";
+  return "AI follow-up completed";
+}
+
 function getEventCategory(event: TimelineEventRecord): EventCategory {
+  const aiOutcome = getAiFollowUpOutcome(event);
+  if (aiOutcome) return AI_FOLLOW_UP_CATEGORY[aiOutcome];
   const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
   const source = event.source.toLowerCase();
   const eventType = event.eventType.toLowerCase().replace(/[\s-]+/g, "_");
@@ -101,6 +173,10 @@ const SOURCE_LABEL: Record<string, string> = {
   appointment_module: "Appointment",
 };
 
+function getEventSourceLabel(event: TimelineEventRecord) {
+  return getAiFollowUpOutcome(event) ? "AI Follow-up Agent" : getSourceLabel(event.source);
+}
+
 function getSourceLabel(source: string) {
   const key = source.toLowerCase().replace(/[\s-]+/g, "_");
   return SOURCE_LABEL[key] ?? (humanizeSlug(source) || "System");
@@ -144,13 +220,13 @@ function getCheckinTitle(payload: Record<string, unknown>, summary: string) {
 
 function getEventTypeLabel(eventType: string) {
   const key = eventType.toLowerCase().replace(/[\s-]+/g, "_");
+  if (key === AI_FOLLOW_UP_EVENT_TYPE || key.includes("ai_follow")) return "AI Follow-up Agent";
   if (key.includes("patient_note")) return "Patient Note";
   if (key.includes("checkin") || key.includes("check_in")) return "Check-in";
   if (key.includes("medication")) return "Medication";
   if (key.includes("clinical_assessment") || key.includes("assessment")) return "Clinical Assessment";
   if (key.includes("follow_up") || key.includes("followup")) return "Follow-up";
   if (key.includes("message")) return "Messaging";
-  if (key.includes("ai_follow")) return "Follow-up";
   if (key.includes("alert")) return "Alert";
   return humanizeSlug(eventType) || "Update";
 }
@@ -160,6 +236,8 @@ function getEventTitle(event: TimelineEventRecord) {
   const payloadSummary = getString(payload, ["message", "title", "details", "description", "summary"]);
   const summary = `${eventType} ${payloadSummary}`.toLowerCase();
 
+  const aiOutcome = getAiFollowUpOutcome(event);
+  if (aiOutcome) return getAiFollowUpTitle(event, aiOutcome);
   if (eventType.includes("patient_note")) return "Patient note added";
   if (eventType.includes("message")) return "Message sent";
   if (eventType.includes("checkin") || eventType.includes("check_in") || summary.includes("daily check-in") || summary.includes("daily check in")) {
@@ -168,22 +246,14 @@ function getEventTitle(event: TimelineEventRecord) {
   if (eventType.includes("clinical_assessment") || eventType.includes("assessment")) return "Clinical assessment recorded";
   if (eventType.includes("follow_up") || eventType.includes("followup")) return "Follow-up appointment scheduled";
   if (eventType.includes("medication")) return "Medication recorded";
-  if (eventType.includes("ai_follow")) {
-    const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
-    return ["failed", "missed", "not_reached", "unsuccessful"].some((value) => status.includes(value))
-      ? "AI follow-up unsuccessful"
-      : "AI follow-up completed";
-  }
   if (eventType.includes("alert") && eventType.includes("acknowledged")) return "Alert acknowledged";
   return humanizeSlug(event.eventType) || "Update";
 }
 
 function getEventStatusLabel(event: TimelineEventRecord, category: EventCategory) {
-  const status = event.status.toLowerCase().replace(/[\s-]+/g, "_");
-  const eventType = event.eventType.toLowerCase().replace(/[\s-]+/g, "_");
-  if (eventType.includes("ai_follow") && (status.includes("failed") || status.includes("missed") || status.includes("not_reach") || status.includes("unsuccessful"))) {
-    return "Not reached";
-  }
+  const eventType = normalizeKey(event.eventType);
+  const aiOutcome = getAiFollowUpOutcome(event);
+  if (aiOutcome) return AI_FOLLOW_UP_STATUS_LABEL[aiOutcome];
   if (eventType.includes("alert_acknowledged")) return "Completed";
   return CATEGORY_LABEL[category];
 }
@@ -230,6 +300,12 @@ export default function CareEpisodeTimelinePage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [eventTypeFilter, setEventTypeFilter] = useState("Event Types");
+  const [eventCategories, setEventCategories] = useState<EventTypeOption[]>(FALLBACK_EVENT_TYPE_OPTIONS);
+  const selectedEventTypes = useMemo(() => {
+    if (eventTypeFilter === "Event Types") return [];
+    // A value outside the vocabulary is a legacy event type selected on its own.
+    return eventCategories.find((option) => option.value === eventTypeFilter)?.eventTypes ?? [eventTypeFilter];
+  }, [eventCategories, eventTypeFilter]);
   const [sourceFilter, setSourceFilter] = useState("Source");
   const [dateFilter, setDateFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -305,6 +381,23 @@ export default function CareEpisodeTimelinePage() {
   }, [dateFilter, episodeId, refreshKey]);
 
   useEffect(() => {
+    let ignore = false;
+    getTimelineEventCategories()
+      .then((categories) => {
+        if (ignore || !categories.length) return;
+        setEventCategories(categories.map((category) => ({
+          value: category.key,
+          label: CATEGORY_LABEL_OVERRIDES[category.key] ?? category.label,
+          eventTypes: category.eventTypes,
+        })));
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!episodeId) return;
     let ignore = false;
 
@@ -329,14 +422,30 @@ export default function CareEpisodeTimelinePage() {
     (async () => {
       setTimelineLoading(true);
       try {
-        const response = await getCareEpisodeTimelinePage(episodeId, {
-          page,
-          limit: PAGE_SIZE,
-          eventType: eventTypeFilter === "Event Types" ? undefined : eventTypeFilter,
+        const sharedFilters = {
           source: sourceFilter === "Source" ? undefined : sourceFilter,
           status: statusFilter === "All Status" ? undefined : statusFilter,
           dateFrom: dateFilter || undefined,
           dateTo: dateFilter || undefined,
+        };
+        if (selectedEventTypes.length > 1) {
+          const pages = await Promise.all(selectedEventTypes.map((eventType) =>
+            getCareEpisodeTimelinePage(episodeId, { ...sharedFilters, eventType, page: 1, limit: CATEGORY_FETCH_LIMIT }),
+          ));
+          if (ignore) return;
+          const merged = pages
+            .flatMap((response) => response.data)
+            .sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
+          setEvents(merged.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
+          setTotalEvents(merged.length);
+          setTotalPages(Math.max(Math.ceil(merged.length / PAGE_SIZE), 1));
+          return;
+        }
+        const response = await getCareEpisodeTimelinePage(episodeId, {
+          ...sharedFilters,
+          page,
+          limit: PAGE_SIZE,
+          eventType: selectedEventTypes[0],
         });
         if (ignore) return;
         setEvents(response.data);
@@ -356,7 +465,7 @@ export default function CareEpisodeTimelinePage() {
     return () => {
       ignore = true;
     };
-  }, [episodeId, page, statusFilter, eventTypeFilter, sourceFilter, dateFilter, refreshKey]);
+  }, [episodeId, page, statusFilter, selectedEventTypes, sourceFilter, dateFilter, refreshKey]);
 
   const timelineDate = dateFilter || localDateKey(new Date());
   const medicationCompletionEvents = useMemo(() => {
@@ -370,12 +479,12 @@ export default function CareEpisodeTimelinePage() {
   const eventsWithMedicationCompletion = useMemo(() => {
     const filteredMedicationEvents = medicationCompletionEvents.filter((event) => {
       if (statusFilter !== "All Status" && event.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
-      if (eventTypeFilter !== "Event Types" && event.eventType !== eventTypeFilter) return false;
+      if (selectedEventTypes.length && !selectedEventTypes.includes(event.eventType)) return false;
       if (sourceFilter !== "Source" && event.source !== sourceFilter) return false;
       return true;
     });
     return mergeTimelineWithMedicationCompletionEvents(events, filteredMedicationEvents);
-  }, [events, eventTypeFilter, medicationCompletionEvents, sourceFilter, statusFilter]);
+  }, [events, selectedEventTypes, medicationCompletionEvents, sourceFilter, statusFilter]);
 
   const statusOptions = useMemo(() => {
     const values = new Set(filterOptionEventsWithMedication.map((event) => event.status));
@@ -383,14 +492,16 @@ export default function CareEpisodeTimelinePage() {
   }, [filterOptionEventsWithMedication]);
 
   const eventTypeOptions = useMemo(() => {
-    const options = new Map(EVENT_TYPE_OPTIONS.map((option) => [option.value, option]));
+    const options = new Map(eventCategories.map((option) => [option.value, option]));
+    const categorized = new Set(eventCategories.flatMap((option) => option.eventTypes));
+    // Legacy event types outside the published vocabulary stay filterable on their own.
     for (const event of filterOptionEventsWithMedication) {
-      if (event.eventType && !options.has(event.eventType)) {
-        options.set(event.eventType, { value: event.eventType, label: getEventTypeLabel(event.eventType) });
+      if (event.eventType && !categorized.has(event.eventType) && !options.has(event.eventType)) {
+        options.set(event.eventType, { value: event.eventType, label: getEventTypeLabel(event.eventType), eventTypes: [event.eventType] });
       }
     }
     return Array.from(options.values());
-  }, [filterOptionEventsWithMedication]);
+  }, [eventCategories, filterOptionEventsWithMedication]);
 
   const sourceOptions = useMemo(() => {
     const values = new Set(filterOptionEventsWithMedication.map((event) => event.source));
@@ -403,7 +514,7 @@ export default function CareEpisodeTimelinePage() {
     const query = search.trim().toLowerCase();
     if (!query) return eventsWithMedicationCompletion;
     return eventsWithMedicationCompletion.filter((event) => {
-      const haystack = `${getEventTitle(event)} ${getEventTypeLabel(event.eventType)} ${getSourceLabel(event.source)}`.toLowerCase();
+      const haystack = `${getEventTitle(event)} ${getEventTypeLabel(event.eventType)} ${getEventSourceLabel(event)}`.toLowerCase();
       return haystack.includes(query);
     });
   }, [eventsWithMedicationCompletion, search]);
@@ -574,7 +685,7 @@ export default function CareEpisodeTimelinePage() {
                               <span>{formatTime(event.timestamp)}</span>
                               <span className="inline-flex items-center gap-1">
                                 <span className="h-1 w-1 rounded-full bg-muted-foreground" />
-                                {getSourceLabel(event.source)}
+                                {getEventSourceLabel(event)}
                               </span>
                               <span className="rounded-md bg-muted px-2 py-0.5 font-bold text-muted-foreground">
                                 {getEventTypeLabel(event.eventType)}

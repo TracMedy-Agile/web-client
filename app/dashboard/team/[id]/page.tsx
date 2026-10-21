@@ -89,6 +89,8 @@ function statusLabel(value?: string | null) {
 function activityTitle(action: string) {
   const normalized = action.toLowerCase().replace(/[\s-]+/g, "_");
   const labels: Record<string, string> = {
+    // Backend lifecycle pair: `team_member_invited` → `account_activated` (retro-filled for legacy members).
+    team_member_invited: "Invitation Sent",
     invitation_sent: "Invitation Sent",
     invite_sent: "Invitation Sent",
     account_activated: "Account Activated",
@@ -734,7 +736,7 @@ export default function TeamMemberPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Security</span>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">WhatsApp Verification</p>
-                  <p className="text-lg font-bold text-[#023E8A]">{whatsappConfigured ? "Configured" : "Not configured"}</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{!whatsappConfigured ? "Not configured" : escalation?.whatsappVerified ? "Verified" : "Pending verification"}</p>
                 </article>
                 <article className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-center justify-between">
@@ -744,7 +746,7 @@ export default function TeamMemberPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Timeline</span>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">Verified On</p>
-                  <p className="text-lg font-bold text-[#023E8A]">{whatsappConfigured ? "Not recorded" : "Not available"}</p>
+                  <p className="text-lg font-bold text-[#023E8A]">{!whatsappConfigured ? "Not available" : escalation?.whatsappVerified && escalation.whatsappVerifiedAt ? formatDate(escalation.whatsappVerifiedAt) : "Not verified yet"}</p>
                 </article>
               </div>
 

@@ -1,3 +1,4 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import type { components } from "@/docs/types/api";
 
 type AppointmentQueryParams = {
@@ -45,15 +46,6 @@ export type CallNudgeResponse = components["schemas"]["CallNudgeResponseDto"];
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return accessToken;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, init?: RequestInit, query?: URLSearchParams) {
   const accessToken = await getAccessToken();
@@ -113,13 +105,56 @@ function normalizeAppointmentCapacity(payload: unknown): AppointmentCapacity {
   return payload as AppointmentCapacity;
 }
 
-export async function getAppointmentCapacity(params: CalendarQueryParams & { time?: string }): Promise<AppointmentCapacity> {
+export type AppointmentCapacityQuery = CalendarQueryParams & {
+  /** Requested start (HH:MM); enables per-slot detail. */
+  startTime?: string;
+  /** Minutes; the backend checks every consecutive slot the booking would consume. */
+  duration?: number;
+  type?: components["schemas"]["CreateAppointmentDto"]["type"];
+  /** Scopes capacity to one clinician's schedule. */
+  clinicianId?: string;
+};
+
+export async function getAppointmentCapacity(params: AppointmentCapacityQuery): Promise<AppointmentCapacity> {
   const query = new URLSearchParams();
   query.set("date", params.date);
   query.set("facilityId", params.facilityId);
-  setQueryValue(query, "time", params.time);
+  setQueryValue(query, "startTime", params.startTime);
+  setQueryValue(query, "duration", params.duration);
+  setQueryValue(query, "type", params.type);
+  setQueryValue(query, "clinicianId", params.clinicianId);
   const payload = await request("/appointments/capacity", undefined, query);
   return normalizeAppointmentCapacity(payload);
+}
+
+export type AppointmentAvailability = components["schemas"]["AvailabilityResponseDto"];
+
+// GET /appointments/availability — truly free slots for a clinician (schedule minus overrides
+// and existing bookings). Range is capped at 31 days by the backend.
+export async function getAppointmentAvailability(params: {
+  clinicianId: string;
+  facilityId: string;
+  dateFrom: string;
+  dateTo: string;
+  duration?: number;
+  type?: components["schemas"]["CreateAppointmentDto"]["type"];
+}): Promise<AppointmentAvailability> {
+  const query = new URLSearchParams();
+  query.set("clinicianId", params.clinicianId);
+  query.set("facilityId", params.facilityId);
+  query.set("dateFrom", params.dateFrom);
+  query.set("dateTo", params.dateTo);
+  setQueryValue(query, "duration", params.duration);
+  setQueryValue(query, "type", params.type);
+  const payload = await request("/appointments/availability", undefined, query);
+  const root = payload as { data?: AppointmentAvailability } | null;
+  const result = root?.data ?? (payload as AppointmentAvailability | null);
+  return { ...result, slots: Array.isArray(result?.slots) ? result.slots : [] } as AppointmentAvailability;
+}
+
+/** True only when the day, the start slot, and the full duration all have capacity (null checks were not requested). */
+export function isAppointmentCapacityBookable(capacity: AppointmentCapacity): boolean {
+  return capacity.canBook && capacity.slotAvailable !== false && capacity.fitsDuration !== false;
 }
 
 export async function getClinicians(params?: ClinicianQueryParams) {
