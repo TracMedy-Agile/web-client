@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getCareEpisodeById, getCurrentUserIdentity, type CareEpisodeDetail } from "@/lib/api/care-episodes";
 import { getAssessmentWorkspace, saveAssessment } from "@/lib/api/careTeamAndPlan.api";
-import { getLatestRecoverySummary, type EpisodeInsightPayload } from "@/lib/api/ai";
+import { getLatestRecoverySummary, getRecoverySummarySourceLabels, type EpisodeInsightPayload } from "@/lib/api/ai";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { createPlaceholderEpisode } from "../_shared/utils";
 import type { AssessmentOutcome, AssessmentWorkspaceEntry } from "../_shared/careTeamTypes";
@@ -112,6 +112,7 @@ export default function ClinicalAssessmentWorkspacePage() {
   const displayEpisode = episode ?? createPlaceholderEpisode(episodeId);
   const [workspace, setWorkspace] = useState<AssessmentWorkspaceEntry | null>(null);
   const [aiSummary, setAiSummary] = useState<EpisodeInsightPayload | null>(null);
+  const [aiSourceLabels, setAiSourceLabels] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [workspaceError, setWorkspaceError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -147,8 +148,10 @@ export default function ClinicalAssessmentWorkspacePage() {
       if (userResult.status === "fulfilled") setClinicianName(userResult.value.name);
       if (aiResult.status === "fulfilled" && aiResult.value.status === "success" && aiResult.value.summary) {
         setAiSummary(aiResult.value.summary);
+        setAiSourceLabels(getRecoverySummarySourceLabels(aiResult.value));
       } else {
         setAiSummary(null);
+        setAiSourceLabels([]);
       }
       setIsLoading(false);
     });
@@ -217,8 +220,11 @@ export default function ClinicalAssessmentWorkspacePage() {
     );
   }
 
-  const clinicalSources = aiSummary ? workspace.clinicalStatus.sources : [];
-  const hasClinicalSourceData = clinicalSources.length > 0;
+  // Sources are the backend's attribution of what fed the AI summary — never locally inferred.
+  const clinicalSources = aiSummary ? aiSourceLabels.map((label) => ({ label })) : [];
+  // Summaries generated before source tracking return no sources; fall back to whether the
+  // episode has any source data only to decide if the summary can be shown at all.
+  const hasClinicalSourceData = clinicalSources.length > 0 || (Boolean(aiSummary) && workspace.clinicalStatus.sources.length > 0);
   const aiConfidencePercent = aiSummary && hasClinicalSourceData && aiSummary.dataSufficiency !== "insufficient" && Number.isFinite(aiSummary.confidence)
     ? Math.round(Math.min(1, Math.max(0, aiSummary.confidence)) * 100)
     : null;
@@ -268,7 +274,13 @@ export default function ClinicalAssessmentWorkspacePage() {
               {clinicalSources.map((source) => (
                 <SourceTag key={source.label} label={source.label} />
               ))}
-              {clinicalSources.length === 0 ? <span className="text-xs font-medium text-slate-500">No source data contributed to an AI summary yet.</span> : null}
+              {clinicalSources.length === 0 ? (
+                <span className="text-xs font-medium text-slate-500">
+                  {aiSummary && hasClinicalSourceData
+                    ? "Sources were not recorded for this summary. Regenerate it to see which data the AI used."
+                    : "No source data contributed to an AI summary yet."}
+                </span>
+              ) : null}
             </div>
           </IntelligenceCard>
 

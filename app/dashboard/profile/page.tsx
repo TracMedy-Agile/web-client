@@ -66,11 +66,15 @@ function LockedProfileInput({ label, value, locked = false }: { label: string; v
     </label>
   );
 }
-type CriticalAlertContactStatus = "not_configured" | "verified";
+type CriticalAlertContactStatus = "not_configured" | "pending" | "verified";
 
 function CriticalAlertContactStatusBadge({ status }: { status: CriticalAlertContactStatus }) {
-  const label = status === "verified" ? "Verified" : "Not Configured";
-  const className = status === "verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-transparent bg-muted text-muted-foreground";
+  const label = status === "verified" ? "Verified" : status === "pending" ? "Pending Verification" : "Not Configured";
+  const className = status === "verified"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : status === "pending"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-transparent bg-muted text-muted-foreground";
 
   return (
     <span className={`inline-flex h-6 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-medium ${className}`}>
@@ -169,6 +173,7 @@ export default function ProfilePage() {
   const [alertEscalationChannels, setAlertEscalationChannels] = useState<AlertEscalationChannel[]>([]);
   const [alertMemberId, setAlertMemberId] = useState("");
   const [savedAlertWhatsappPhone, setSavedAlertWhatsappPhone] = useState("");
+  const [savedAlertWhatsappVerified, setSavedAlertWhatsappVerified] = useState(false);
   const [isAlertContactSaving, setIsAlertContactSaving] = useState(false);
   const [alertNotice, setAlertNotice] = useState("");
   const [alertNoticeTone, setAlertNoticeTone] = useState<NoticeTone>("info");
@@ -220,6 +225,7 @@ export default function ProfilePage() {
         setAlertEscalationChannels(channels);
         setAlertUsesWhatsapp(channels.includes("whatsapp"));
         setSavedAlertWhatsappPhone(preference.whatsappPhone ?? "");
+        setSavedAlertWhatsappVerified(preference.whatsappVerified === true);
 
         const phone = parseCriticalAlertPhone(preference.whatsappPhone);
         if (phone.phoneNumber) {
@@ -370,8 +376,11 @@ export default function ProfilePage() {
       setAlertMemberId(requestMemberId);
       setAlertEscalationChannels(savedChannels.length ? savedChannels : nextChannels);
       setSavedAlertWhatsappPhone(preference.whatsappPhone ?? whatsappPhone);
+      setSavedAlertWhatsappVerified(preference.whatsappVerified === true);
       setAlertUsesWhatsapp(true);
-      setAlertNotice("WhatsApp number saved. Verification has been initiated if enabled by the backend.");
+      setAlertNotice(preference.whatsappVerified === true
+        ? "WhatsApp number saved and verified."
+        : "WhatsApp number saved. It will show as verified once the number is confirmed.");
       setAlertNoticeTone("success");
       capturePostHogEvent("team_escalation_preference_updated", { member_id: requestMemberId, channels: nextChannels });
       toast.success("WhatsApp number saved.");
@@ -386,7 +395,10 @@ export default function ProfilePage() {
   }
   const displayName = [firstName, lastName].filter(Boolean).join(" ") || "Staff member";
   const currentAlertPhone = alertPhoneNumber ? formatCriticalAlertPhoneE164(alertCountryCode, alertPhoneNumber) : "";
-  const alertContactStatus: CriticalAlertContactStatus = savedAlertWhatsappPhone !== "" && currentAlertPhone === savedAlertWhatsappPhone ? "verified" : "not_configured";
+  // "Verified" only when the backend says so; a saved-but-unconfirmed number is pending.
+  const alertContactStatus: CriticalAlertContactStatus = savedAlertWhatsappPhone !== "" && currentAlertPhone === savedAlertWhatsappPhone
+    ? savedAlertWhatsappVerified ? "verified" : "pending"
+    : "not_configured";
   const alertPhoneError = alertPhoneTouched ? validateCriticalAlertPhone(alertCountryCode, alertPhoneNumber) : "";
 
   return (

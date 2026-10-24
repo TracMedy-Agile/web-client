@@ -1018,6 +1018,26 @@ export interface paths {
         patch: operations["CareEpisodesController_dismissPending"];
         trace?: never;
     };
+    "/care-episodes/timeline-event-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get canonical care-timeline event vocabulary
+         * @description Returns the canonical set of care-timeline event types grouped by category, the reserved (contract-only) event types, and the reserved PRD 18 AI follow-up contract. Static reference data — safe for any authenticated user.
+         */
+        get: operations["CareEpisodesController_getTimelineEventTypes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/care-episodes/{id}": {
         parameters: {
             query?: never;
@@ -1122,6 +1142,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/care-episodes/{id}/media/{mediaId}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Review a check-in image (mark Reviewed / revert to Pending Review)
+         * @description Upserts the clinical media review state for a single check-in image. `mediaId` is the URL-encoded `{checkInId}:{index}` key returned by GET /care-episodes/:id/media. Access is role- and facility-scoped.
+         */
+        patch: operations["CareEpisodesController_reviewEpisodeMedia"];
+        trace?: never;
+    };
     "/care-episodes/{id}/checkins": {
         parameters: {
             query?: never;
@@ -1150,8 +1190,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get task completion statistics by date
-         * @description Returns daily task completion counts (total due, completed, missed, overdue) across all care plan versions. Defaults to today; pass date=YYYY-MM-DD for a specific day.
+         * Get task completion statistics by date or period
+         * @description Single day: returns { date, totalDue, completed, missed, overdue, completionRate }. Defaults to today; pass date=YYYY-MM-DD for a specific day. Period: pass dateFrom + dateTo to get { period, totals, byDay } (Missed Tasks Count + Daily breakdown). Period `overdue` is the final day snapshot (never summed).
          */
         get: operations["CareEpisodesController_getTaskCompletion"];
         put?: never;
@@ -1900,26 +1940,6 @@ export interface paths {
          * @description Verifies the Paystack transaction for the caller, transitions the subscription to ACTIVE and writes the first SUBSCRIPTION ledger row. Safe to replay (idempotent by gateway reference).
          */
         post: operations["SubscriptionsController_verify"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/paystack/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Paystack billing webhook receiver
-         * @description Signature-verified (HMAC-SHA512 over the raw body) Paystack webhook for subscription and invoice events. Public by design — no JWT, but per-IP rate limited. Bad signatures are rejected 403 before any state change; valid events are acknowledged 200 and processed asynchronously.
-         */
-        post: operations["PaystackWebhookController_paystackWebhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2755,6 +2775,26 @@ export interface paths {
          * @description Returns capacity info for a facility/date. Uses default safe limits until Phase 15 settings exist.
          */
         get: operations["AppointmentController_getCapacity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/appointments/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get free appointment slots for a clinician
+         * @description Computes bookable slots for a clinician over a date range from their working schedule, minus unavailable overrides and existing appointments. Range capped at 31 days.
+         */
+        get: operations["AppointmentController_getAvailability"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4405,6 +4445,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/paystack/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Paystack billing webhook receiver
+         * @description Signature-verified (HMAC-SHA512 over the raw body) Paystack webhook for subscription and invoice events. Public by design — no JWT, but per-IP rate limited. Bad signatures are rejected 403 before any state change; valid events are acknowledged 200 and processed asynchronously.
+         */
+        post: operations["PaystackWebhookController_paystackWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/caregivers/invite": {
         parameters: {
             query?: never;
@@ -5362,6 +5422,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/team/roles/permission-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List facility permission options
+         * @description Facility permission catalog (key, label, module). The same catalog seeds the permission dependency graph.
+         */
+        get: operations["TeamRolesController_permissionOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/roles/dependency-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permission dependency graph (read-only)
+         * @description Logical relationships between facility permissions: each entry lists the permissions it automatically requires, plus the inverse (`grants`).
+         */
+        get: operations["TeamRolesController_dependencyRules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/roles/permission-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get permission policies
+         * @description Facility-scoped permission governance toggles, with effective and design-default values.
+         */
+        get: operations["TeamRolesController_getPermissionPolicies"];
+        /**
+         * Update permission policies
+         * @description Partially updates facility permission policies and records an immutable audit entry (`permission_policies_updated`) with the changed keys only.
+         */
+        put: operations["TeamRolesController_updatePermissionPolicies"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/roles/workspace-administration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get workspace administration grants
+         * @description Facility-scoped map of who may grant/edit each administrative power, plus the selectable grant scopes.
+         */
+        get: operations["TeamRolesController_getWorkspaceAdministration"];
+        /**
+         * Update workspace administration grants
+         * @description Partially updates the facility grant scopes and records an immutable audit entry (`workspace_administration_updated`) with the changed keys only.
+         */
+        put: operations["TeamRolesController_updateWorkspaceAdministration"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/drugs/search": {
         parameters: {
             query?: never;
@@ -5783,7 +5931,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit patient profile (USER-02/03)
+         * @description Updates name, email and/or phone. Changing email or phone resets the matching verification flag and re-sends the verification OTP to the new destination (the admin overrides the value, not the verification). Returns the refreshed USER-02 drawer payload.
+         */
+        patch: operations["AdminUsersController_updateProfile"];
         trace?: never;
     };
     "/admin/users/{id}/status": {
@@ -7071,7 +7223,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Admin user detail drawer (RP-06) */
+        get: operations["AdminRolesController_getAdminUser"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8916,6 +9069,56 @@ export interface components {
             /** @description Timing conflict warning */
             timingConflict: components["schemas"]["TimingConflictDto"] | null;
         };
+        TaskCompletionDto: {
+            /** @description Date (YYYY-MM-DD) */
+            date: string;
+            /** @description Total tasks due */
+            totalDue: number;
+            /** @description Completed count */
+            completed: number;
+            /** @description Missed count */
+            missed: number;
+            /** @description Overdue count */
+            overdue?: number;
+            /** @description Completion rate (0-1) */
+            completionRate: number;
+        };
+        TaskCompletionPeriodDto: {
+            /** @description Range start (YYYY-MM-DD) */
+            from: string;
+            /** @description Range end (YYYY-MM-DD) */
+            to: string;
+        };
+        TaskCompletionTotalsDto: {
+            /** @description Total tasks due across the period */
+            totalDue: number;
+            /** @description Completed count across the period */
+            completed: number;
+            /** @description Missed count across the period */
+            missed: number;
+            /** @description Overdue count as of the final day (snapshot metric) */
+            overdue: number;
+        };
+        TaskCompletionDayDto: {
+            /** @description Date (YYYY-MM-DD) */
+            date: string;
+            /** @description Total tasks due on this day */
+            totalDue: number;
+            /** @description Completed count on this day */
+            completed: number;
+            /** @description Missed count on this day */
+            missed: number;
+            /** @description Overdue count as of this day */
+            overdue: number;
+        };
+        TaskCompletionRangeDto: {
+            /** @description Requested period */
+            period: components["schemas"]["TaskCompletionPeriodDto"];
+            /** @description Period totals */
+            totals: components["schemas"]["TaskCompletionTotalsDto"];
+            /** @description Per-day breakdown (prd 02 Missed Tasks Count) */
+            byDay: components["schemas"]["TaskCompletionDayDto"][];
+        };
         FollowUpInputDto: {
             /**
              * @description Follow-up type
@@ -9081,6 +9284,18 @@ export interface components {
             dayProgress: number | null;
             /** @description Expected duration days */
             expectedDurationDays?: number;
+            /** @description Expected number of check-ins for the episode so far (prescribed cadence × elapsed days). */
+            expectedCheckInCount?: number | null;
+            /** @description Normalized monitoring cadence, e.g. daily | twice_daily | thrice_daily | weekly | unknown. */
+            checkInCadence?: string | null;
+            /** @description Daily Check-in Consistency — POSITIVE percentage of expected check-ins completed (0–100). */
+            checkInConsistencyPercent?: number | null;
+            /** @description Percentage of expected check-ins missed (0–100). Complementary to checkInConsistencyPercent. */
+            missedCheckInPercent?: number | null;
+            /** @description Engagement Score 0–100 = 40% check-in consistency + 40% medication adherence + 20% task completion. Null when inputs are insufficient (ADR-031). */
+            engagementScore?: number | null;
+            /** @description Human-readable basis for the engagement score (component values, or insufficient_data + unavailable components). */
+            engagementScoreBasis?: string[];
             /** @description Risk score */
             riskScore?: number;
             /** @description Risk category */
@@ -9187,6 +9402,42 @@ export interface components {
              * @example 75.5
              */
             closedMonthOutcomeRate: number | null;
+        };
+        TimelineEventCategoryDto: {
+            /**
+             * @description Stable category key
+             * @example medication
+             */
+            key: string;
+            /** @description Human-readable category label */
+            label: string;
+            /** @description Event types in this category */
+            eventTypes: string[];
+            /** @description Reserved — published contract, not yet emitted */
+            reserved: boolean;
+        };
+        AiFollowUpContractDto: {
+            /**
+             * @description Reserved AI follow-up event type (PRD 18)
+             * @example ai_follow_up_call
+             */
+            eventType: string;
+            /** @description PRD 18 FR-05 call status values */
+            callStatuses: string[];
+            /** @description PRD 18 FR-24 patient status values */
+            patientStatuses: string[];
+            /** @description Documented payload fields (PHI-safe — no transcript/content) */
+            payloadFields: string[];
+        };
+        TimelineEventTypesResponseDto: {
+            /** @description Flat list of all canonical event types */
+            eventTypes: string[];
+            /** @description Contract-only (reserved) event types with no emitters yet */
+            reservedEventTypes: string[];
+            /** @description Event types grouped by category */
+            categories: components["schemas"]["TimelineEventCategoryDto"][];
+            /** @description Reserved AI follow-up contract (PRD 18) */
+            aiFollowUp: components["schemas"]["AiFollowUpContractDto"];
         };
         CarePlanMonitoringRuleDto: {
             /** @description Rule type (vital/symptom/task) */
@@ -9396,6 +9647,18 @@ export interface components {
             dayProgress: number | null;
             /** @description Expected duration days */
             expectedDurationDays?: number;
+            /** @description Expected number of check-ins for the episode so far (prescribed cadence × elapsed days). */
+            expectedCheckInCount?: number | null;
+            /** @description Normalized monitoring cadence, e.g. daily | twice_daily | thrice_daily | weekly | unknown. */
+            checkInCadence?: string | null;
+            /** @description Daily Check-in Consistency — POSITIVE percentage of expected check-ins completed (0–100). */
+            checkInConsistencyPercent?: number | null;
+            /** @description Percentage of expected check-ins missed (0–100). Complementary to checkInConsistencyPercent. */
+            missedCheckInPercent?: number | null;
+            /** @description Engagement Score 0–100 = 40% check-in consistency + 40% medication adherence + 20% task completion. Null when inputs are insufficient (ADR-031). */
+            engagementScore?: number | null;
+            /** @description Human-readable basis for the engagement score (component values, or insufficient_data + unavailable components). */
+            engagementScoreBasis?: string[];
             /** @description Risk score */
             riskScore?: number;
             /** @description Risk category */
@@ -9507,9 +9770,15 @@ export interface components {
              */
             role: string;
         };
+        MediaReviewerDto: {
+            id: string;
+            name: string | null;
+        };
         MediaItemDto: {
             /** @description Check-in ID the image came from */
             checkInId: string;
+            /** @description Stable per-image key (`{checkInId}:{index}`) — used to review the image and to keep the Reviewed badge across refreshes */
+            mediaId: string;
             /**
              * Format: date-time
              * @description Check-in date
@@ -9521,6 +9790,29 @@ export interface components {
             caption?: string;
             /** @description Media type */
             type?: string;
+            /**
+             * @description Clinical media review state (PRD 02 §Clinical Media): pending_review | reviewed
+             * @example pending_review
+             * @enum {string}
+             */
+            reviewStatus: "pending_review" | "reviewed";
+            /** @description Clinician who reviewed the image; null while pending review */
+            reviewedBy: components["schemas"]["MediaReviewerDto"] | null;
+            /**
+             * Format: date-time
+             * @description When the image was reviewed; null while pending review
+             */
+            reviewedAt: string | null;
+        };
+        ReviewMediaDto: {
+            /**
+             * @description Target review state — `reviewed` persists the badge, `pending_review` clears it
+             * @example reviewed
+             * @enum {string}
+             */
+            status: "pending_review" | "reviewed";
+            /** @description Optional clinician note stored with the review */
+            note?: string;
         };
         CheckInHistoryDto: {
             /** @description Check-in ID */
@@ -9540,20 +9832,6 @@ export interface components {
             symptomTrend?: Record<string, never>;
             /** @description Vitals trend */
             vitalsTrend?: Record<string, never>;
-        };
-        TaskCompletionDto: {
-            /** @description Date (YYYY-MM-DD) */
-            date: string;
-            /** @description Total tasks due */
-            totalDue: number;
-            /** @description Completed count */
-            completed: number;
-            /** @description Missed count */
-            missed: number;
-            /** @description Overdue count */
-            overdue?: number;
-            /** @description Completion rate (0-1) */
-            completionRate: number;
         };
         CarePlanVersionDto: {
             /** @description Care plan ID */
@@ -10043,30 +10321,35 @@ export interface components {
         };
         DeteriorationForecastDto: {
             /**
-             * @description Risk level of deterioration within the horizon
+             * @description Data sufficiency
              * @enum {string}
              */
-            riskLevel: "low" | "moderate" | "high" | "critical";
-            /** @description Adjusted risk score 0-100 */
-            riskScore: number;
-            /** @description Probability of deterioration within horizon (0-100) */
-            probabilityPercent: number;
+            dataSufficiency: "sufficient" | "insufficient_data";
+            /**
+             * @description Risk level of deterioration within the horizon (null when insufficient_data)
+             * @enum {string|null}
+             */
+            riskLevel?: "low" | "moderate" | "high" | "critical" | null;
+            /** @description Adjusted risk score 0-100 (null when insufficient_data) */
+            riskScore?: number | null;
+            /** @description Probability of deterioration within horizon (0-100) (null when insufficient_data) */
+            probabilityPercent?: number | null;
             /**
              * @description Forecast horizon in days
              * @example 7
              */
             horizonDays: number;
-            /** @description Current risk trend */
-            trend: string;
-            /** @description Key drivers identified */
-            keyDrivers: string[];
+            /** @description Current risk trend (null when insufficient_data) */
+            trend?: string | null;
+            /** @description Key drivers identified (null when insufficient_data) */
+            keyDrivers: string[] | null;
             /**
-             * @description Forecast quality
-             * @enum {string}
+             * @description Forecast quality (null when insufficient_data)
+             * @enum {string|null}
              */
-            quality: "high" | "medium" | "low";
-            /** @description Confidence 0-100 */
-            confidence: number;
+            quality?: "high" | "medium" | "low" | null;
+            /** @description Confidence 0-100 (null when insufficient_data) */
+            confidence?: number | null;
             /** @description Deterministic disclaimer */
             disclaimer: string;
         };
@@ -10119,11 +10402,8 @@ export interface components {
              * @example 62
              */
             recoveryProbability: number;
-            /**
-             * @description Web-compatible alias: deterioration.probabilityPercent (0-100)
-             * @example 42
-             */
-            deteriorationRisk: number;
+            /** @description Web-compatible alias: deterioration.probabilityPercent (0-100) (null when insufficient_data) */
+            deteriorationRisk?: number | null;
             /** @description Web-compatible alias: relapse.probabilityPercent (null when no history/diagnosis) */
             relapseRisk?: number | null;
             flags: components["schemas"]["ForecastFlagsDto"];
@@ -10637,6 +10917,14 @@ export interface components {
             /** @description Structured insight payload (present when status is success) */
             insight?: components["schemas"]["EpisodeInsightPayloadDto"];
         };
+        AiSummarySourceDto: {
+            /**
+             * @description Data source that informed the AI summary
+             * @example vitals
+             * @enum {string}
+             */
+            source: "vitals" | "check_ins" | "medications" | "notes" | "media" | "labs" | "recovery_scores" | "alerts";
+        };
         RecoverySummaryResponseDto: {
             /**
              * @description Request status
@@ -10651,6 +10939,8 @@ export interface components {
             decision?: string;
             /** @description Generated at ISO */
             generatedAt?: string;
+            /** @description Data sources that informed the summary (same query set as the prompt builder). Empty array when status is "empty" or the summary predates source tracking. */
+            sources: components["schemas"]["AiSummarySourceDto"][];
         };
         SuggestionListItemDto: {
             /** @description Suggestion ID */
@@ -11197,6 +11487,8 @@ export interface components {
             threshold?: (string | number) | null;
             /** @description Clinician-authored warning text */
             warningMessage?: string | null;
+            /** @description Measurement unit for `value`, resolved from the vital/metric definition (mmHg, %, °C, bpm, …). Null when the metric is unknown or carries no unit. */
+            unit?: string | null;
             /** @description Clinician response instruction */
             responseInstruction?: string | null;
             /** @description Source care-plan rule ID */
@@ -11844,21 +12136,21 @@ export interface components {
             /** @description Patient user ID */
             id: string;
             /** @description Patient full name */
-            name: Record<string, never> | null;
+            name: Record<string, never>;
             /** @description Patient email */
             email: string;
             /** @description Patient phone number */
-            phone: Record<string, never> | null;
+            phone: Record<string, never>;
             /** @description Tracmedy patient ID (unique identifier) */
-            tracmedyPatientId: Record<string, never> | null;
+            tracmedyPatientId: Record<string, never>;
             /** @description Date of birth (ISO 8601) */
-            dateOfBirth: Record<string, never> | null;
+            dateOfBirth: Record<string, never>;
             /** @description Patient age in years (derived from dateOfBirth) */
-            age: Record<string, never> | null;
+            age: Record<string, never>;
             /** @description Gender */
-            gender: Record<string, never> | null;
+            gender: Record<string, never>;
             /** @description Blood group */
-            bloodGroup: Record<string, never> | null;
+            bloodGroup: Record<string, never>;
             /** @description Avatar URL */
             avatarUrl: string | null;
         };
@@ -11871,14 +12163,14 @@ export interface components {
              */
             status: string;
             /** @description External patient ID at this facility */
-            externalPatientId: Record<string, never> | null;
+            externalPatientId: Record<string, never>;
             /**
              * Format: date-time
              * @description When the patient was connected
              */
             connectedAt: string;
             /** @description When the connection was disconnected (nullable) */
-            disconnectedAt: Record<string, never> | null;
+            disconnectedAt: Record<string, never>;
         };
         ConnectionHistoryEventDto: {
             /** @description Event ID */
@@ -11889,7 +12181,7 @@ export interface components {
              */
             type: "connected" | "disconnected" | "reconnected" | "invited";
             /** @description Optional note or reason */
-            note: Record<string, never> | null;
+            note: Record<string, never>;
             /** @description Who performed the action (user ID) */
             performedById: string;
             /**
@@ -11938,9 +12230,9 @@ export interface components {
             /** @description Appointment status */
             status: string;
             /** @description Reason */
-            reason: Record<string, never> | null;
+            reason: Record<string, never>;
             /** @description Clinician name */
-            clinicianName: Record<string, never> | null;
+            clinicianName: Record<string, never>;
         };
         PatientProfileResponseDto: {
             /** @description Patient identity and demographics */
@@ -12124,7 +12416,7 @@ export interface components {
              * @description Patient full name
              * @example John Doe
              */
-            name: Record<string, never> | null;
+            name: Record<string, never>;
             /**
              * @description Patient email address
              * @example patient@example.com
@@ -12139,7 +12431,7 @@ export interface components {
              * @description Tracmedy patient ID
              * @example TRC-2529-001
              */
-            tracmedyPatientId: Record<string, never> | null;
+            tracmedyPatientId: Record<string, never>;
         };
         CreateAppointmentDto: {
             /**
@@ -12469,6 +12761,10 @@ export interface components {
             time: string;
             /** @description Patient name */
             patientName: string | null;
+            /** @description Clinician ID */
+            clinicianId: string | null;
+            /** @description Clinician name */
+            clinicianName: string | null;
             /**
              * @description Appointment type
              * @enum {string}
@@ -12495,6 +12791,19 @@ export interface components {
             /** @description Appointments for this date */
             appointments: components["schemas"]["AppointmentCalendarItemDto"][];
         };
+        CapacitySlotDto: {
+            /**
+             * @description Slot start time (HH:MM)
+             * @example 09:00
+             */
+            time: string;
+            /** @description Appointments already booked in this slot */
+            bookedSlots: number;
+            /** @description Capacity for this slot */
+            totalSlots: number;
+            /** @description Whether this slot still has capacity */
+            available: boolean;
+        };
         CapacityResponseDto: {
             /** @description Facility ID */
             facilityId: string;
@@ -12508,6 +12817,52 @@ export interface components {
             availableSlots: number;
             /** @description Whether booking is available */
             canBook: boolean;
+            /** @description Requested duration in minutes (echoed from the query) */
+            requestedDurationMinutes: number | null;
+            /** @description Whether the requested start slot has spare capacity (null when no start time given) */
+            slotAvailable: boolean | null;
+            /** @description Whether the requested duration fits across consecutive slots (null when no duration given) */
+            fitsDuration: boolean | null;
+            /** @description Per-slot capacity detail for the slots the request spans (null when no start time given) */
+            slotDetails: components["schemas"]["CapacitySlotDto"][] | null;
+        };
+        AvailabilitySlotDto: {
+            /** @description Date (YYYY-MM-DD) */
+            date: string;
+            /**
+             * @description Slot start time (HH:MM)
+             * @example 09:00
+             */
+            startTime: string;
+            /**
+             * @description Slot end time (HH:MM)
+             * @example 09:30
+             */
+            endTime: string;
+            /**
+             * @description Slot duration in minutes
+             * @example 30
+             */
+            durationMinutes: number;
+        };
+        AvailabilityResponseDto: {
+            /** @description Clinician (user) ID */
+            clinicianId: string;
+            /** @description Facility ID */
+            facilityId: string;
+            /** @description Range start date (YYYY-MM-DD) */
+            dateFrom: string;
+            /** @description Range end date (YYYY-MM-DD) */
+            dateTo: string;
+            /** @description Requested slot duration in minutes */
+            durationMinutes: number;
+            /** @description Free slots */
+            slots: components["schemas"]["AvailabilitySlotDto"][];
+            /**
+             * @description Source of the working window used for this result
+             * @enum {string}
+             */
+            generatedFrom: "schedule" | "override";
         };
         RescheduleAppointmentDto: {
             /**
@@ -14052,6 +14407,12 @@ export interface components {
              * @example clx9876543210
              */
             contextId?: string;
+            /**
+             * @description Semantic category of this message
+             * @example REMINDER
+             * @enum {string}
+             */
+            messageType?: "INSTRUCTION" | "REMINDER";
         };
         MessageResponseDto: {
             /**
@@ -14068,12 +14429,12 @@ export interface components {
              * @description Care episode ID
              * @example clx1234567890
              */
-            episodeId: Record<string, never> | null;
+            episodeId: Record<string, never>;
             /**
              * @description Appointment ID
              * @example clx1234567890
              */
-            appointmentId?: Record<string, never> | null;
+            appointmentId?: Record<string, never>;
             /**
              * @description Sender user ID
              * @example clx1234567890
@@ -14117,6 +14478,11 @@ export interface components {
             contextType?: Record<string, never>;
             /** @description Context reference ID */
             contextId?: Record<string, never>;
+            /**
+             * @description Semantic category of the message — INSTRUCTION or REMINDER (null for legacy/uncategorized rows)
+             * @example REMINDER
+             */
+            messageType?: string | null;
             /**
              * Format: date-time
              * @description Timestamp when message was sent
@@ -16411,6 +16777,17 @@ export interface components {
              * @example critical
              */
             whatsappSeverityThreshold: string | null;
+            /**
+             * @description Whether the WhatsApp number has been verified. Always false until a verification flow confirms the number — never inferred client-side.
+             * @default false
+             * @example false
+             */
+            whatsappVerified: boolean;
+            /**
+             * Format: date-time
+             * @description When the WhatsApp number was verified (null if unverified)
+             */
+            whatsappVerifiedAt: string | null;
         };
         UpdateEscalationPreferenceDto: {
             /** @description Preferred channels for alert escalation */
@@ -16425,6 +16802,140 @@ export interface components {
              * @enum {string}
              */
             whatsappSeverityThreshold?: "info" | "low" | "moderate" | "high" | "critical";
+        };
+        FacilityPermissionOptionDto: {
+            /**
+             * @description Stable permission id
+             * @example view_care_episodes
+             */
+            key: string;
+            /**
+             * @description Human-readable label
+             * @example View Care Episodes
+             */
+            label: string;
+            /**
+             * @description Grouping module
+             * @example Clinical Care
+             */
+            module: string;
+        };
+        FacilityPermissionDependencyDto: {
+            /**
+             * @description The dependent permission id
+             * @example manage_care_episodes
+             */
+            permissionKey: string;
+            /**
+             * @description Permission ids automatically required by `permissionKey`
+             * @example [
+             *       "view_care_episodes"
+             *     ]
+             */
+            requires: string[];
+            /**
+             * @description Inverse of `requires` — permission ids for which `permissionKey` is a prerequisite
+             * @example []
+             */
+            grants: string[];
+        };
+        FacilityPermissionPolicyDto: {
+            /**
+             * @description Policy key
+             * @example applyStandardAccess
+             */
+            key: string;
+            /** @description Policy title */
+            title: string;
+            /** @description Policy description */
+            description: string;
+            /** @description Effective value for this facility */
+            checked: boolean;
+            /** @description Design-default value */
+            defaultChecked: boolean;
+        };
+        FacilityPermissionPoliciesResponseDto: {
+            policies: components["schemas"]["FacilityPermissionPolicyDto"][];
+            /** @description Last saved timestamp (null when never customised) */
+            updatedAt?: string | null;
+            /** @description User id that last saved the policies */
+            updatedBy?: string | null;
+        };
+        PermissionPoliciesValueDto: {
+            /** @description Apply Standard Access by Default */
+            applyStandardAccess?: boolean;
+            /** @description Allow Custom Access */
+            allowCustomAccess?: boolean;
+            /** @description Require Confirmation for Elevated Access */
+            requireConfirmation?: boolean;
+            /** @description Record Changes in Audit Log */
+            recordAuditLog?: boolean;
+            /** @description Notify Owner on Full Access */
+            notifyOwner?: boolean;
+            /** @description Prevent Higher Assignment */
+            preventHigherAssignment?: boolean;
+        };
+        UpdatePermissionPoliciesDto: {
+            /** @description Policy key → value map (at least one key required) */
+            policies: components["schemas"]["PermissionPoliciesValueDto"];
+        };
+        FacilityAdministrativePowerDto: {
+            /**
+             * @description Administrative power key
+             * @example manageTeamMembers
+             */
+            key: string;
+            /** @description Administrative power label */
+            label: string;
+            /** @description Effective grant scope for this facility */
+            grantedTo: string;
+        };
+        FacilityWorkspaceAdministrationResponseDto: {
+            powers: components["schemas"]["FacilityAdministrativePowerDto"][];
+            /**
+             * @description Selectable grant scopes
+             * @example [
+             *       "Owners Only",
+             *       "Owners and Admins",
+             *       "Department Heads"
+             *     ]
+             */
+            grantOptions: string[];
+            /** @description Last saved timestamp (null when never customised) */
+            updatedAt?: string | null;
+            /** @description User id that last saved the grants */
+            updatedBy?: string | null;
+        };
+        WorkspaceGrantsValueDto: {
+            /**
+             * @description Who can grant Full Workspace Access
+             * @enum {string}
+             */
+            fullWorkspaceAccess?: "Owners Only" | "Owners and Admins" | "Department Heads";
+            /**
+             * @description Who can edit role permissions
+             * @enum {string}
+             */
+            editRolePermissions?: "Owners Only" | "Owners and Admins" | "Department Heads";
+            /**
+             * @description Who can invite team members
+             * @enum {string}
+             */
+            inviteTeamMembers?: "Owners Only" | "Owners and Admins" | "Department Heads";
+            /**
+             * @description Who can manage team members
+             * @enum {string}
+             */
+            manageTeamMembers?: "Owners Only" | "Owners and Admins" | "Department Heads";
+            /**
+             * @description Who can suspend members
+             * @enum {string}
+             */
+            suspendMembers?: "Owners Only" | "Owners and Admins" | "Department Heads";
+        };
+        UpdateWorkspaceAdministrationDto: {
+            /** @description Administrative power key → grant scope map (at least one key required) */
+            grants: components["schemas"]["WorkspaceGrantsValueDto"];
         };
         DrugSearchResultDto: {
             /** @description Drug reference ID */
@@ -16512,7 +17023,7 @@ export interface components {
              */
             isCustom: boolean;
             /** @description Cached education data (JSON) */
-            cachedData: Record<string, never> | null;
+            cachedData: Record<string, never>;
             /**
              * @description Number of times searched
              * @default 0
@@ -16796,6 +17307,13 @@ export interface components {
             /** @enum {string} */
             status: "pending" | "active" | "locked" | "suspended";
         };
+        AdminUserUpdateDto: {
+            name?: string;
+            /** Format: email */
+            email?: string;
+            /** @description E.164 or local phone number */
+            phone?: string;
+        };
         AdminFacilitiesSummaryDto: {
             total: number;
             active: number;
@@ -16888,6 +17406,116 @@ export interface components {
         AdminHomeCareRequestPageDto: {
             rows: components["schemas"]["AdminHomeCareRequestRowDto"][];
             pagination: components["schemas"]["PaginationDto"];
+        };
+        AdminHomeCareRequestOverviewDto: {
+            id: string;
+            bookingReference: string | null;
+            /** @description clinician_ordered | direct */
+            origin: string;
+            clinicianName: string | null;
+            status: string;
+            legacyStatus: string;
+            serviceName: string | null;
+            serviceCategory: string | null;
+            /** Format: date-time */
+            submittedDate: string;
+            /** Format: date-time */
+            expectedStartDate: string | null;
+            numberOfVisits: number;
+        };
+        AdminHomeCarePatientInformationDto: {
+            patientId: string | null;
+            tracmedyPatientId: string | null;
+            name: string | null;
+            age: number | null;
+            gender: string | null;
+            phone: string | null;
+            address: string;
+            linkedHospital: string | null;
+        };
+        AdminHomeCareRequestedDateTimeDto: {
+            /** Format: date-time */
+            date: string | null;
+            time: string | null;
+        };
+        AdminHomeCareServiceInformationDto: {
+            category: string | null;
+            name: string | null;
+            frequency: string | null;
+            duration: string | null;
+            visits: number;
+            requestedDateTime: components["schemas"]["AdminHomeCareRequestedDateTimeDto"];
+            clinicalInstructions: string | null;
+        };
+        AdminHomeCareRequestRequirementsDto: {
+            referral: string;
+            prescription: string;
+            doctorsNote: string;
+            clinicalReview: string;
+        };
+        AdminHomeCareUploadedDocumentDto: {
+            documentId: string;
+            documentReference: string | null;
+            fileName: string;
+            fileType: string;
+            /** Format: date-time */
+            uploadDate: string;
+            verificationStatus: string;
+            previewUrl: string;
+        };
+        AdminHomeCareOperationalTimelineEntryDto: {
+            id: string;
+            event: string;
+            actor: string | null;
+            actorRole: string | null;
+            /** Format: date-time */
+            timestamp: string;
+            details: {
+                [key: string]: unknown;
+            } | null;
+        };
+        AdminHomeCareQuoteSummaryDto: {
+            quoteId: string;
+            quoteNumber: string;
+            version: number;
+            status: string;
+            serviceFee: number;
+            travelFee: number;
+            platformFee: number;
+            discount: number;
+            totalAmount: number;
+            validityHours: number;
+            /** Format: date-time */
+            expiresAt: string | null;
+            provisionalProviderId: string | null;
+            provisionalProviderReference: string | null;
+        };
+        AdminHomeCareVisitTimelineEntryDto: {
+            id: string;
+            event: string;
+            /** Format: date-time */
+            timestamp: string;
+            actor: string;
+            status: string;
+        };
+        AdminHomeCareVisitSummaryDto: {
+            visitId: string;
+            visitReference: string | null;
+            status: string;
+            /** Format: date-time */
+            scheduledDate: string;
+            timeline: components["schemas"]["AdminHomeCareVisitTimelineEntryDto"][];
+        };
+        AdminHomeCareRequestDetailDto: {
+            requestOverview: components["schemas"]["AdminHomeCareRequestOverviewDto"];
+            patientInformation: components["schemas"]["AdminHomeCarePatientInformationDto"];
+            serviceInformation: components["schemas"]["AdminHomeCareServiceInformationDto"];
+            requestRequirements: components["schemas"]["AdminHomeCareRequestRequirementsDto"];
+            uploadedDocuments: components["schemas"]["AdminHomeCareUploadedDocumentDto"][];
+            operationalTimeline: components["schemas"]["AdminHomeCareOperationalTimelineEntryDto"][];
+            stepperStage: string;
+            quote: components["schemas"]["AdminHomeCareQuoteSummaryDto"] | null;
+            visit: components["schemas"]["AdminHomeCareVisitSummaryDto"] | null;
         };
         AdminHomeCareHoldDto: {
             /** @description Why the request is being placed on hold */
@@ -17405,12 +18033,10 @@ export interface components {
             type: "announcement" | "alert" | "update" | "reminder" | "system" | "billing";
             /** @enum {string} */
             audienceScope: "all" | "patients" | "free" | "premium" | "facilities" | "home_care_professionals" | "caregivers" | "admins";
-            /**
-             * @default [
+            /** @default [
              *       "push",
              *       "in_app"
-             *     ]
-             */
+             *     ] */
             channels: ("push" | "in_app" | "email" | "sms")[];
             /** @description Idempotency key — re-submitting the same key returns the existing draft instead of creating a duplicate. */
             idempotencyKey?: string;
@@ -17541,6 +18167,22 @@ export interface components {
             limit: number;
             pages: number;
         };
+        AdminDirectoryUserDetailDto: {
+            /** @description Admin user id */
+            id: string;
+            /** @description Admin user name */
+            name: string;
+            email: string;
+            phone: string | null;
+            /** @description super_admin | operations_admin | finance_admin | support_admin | custom key */
+            adminRole: string;
+            adminPermissions: string[];
+            status: string;
+            /** @description ISO timestamp */
+            lastLoginAt: string | null;
+            /** @description ISO timestamp */
+            createdAt: string;
+        };
         UpdateAdminUserPermissionsDto: {
             /** @description Role template key. super_admin demotion is blocked when it is the only super admin. */
             adminRole?: string;
@@ -17577,6 +18219,11 @@ export interface components {
         };
         AuditLogDto: {
             id: string;
+            /**
+             * @description Human-readable, immutable audit code (Log ID), e.g. AUD-2026-0001.
+             * @example AUD-2026-0001
+             */
+            auditCode: string;
             facilityId?: string | null;
             actorId?: string | null;
             actorName?: string | null;
@@ -17587,6 +18234,8 @@ export interface components {
             targetEntity?: {
                 [key: string]: unknown;
             } | null;
+            /** @description Human-readable display id for the target entity (booking reference, patient id, facility tracId, audit code, …). Null when unresolvable — a raw internal CUID is never echoed here. */
+            targetEntityDisplayId?: string | null;
             ipAddress?: string | null;
             /** @description Device / Agent string captured from the request */
             userAgent?: string | null;
@@ -17759,11 +18408,9 @@ export interface components {
             exportTier?: "basic" | "professional";
             /** @example null */
             trendHistoryDays?: number | null;
-            /**
-             * @example [
+            /** @example [
              *       "AI health assistant"
-             *     ]
-             */
+             *     ] */
             features?: string[];
         };
         AdminPlanDto: {
@@ -17797,11 +18444,9 @@ export interface components {
             revenueKobo: number;
             /** @description Entitlement benefits JSON as a typed object. */
             benefits: components["schemas"]["AdminPlanBenefitsDto"] | null;
-            /**
-             * @example [
+            /** @example [
              *       "AI health assistant"
-             *     ]
-             */
+             *     ] */
             features: string[];
             /** Format: date-time */
             effectiveAt?: string;
@@ -20524,6 +21169,33 @@ export interface operations {
             };
         };
     };
+    CareEpisodesController_getTimelineEventTypes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canonical timeline event vocabulary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineEventTypesResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CareEpisodesController_findOne: {
         parameters: {
             query?: {
@@ -20825,6 +21497,62 @@ export interface operations {
             };
         };
     };
+    CareEpisodesController_reviewEpisodeMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Care episode id */
+                id: string;
+                /** @description URL-encoded `{checkInId}:{index}` media key */
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMediaDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaItemDto"];
+                };
+            };
+            /** @description Malformed mediaId */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Episode or media item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CareEpisodesController_getCheckinsHistory: {
         parameters: {
             query?: {
@@ -20875,6 +21603,8 @@ export interface operations {
         parameters: {
             query?: {
                 date?: string;
+                dateFrom?: string;
+                dateTo?: string;
             };
             header?: never;
             path: {
@@ -20884,14 +21614,21 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Task completion statistics */
+            /** @description Task completion statistics (single date or period) */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskCompletionDto"];
+                    "application/json": components["schemas"]["TaskCompletionDto"] | components["schemas"]["TaskCompletionRangeDto"];
                 };
+            };
+            /** @description Invalid date range */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
@@ -21156,7 +21893,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Filter by event type */
-                eventType?: string;
+                eventType?: "medication_taken" | "checkin_submitted" | "lab_result_uploaded" | "lab_result_reviewed" | "patient_note" | "care_plan_created" | "care_plan_updated" | "task_completed" | "follow_up_scheduled" | "message_sent" | "ai_follow_up_call" | "alert_acknowledged" | "episode_opened" | "episode_pending" | "episode_dismissed" | "episode_updated" | "episode_closed" | "care_team_changed" | "video_call_started" | "video_call_ended";
                 /** @description Filter by source */
                 source?: string;
                 /** @description Filter by status */
@@ -22755,64 +23492,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PaystackWebhookController_paystackWebhook: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description HMAC-SHA512 hex digest of the raw request body */
-                "x-paystack-signature": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Paystack event payload (subscription.create, invoice.payment_failed, invoice.update, charge.success, subscription.not_renew, subscription.disable, …) */
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @example invoice.payment_failed */
-                    event?: string;
-                    data?: {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description Webhook acknowledged (signature valid; event queued) */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @example true */
-                        received?: boolean;
-                    };
-                };
-            };
-            /** @description Invalid payload */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid signature */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Too many requests — per-IP webhook flood ceiling */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -24677,6 +25356,14 @@ export interface operations {
                 date: string;
                 /** @description Time slot (optional) */
                 time?: string;
+                /** @description Requested start time (HH:MM) — adds per-slot detail */
+                startTime?: string;
+                /** @description Requested duration in minutes — checks consecutive slots */
+                duration?: number;
+                /** @description Filter capacity to a single appointment type */
+                type?: "in_person" | "teleconsultation" | "nurse_checkin";
+                /** @description Scope capacity to a single clinician */
+                clinicianId?: string;
             };
             header?: never;
             path?: never;
@@ -24695,6 +25382,60 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AppointmentController_getAvailability: {
+        parameters: {
+            query: {
+                /** @description Clinician (user) ID */
+                clinicianId: string;
+                /** @description Facility ID */
+                facilityId: string;
+                /** @description Range start date (ISO 8601) */
+                dateFrom: string;
+                /** @description Range end date (ISO 8601, inclusive) */
+                dateTo: string;
+                /** @description Slot duration in minutes (default 30) */
+                duration?: number;
+                /** @description Filter to a single appointment type */
+                type?: "in_person" | "teleconsultation" | "nurse_checkin";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Free slots */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityResponseDto"];
+                };
+            };
+            /** @description Invalid range or range too large */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Clinician schedule not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -28589,6 +29330,64 @@ export interface operations {
             };
         };
     };
+    PaystackWebhookController_paystackWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description HMAC-SHA512 hex digest of the raw request body */
+                "x-paystack-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paystack event payload (subscription.create, invoice.payment_failed, invoice.update, charge.success, subscription.not_renew, subscription.disable, …) */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example invoice.payment_failed */
+                    event?: string;
+                    data?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook acknowledged (signature valid; event queued) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example true */
+                        received?: boolean;
+                    };
+                };
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid signature */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests — per-IP webhook flood ceiling */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CaregiversController_inviteCaregiver: {
         parameters: {
             query?: never;
@@ -30818,6 +31617,232 @@ export interface operations {
             };
         };
     };
+    TeamRolesController_permissionOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Facility permission options */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPermissionOptionDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamRolesController_dependencyRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permission dependency graph */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPermissionDependencyDto"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamRolesController_getPermissionPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permission policies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPermissionPoliciesResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamRolesController_updatePermissionPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePermissionPoliciesDto"];
+            };
+        };
+        responses: {
+            /** @description Saved permission policies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityPermissionPoliciesResponseDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamRolesController_getWorkspaceAdministration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace administration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityWorkspaceAdministrationResponseDto"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TeamRolesController_updateWorkspaceAdministration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceAdministrationDto"];
+            };
+        };
+        responses: {
+            /** @description Saved workspace administration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilityWorkspaceAdministrationResponseDto"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     DrugsController_search: {
         parameters: {
             query: {
@@ -31707,6 +32732,67 @@ export interface operations {
             };
         };
     };
+    AdminUsersController_updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal user CUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailDto"];
+                };
+            };
+            /** @description Empty body / validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Email already in use */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AdminUsersController_changeStatus: {
         parameters: {
             query?: never;
@@ -32157,7 +33243,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminHomeCareRequestDetailDto"];
+                };
             };
             /** @description Request not found */
             404: {
@@ -33829,6 +34917,48 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminUsersPageDto"];
                 };
+            };
+        };
+    };
+    AdminRolesController_getAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDirectoryUserDetailDto"];
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing roles permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin user not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

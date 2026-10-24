@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building2, CalendarCheck, Timer, Video } from "lucide-react";
 import { getAppointments } from "@/lib/api/appointments";
+import { startVisiblePolling } from "@/lib/visible-polling";
 import { cn } from "@/lib/utils";
 
 export type AppointmentStatsValues = {
@@ -241,10 +242,10 @@ export default function AppointmentStats({ values, refreshKey = 0 }: Appointment
     };
 
     void loadStats(true);
-    const interval = window.setInterval(() => void loadStats(false), POLL_INTERVAL_MS);
+    const stopPolling = startVisiblePolling(() => void loadStats(false), POLL_INTERVAL_MS);
     return () => {
       ignore = true;
-      window.clearInterval(interval);
+      stopPolling();
     };
   }, [refreshKey, values]);
 

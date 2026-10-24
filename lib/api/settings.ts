@@ -16,6 +16,7 @@ export type HospitalProfileSettings = {
   contactPhone: string;
   timezone: string;
   logoUrl: string;
+  coverPhotoUrl: string;
 };
 
 export type NotificationPreferences = {
@@ -53,6 +54,7 @@ const defaultHospitalProfile: HospitalProfileSettings = {
   contactPhone: "+234 801 000 0001",
   timezone: "Africa/Lagos",
   logoUrl: "",
+  coverPhotoUrl: "",
 };
 
 export const defaultNotificationPreferences: NotificationPreferences = {
@@ -161,6 +163,7 @@ function normalizeHospitalProfile(payload: unknown): HospitalProfileSettings {
     contactPhone: nullableString(contact, ["contactPhone", "phone", "phoneNumber"], defaultHospitalProfile.contactPhone),
     timezone: nullableString(facility, ["timezone", "timeZone"], defaultHospitalProfile.timezone),
     logoUrl: nullableString(facility, ["logoUrl", "logo", "avatarUrl"], defaultHospitalProfile.logoUrl),
+    coverPhotoUrl: nullableString(facility, ["coverPhotoUrl"], defaultHospitalProfile.coverPhotoUrl),
   };
 }
 
@@ -190,6 +193,7 @@ export async function updateHospitalProfileSettings(profile: HospitalProfileSett
     contactPhone: profile.contactPhone.trim() || null,
     timezone: profile.timezone.trim() || null,
     logoUrl: profile.logoUrl.trim() || null,
+    coverPhotoUrl: profile.coverPhotoUrl.trim() || null,
   };
 
   return normalizeHospitalProfile(await request(`/facilities/${encodeURIComponent(profile.facilityId)}`, {
@@ -214,10 +218,12 @@ export async function updateHospitalLocation(facilityId: string, location: Facil
     longitude: typeof payload?.longitude === "number" ? payload.longitude : null,
   };
 }
-type FacilityUploadType = "logo";
+// POST /facilities/{id}/uploads — PNG/JPEG/WebP ≤ 2 MB; the backend persists the URL to logoUrl / coverPhotoUrl.
+type FacilityUploadType = "logo" | "cover";
 
 async function uploadHospitalMedia(facilityId: string, file: File, type: FacilityUploadType): Promise<string> {
-  if (!facilityId) throw new Error(`Unable to upload hospital logo because the facility ID is missing.`);
+  const label = type === "cover" ? "cover photo" : "logo";
+  if (!facilityId) throw new Error(`Unable to upload hospital ${label} because the facility ID is missing.`);
 
   const formData = new FormData();
   formData.append("file", file);
@@ -228,12 +234,16 @@ async function uploadHospitalMedia(facilityId: string, file: File, type: Facilit
     body: formData,
   })) as FacilityUploadResponseDto | null;
 
-  if (!payload?.url) throw new Error(`The logo upload response did not include a URL.`);
+  if (!payload?.url) throw new Error(`The ${label} upload response did not include a URL.`);
   return payload.url;
 }
 
 export async function uploadHospitalLogo(facilityId: string, file: File): Promise<string> {
   return uploadHospitalMedia(facilityId, file, "logo");
+}
+
+export async function uploadHospitalCover(facilityId: string, file: File): Promise<string> {
+  return uploadHospitalMedia(facilityId, file, "cover");
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {
@@ -318,10 +328,11 @@ export async function getFacilityBillingEstimate(): Promise<FacilityBillingEstim
 export async function getFacilityUsageSummary(): Promise<FacilityUsageSummary> {
   return (await request("/billing/usage")) as FacilityUsageSummary;
 }
-export async function getFacilityInvoices(input: { page?: number; limit?: number; status?: "DRAFT" | "PENDING_PAYMENT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN" } = {}): Promise<FacilityInvoiceList> {
+// GET /billing/invoices — newest first. `page`/`limit` are deliberately NOT sent: the backend's
+// FacilityInvoiceQueryDto declares them @IsInt() without @Type(() => Number), so query-string
+// values fail validation (400). Without them the backend returns its default first page (20 rows).
+export async function getFacilityInvoices(input: { status?: "DRAFT" | "PENDING_PAYMENT" | "OPEN" | "PAID" | "OVERDUE" | "CANCELLED" | "ESCALATED" | "PAYMENT_PLAN" } = {}): Promise<FacilityInvoiceList> {
   const params = new URLSearchParams();
-  if (input.page) params.set("page", String(input.page));
-  if (input.limit) params.set("limit", String(input.limit));
   if (input.status) params.set("status", input.status);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return (await request(`/billing/invoices${suffix}`)) as FacilityInvoiceList;

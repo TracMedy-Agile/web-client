@@ -1,3 +1,5 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+import { sharedRequest } from "@/lib/api/request-cache";
 import type { components, operations } from "@/docs/types/api";
 
 type ApiCareEpisodeSummary = components["schemas"]["CareEpisodeSummaryDto"];
@@ -227,6 +229,18 @@ export type CareEpisodeDetail = CareEpisodeRecord & {
   riskData: ApiRecord | null;
   riskHistory: RiskScoreHistoryPoint[];
   dayProgress: number | null;
+  /** 0–100 = 40% check-in consistency + 40% medication adherence + 20% task completion; null when inputs are insufficient. */
+  engagementScore: number | null;
+  /** Component values, or `insufficient_data` + `component:unavailable` entries. */
+  engagementScoreBasis: string[];
+  /** Expected check-ins so far (prescribed cadence × elapsed days). */
+  expectedCheckInCount: number | null;
+  /** daily | twice_daily | thrice_daily | weekly | unknown */
+  checkInCadence: string | null;
+  /** Share of expected check-ins completed (0–100), from the backend. */
+  checkInConsistencyPercent: number | null;
+  /** Share of expected check-ins missed (0–100). */
+  missedCheckInPercent: number | null;
   facility: { id: string; name: string; tracId: string } | null;
   closure: {
     closureReason: ApiClosureInfo["closureReason"] | null;
@@ -241,15 +255,6 @@ export type CareEpisodeDetail = CareEpisodeRecord & {
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, init?: RequestInit, query?: URLSearchParams) {
   const accessToken = await getAccessToken();
@@ -355,8 +360,12 @@ function unwrapData(payload: unknown) {
   return record && "data" in record ? record.data : payload;
 }
 
+// Who-am-I / which-facility lookups are stable for a session; cleared on sign-in/out.
+const SESSION_LOOKUP_MS = 5 * 60_000;
+
 export async function getHospitalFacilityId(): Promise<string> {
-  const payload = await request("/auth/hospital");
+  // Facility identity is stable for the session; share it instead of refetching per caller.
+  const payload = await sharedRequest("session:auth-hospital:care-episodes", SESSION_LOOKUP_MS, () => request("/auth/hospital"));
   const data = asRecord(unwrapData(payload));
   const facility = asRecord(data?.facility);
   const id = facility?.id;
@@ -440,7 +449,7 @@ export async function updateCareEpisode(id: string, payload: UpdateEpisodePayloa
 }
 
 export async function getCurrentUserId(): Promise<string> {
-  const payload = await request("/auth/me");
+  const payload = await sharedRequest("session:auth-me:care-episodes", SESSION_LOOKUP_MS, () => request("/auth/me"));
   const root = asRecord(unwrapData(payload));
   const user = asRecord(root?.user) ?? root;
   const id = getString(user, ["id"]);
@@ -451,7 +460,7 @@ export async function getCurrentUserId(): Promise<string> {
 export type CurrentUserIdentity = { id: string; name: string };
 
 export async function getCurrentUserIdentity(): Promise<CurrentUserIdentity> {
-  const payload = await request("/auth/me");
+  const payload = await sharedRequest("session:auth-me:care-episodes", SESSION_LOOKUP_MS, () => request("/auth/me"));
   const root = asRecord(unwrapData(payload));
   const user = asRecord(root?.user) ?? root;
   const id = getString(user, ["id"]);
@@ -631,6 +640,14 @@ function normalizeCareEpisodeDetail(payload: unknown): CareEpisodeDetail {
     riskData: asRecord(body.riskData),
     riskHistory: [],
     dayProgress: getNumber(body, ["dayProgress"]) ?? summary.dayProgress,
+    engagementScore: getNumber(body, ["engagementScore"]) ?? null,
+    engagementScoreBasis: Array.isArray(body.engagementScoreBasis)
+      ? body.engagementScoreBasis.filter((item): item is string => typeof item === "string")
+      : [],
+    expectedCheckInCount: getNumber(body, ["expectedCheckInCount"]) ?? null,
+    checkInCadence: getString(body, ["checkInCadence"]) || null,
+    checkInConsistencyPercent: getNumber(body, ["checkInConsistencyPercent"]) ?? null,
+    missedCheckInPercent: getNumber(body, ["missedCheckInPercent"]) ?? null,
     facility: (() => {
       const facility = asRecord(body.facility);
       return facility ? { id: getString(facility, ["id"]), name: getString(facility, ["name"]), tracId: getString(facility, ["tracId"]) } : null;
@@ -745,13 +762,40 @@ export async function getCareEpisodeMedia(
   return list
     .map(asRecord)
     .filter((item): item is ApiRecord => Boolean(item))
-    .map((item) => ({
-      checkInId: getString(item, ["checkInId"]),
-      submittedAt: getString(item, ["submittedAt"]),
-      ...(getString(item, ["url"]) ? { url: getString(item, ["url"]) } : {}),
-      ...(getString(item, ["caption"]) ? { caption: getString(item, ["caption"]) } : {}),
-      ...(getString(item, ["type"]) ? { type: getString(item, ["type"]) } : {}),
-    }));
+    .map(normalizeEpisodeMediaItem);
+}
+
+function normalizeEpisodeMediaItem(item: ApiRecord): EpisodeMediaItem {
+  const reviewer = asRecord(item.reviewedBy);
+  return {
+    checkInId: getString(item, ["checkInId"]),
+    mediaId: getString(item, ["mediaId"]),
+    submittedAt: getString(item, ["submittedAt"]),
+    ...(getString(item, ["url"]) ? { url: getString(item, ["url"]) } : {}),
+    ...(getString(item, ["caption"]) ? { caption: getString(item, ["caption"]) } : {}),
+    ...(getString(item, ["type"]) ? { type: getString(item, ["type"]) } : {}),
+    reviewStatus: getString(item, ["reviewStatus"]) === "reviewed" ? "reviewed" : "pending_review",
+    reviewedBy: reviewer && getString(reviewer, ["id"]) ? { id: getString(reviewer, ["id"]), name: getString(reviewer, ["name"]) || null } : null,
+    reviewedAt: getString(item, ["reviewedAt"]) || null,
+  };
+}
+
+export type ReviewEpisodeMediaInput = components["schemas"]["ReviewMediaDto"];
+
+// PATCH /care-episodes/{id}/media/{mediaId}/review — persists the clinical media Reviewed badge.
+export async function reviewCareEpisodeMedia(
+  episodeId: string,
+  mediaId: string,
+  input: ReviewEpisodeMediaInput,
+): Promise<EpisodeMediaItem> {
+  if (!mediaId) throw new Error("This image cannot be reviewed because it has no media ID.");
+  const payload = await request(
+    `/care-episodes/${encodeURIComponent(episodeId)}/media/${encodeURIComponent(mediaId)}/review`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  const record = asRecord(unwrapData(payload)) ?? asRecord(payload);
+  if (!record) throw new Error("The media review response was empty.");
+  return normalizeEpisodeMediaItem(record);
 }
 
 // POST /care-episodes/{id}/upload-image — uploads to Cloudinary, returns the secure URL.
@@ -897,6 +941,40 @@ export async function getCareEpisodeTaskCompletion(
     missed: getNumber(record, ["missed"]) ?? 0,
     ...(getNumber(record, ["overdue"]) !== null ? { overdue: getNumber(record, ["overdue"]) ?? 0 } : {}),
     completionRate: getNumber(record, ["completionRate"]) ?? 0,
+  };
+}
+
+export type TaskCompletionRange = components["schemas"]["TaskCompletionRangeDto"];
+
+// GET /care-episodes/{id}/tasks/completion?dateFrom&dateTo — period totals + per-day breakdown (max 366 days).
+export async function getCareEpisodeTaskCompletionRange(
+  episodeId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<TaskCompletionRange> {
+  const payload = await request(
+    `/care-episodes/${encodeURIComponent(episodeId)}/tasks/completion`,
+    undefined,
+    new URLSearchParams({ dateFrom, dateTo }),
+  );
+  const record = asRecord(unwrapData(payload)) ?? {};
+  const period = asRecord(record.period);
+  const totals = asRecord(record.totals);
+  return {
+    period: { from: getString(period, ["from"], dateFrom), to: getString(period, ["to"], dateTo) },
+    totals: {
+      totalDue: getNumber(totals, ["totalDue"]) ?? 0,
+      completed: getNumber(totals, ["completed"]) ?? 0,
+      missed: getNumber(totals, ["missed"]) ?? 0,
+      overdue: getNumber(totals, ["overdue"]) ?? 0,
+    },
+    byDay: getRecordArray(record, ["byDay"]).map((day) => ({
+      date: getString(day, ["date"]),
+      totalDue: getNumber(day, ["totalDue"]) ?? 0,
+      completed: getNumber(day, ["completed"]) ?? 0,
+      missed: getNumber(day, ["missed"]) ?? 0,
+      overdue: getNumber(day, ["overdue"]) ?? 0,
+    })),
   };
 }
 
@@ -1192,6 +1270,25 @@ export type TimelineQueryParams = {
   dateFrom?: string;
   dateTo?: string;
 };
+
+export type TimelineEventCategory = components["schemas"]["TimelineEventCategoryDto"];
+
+// GET /care-episodes/timeline-event-types — canonical timeline vocabulary (static reference data).
+export async function getTimelineEventCategories(): Promise<TimelineEventCategory[]> {
+  const payload = await request("/care-episodes/timeline-event-types");
+  const record = asRecord(unwrapData(payload)) ?? asRecord(payload);
+  const categories = Array.isArray(record?.categories) ? record.categories : [];
+  return categories
+    .map(asRecord)
+    .filter((item): item is ApiRecord => Boolean(item))
+    .map((item) => ({
+      key: getString(item, ["key"]),
+      label: getString(item, ["label"]),
+      eventTypes: Array.isArray(item.eventTypes) ? item.eventTypes.filter((value): value is string => typeof value === "string" && value.length > 0) : [],
+      reserved: item.reserved === true,
+    }))
+    .filter((category) => category.key && category.label && category.eventTypes.length > 0);
+}
 
 export async function getCareEpisodeTimelinePage(
   id: string,

@@ -1,16 +1,8 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import type { CarePlan, CarePlanPayload } from "@/app/dashboard/care-episodes/[id]/recovery/adjust-plan/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch("/api/auth/get-token");
-    const data = await response.json();
-    return typeof data.accessToken === "string" ? data.accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, init?: RequestInit) {
   const token = await getAccessToken();

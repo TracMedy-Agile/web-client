@@ -1,3 +1,4 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import type { components, paths } from "@/docs/types/api";
 import {
   getHospitalFacility,
@@ -182,15 +183,6 @@ export function getExportDateRange(timeRange: string): ReportsDateRange {
   return getReportsDateRange(30);
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch("/api/auth/get-token");
-    const payload: unknown = await response.json();
-    return getString(asRecord(payload), ["accessToken"]) || null;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, query?: URLSearchParams): Promise<unknown> {
   const accessToken = await getAccessToken();

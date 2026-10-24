@@ -1,6 +1,7 @@
 import type { components } from '@/docs/types/api'
 import type { SafeUser } from '@/lib/types/auth'
 import { apiClient } from '@/lib/services/auth/api-client'
+import { clearSessionCaches } from '@/lib/services/auth/browser-token'
 
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   AUTH_INVALID_CREDENTIALS: 'Invalid email or password. Please try again.',
@@ -74,6 +75,8 @@ export async function apiHospitalLogin(data: { email: string; password: string }
     const json = await readJson(res)
 
     if (res.ok && json?.ok === true) {
+      // A new session cookie was just set — never reuse a token or lookups cached for a previous user.
+      clearSessionCaches()
       return {
         ok: true,
         data: {
@@ -150,6 +153,7 @@ export async function apiAcceptTeamInvite(data: components['schemas']['AcceptInv
 }
 
 export async function logout() {
+  clearSessionCaches()
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 }
 

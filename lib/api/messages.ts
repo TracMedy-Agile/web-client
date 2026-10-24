@@ -1,5 +1,8 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 export type MessageStatus = "sent" | "acknowledged" | "action_completed";
 export type MessageContextType = "alert" | "biometric" | "symptom";
+/** Persisted semantic category of a manually authored message (SendMessageDto.messageType). */
+export type MessageType = "INSTRUCTION" | "REMINDER";
 
 export type MessageThread = {
   episodeId: string;
@@ -24,6 +27,7 @@ export type MessageRecord = {
   status: MessageStatus;
   contextType: MessageContextType | null;
   contextId: string | null;
+  messageType: MessageType | null;
   sentAt: string;
   acknowledgedAt: string | null;
 };
@@ -39,6 +43,7 @@ type MessageContent = {
   templateUsed?: string;
   contextType?: MessageContextType;
   contextId?: string;
+  messageType?: MessageType;
 };
 
 export type SendMessagePayload = MessageContent & (
@@ -48,15 +53,6 @@ export type SendMessagePayload = MessageContent & (
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch("/api/auth/get-token");
-    const payload = (await response.json()) as { accessToken?: unknown };
-    return typeof payload.accessToken === "string" ? payload.accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function request(path: string, init?: RequestInit): Promise<unknown> {
   const accessToken = await getAccessToken();
@@ -133,6 +129,7 @@ function toMessage(value: unknown): MessageRecord | null {
     status,
     contextType: contextType || null,
     contextId: typeof record.contextId === "string" ? record.contextId : null,
+    messageType: record.messageType === "INSTRUCTION" || record.messageType === "REMINDER" ? record.messageType : null,
     sentAt: asString(record.sentAt),
     acknowledgedAt: typeof record.acknowledgedAt === "string" ? record.acknowledgedAt : null,
   };

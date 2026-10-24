@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { SaveNotice, SettingsHeader, SettingsPanel } from "@/app/dashboard/settings/components";
 import { Button } from "@/components/ui/button";
 import { capturePostHogEvent } from "@/lib/analytics/posthog";
-import { activateFacilityBilling, getFacilityBillingEstimate, getFacilityBillingSubscription, getFacilityInvoices, getFacilityPaymentMethod, getFacilityUsageSummary, getSubscriptionSummary, payFacilityInvoice, reactivateSubscription, startSubscriptionCheckout, verifyFacilityPayment, verifySubscriptionCheckout, type FacilityBillingEstimate, type FacilityBillingSubscription, type FacilityInvoice, type FacilityPaymentMethod, type FacilityUsageSummary, type SubscriptionSummary } from "@/lib/api/settings";
+import { activateFacilityBilling, getFacilityBillingEstimate, getFacilityBillingSubscription, getFacilityInvoices, getFacilityPaymentMethod, getFacilityUsageSummary, getSubscriptionSummary, payFacilityInvoice, reactivateSubscription, verifyFacilityPayment, type FacilityBillingEstimate, type FacilityBillingSubscription, type FacilityInvoice, type FacilityPaymentMethod, type FacilityUsageSummary, type SubscriptionSummary } from "@/lib/api/settings";
 import { BillingTabs, formatInvoiceDate, formatInvoiceMoney } from "@/app/dashboard/settings/billing/components";
 
 const fallbackSubscription: SubscriptionSummary = {
@@ -25,6 +25,15 @@ const fallbackSubscription: SubscriptionSummary = {
   usage: { activeCareEpisodes: 0, billableEpisodes: 0, appointments: 0, activeClinicians: 0 },
 };
 
+// Facility plans (FacilityBillingSubscriptionDto.plan): starter | professional | enterprise.
+// Plan changes are admin-only (web-admin), so hospitals request upgrades through support.
+const TOP_FACILITY_PLAN = "enterprise";
+
+function formatPlanName(plan: string | null | undefined) {
+  const value = (plan ?? "").trim();
+  if (!value) return "--";
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
 
 export default function BillingSettingsPage() {
   const [subscription, setSubscription] = useState<SubscriptionSummary>(fallbackSubscription);
@@ -55,9 +64,11 @@ export default function BillingSettingsPage() {
           return loadSummary();
         })
       : reference
-        ? verifySubscriptionCheckout(reference).then(() => {
+        // Return from the facility activation / payment-method checkout — verify against
+        // facility billing, not the personal (patient) subscription endpoint.
+        ? verifyFacilityPayment(reference).then((result) => {
             if (isMounted) {
-              setNotice("Payment verified. Your subscription is now active.");
+              setNotice(result.status === "success" ? "Payment verified. Your billing details are up to date." : `Payment status: ${result.status}.`);
               window.history.replaceState({}, "", window.location.pathname);
             }
             return loadSummary();
@@ -78,7 +89,7 @@ export default function BillingSettingsPage() {
 
   useEffect(() => {
     let isMounted = true;
-    Promise.allSettled([getFacilityBillingEstimate(), getFacilityUsageSummary(), getFacilityBillingSubscription(), getFacilityInvoices({ page: 1, limit: 10 }), getFacilityPaymentMethod()]).then(([estimateResult, usageResult, billingResult, invoicesResult, paymentMethodResult]) => {
+    Promise.allSettled([getFacilityBillingEstimate(), getFacilityUsageSummary(), getFacilityBillingSubscription(), getFacilityInvoices(), getFacilityPaymentMethod()]).then(([estimateResult, usageResult, billingResult, invoicesResult, paymentMethodResult]) => {
       if (!isMounted) return;
       if (estimateResult.status === "fulfilled") setEstimate(estimateResult.value);
       if (usageResult.status === "fulfilled") setUsageSummary(usageResult.value);
@@ -99,19 +110,6 @@ export default function BillingSettingsPage() {
     { label: "Appointments", quantity: subscription.usage.appointments, amount: 0 },
     { label: "Active Clinicians", quantity: subscription.usage.activeClinicians, amount: 0 },
   ], [estimate, subscription]);
-
-  async function startUpgrade() {
-    setNotice("");
-    try {
-      const callbackUrl = `${window.location.origin}${window.location.pathname}`;
-      const checkout = await startSubscriptionCheckout({ planCode: "plus_monthly", billingCadence: "MONTHLY", callbackUrl });
-      if (!checkout.authorizationUrl) throw new Error("The checkout URL was not returned.");
-      window.location.assign(checkout.authorizationUrl);
-    } catch (error: unknown) {
-      setNotice(error instanceof Error ? error.message : "Unable to start subscription checkout.");
-      toast.error("Unable to start subscription checkout.");
-    }
-  }
 
   async function payInvoice() {
     if (!outstandingInvoice) return;
@@ -216,7 +214,7 @@ export default function BillingSettingsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Subscription Scheduled for Cancellation</p>
-              <p className="mt-2 text-base font-bold text-foreground">{facilityBilling.plan}</p>
+              <p className="mt-2 text-base font-bold text-foreground">{formatPlanName(facilityBilling.plan)}</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Status: <span className="font-semibold text-foreground">{facilityBilling.status}</span>
               </p>
@@ -332,7 +330,7 @@ export default function BillingSettingsPage() {
            <>
              <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
               <div className="rounded-xl border border-border bg-card shadow-sm p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-semibold text-muted-foreground">Current Billing Period</p><h2 className="mt-2 text-2xl font-bold text-foreground">{facilityBilling?.plan || subscription.planName}</h2><p className="mt-2 text-sm text-muted-foreground">{facilityBilling?.currentPeriodStart && facilityBilling.currentPeriodEnd ? formatInvoiceDate(facilityBilling.currentPeriodStart) + " – " + formatInvoiceDate(facilityBilling.currentPeriodEnd) : subscription.billingPeriod}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{facilityBilling?.status || subscription.status}</span></div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-semibold text-muted-foreground">Current Billing Period</p><h2 className="mt-2 text-2xl font-bold text-foreground">{formatPlanName(facilityBilling?.plan)}</h2>{facilityBilling?.plan.toLowerCase() === TOP_FACILITY_PLAN ? <p className="mt-1 text-xs font-medium text-muted-foreground">Highest plan, all features included</p> : null}<p className="mt-2 text-sm text-muted-foreground">{facilityBilling?.currentPeriodStart && facilityBilling.currentPeriodEnd ? formatInvoiceDate(facilityBilling.currentPeriodStart) + " – " + formatInvoiceDate(facilityBilling.currentPeriodEnd) : subscription.billingPeriod}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{facilityBilling?.status || subscription.status}</span></div>
                 {outstandingInvoice ? (
                   <div className="mt-6 rounded-lg border border-border bg-primary/5 p-4">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -352,7 +350,9 @@ export default function BillingSettingsPage() {
               </div>
               <div className="rounded-xl border border-border bg-card shadow-sm p-5">
                 <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary"><CreditCard className="h-5 w-5" /></span><div><h3 className="text-base font-bold text-foreground">Payment Method</h3><p className="mt-1 text-sm text-muted-foreground">{paymentMethod ? `${paymentMethod.provider}${paymentMethod.brand ? ` · ${paymentMethod.brand}` : ""}${paymentMethod.last4 ? ` ending in ${paymentMethod.last4}` : ""}` : "No payment method on file"}</p></div></div>
-                <p className="mt-4 text-sm text-muted-foreground">{paymentMethod?.confirmedAt ? `Confirmed ${formatInvoiceDate(paymentMethod.confirmedAt)}` : "Payment details are masked and managed by the payment gateway."}</p><div className="mt-5 flex flex-wrap gap-3"><Button type="button" variant="outline" onClick={updatePaymentMethod} className="h-10 rounded-lg font-semibold">Update Payment Method</Button><Button type="button" variant="outline" onClick={startUpgrade} className="h-10 rounded-lg font-semibold">Upgrade Plan</Button><Button type="button" variant="outline" asChild className="h-10 rounded-lg font-semibold text-destructive hover:text-destructive"><Link href="/dashboard/settings/billing/cancel-subscription">Cancel Subscription</Link></Button></div>
+                <p className="mt-4 text-sm text-muted-foreground">{paymentMethod?.confirmedAt ? `Confirmed ${formatInvoiceDate(paymentMethod.confirmedAt)}` : "Payment details are masked and managed by the payment gateway."}</p><div className="mt-5 flex flex-wrap gap-3"><Button type="button" variant="outline" onClick={updatePaymentMethod} className="h-10 rounded-lg font-semibold">Update Payment Method</Button>{facilityBilling && facilityBilling.plan.toLowerCase() !== TOP_FACILITY_PLAN ? (
+                    <Button type="button" variant="outline" asChild className="h-10 rounded-lg font-semibold"><Link href="/support">Contact us to upgrade</Link></Button>
+                  ) : null}<Button type="button" variant="outline" asChild className="h-10 rounded-lg font-semibold text-destructive hover:text-destructive"><Link href="/dashboard/settings/billing/cancel-subscription">Cancel Subscription</Link></Button></div>
               </div>
             </div>
 

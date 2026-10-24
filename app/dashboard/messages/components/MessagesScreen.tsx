@@ -68,6 +68,8 @@ function formatMessageTime(value: string) {
 }
 
 function messageLabel(message: MessageRecord) {
+  // Persisted type wins; inference below only covers messages sent before messageType existed.
+  if (message.messageType) return message.messageType;
   const template = message.templateUsed?.toLowerCase() ?? "";
   if (template.includes("reminder")) return "REMINDER";
   if (template.includes("follow")) return "FOLLOW-UP";
@@ -270,6 +272,7 @@ export function MessagesScreen() {
       const newMessage = await sendMessage({
         episodeId: selectedEpisodeId,
         content: messageContent,
+        messageType: composerType,
         ...(selectedTemplate ? { templateUsed: selectedTemplate } : {}),
         ...(isContextType(requestedContext) ? { contextType: requestedContext } : {}),
         ...(isContextType(requestedContext) && requestedContextId ? { contextId: requestedContextId } : {}),

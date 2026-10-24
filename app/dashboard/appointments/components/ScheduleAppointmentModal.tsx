@@ -1,5 +1,7 @@
 "use client";
 
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -13,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { components } from "@/docs/types/api";
-import { confirmAppointment, createAppointment, getAppointmentCapacity, type AppointmentCapacity } from "@/lib/api/appointments";
+import { confirmAppointment, createAppointment, getAppointmentCapacity, isAppointmentCapacityBookable, type AppointmentCapacity } from "@/lib/api/appointments";
 import { useDashboardUser } from "@/components/auth/DashboardUserProvider";
 import { cn } from "@/lib/utils";
 
@@ -206,15 +208,6 @@ function getFacilityIdFromMe(payload: unknown) {
   return getString(user, ["facilityId"], "") || getString(facility, ["id", "facilityId"], "");
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function authorizedRequest(path: string, init?: RequestInit) {
   const accessToken = await getAccessToken();
@@ -466,7 +459,14 @@ export default function ScheduleAppointmentModal({
     if (!formData.date) return;
 
     let ignore = false;
-    const capacityQuery = { facilityId, date: formData.date, time: formData.time };
+    const capacityQuery = {
+      facilityId,
+      date: formData.date,
+      startTime: formData.time || undefined,
+      duration: parseInt(formData.duration, 10) || undefined,
+      type: formData.appointmentType === "physical" ? "in_person" as const : "teleconsultation" as const,
+      clinicianId: formData.clinicianId || undefined,
+    };
     getAppointmentCapacity(capacityQuery)
       .then((result) => {
         if (!ignore) setCapacity(result);
@@ -481,7 +481,7 @@ export default function ScheduleAppointmentModal({
     return () => {
       ignore = true;
     };
-  }, [facilityId, formData.date, formData.duration, formData.time, open]);
+  }, [facilityId, formData.appointmentType, formData.clinicianId, formData.date, formData.duration, formData.time, open]);
 
   const clinicianOptions = useMemo(() => {
     if (!currentClinicianId || clinicians.some((clinician) => clinician.id === currentClinicianId)) return clinicians;
@@ -534,8 +534,12 @@ export default function ScheduleAppointmentModal({
       return;
     }
 
-    if (capacity && !capacity.canBook) {
-      setApiError("No appointment capacity remains for the selected date and time.");
+    if (capacity && !isAppointmentCapacityBookable(capacity)) {
+      setApiError(
+        capacity.fitsDuration === false && capacity.slotAvailable !== false
+          ? `The full ${formData.duration} min doesn't fit at this time. Choose a shorter duration or another time.`
+          : "No appointment capacity remains for the selected date and time.",
+      );
       return;
     }
 
@@ -742,12 +746,16 @@ export default function ScheduleAppointmentModal({
             </div>
 
             {formData.date ? (
-              <p role="status" className={cn("mt-2 text-xs font-semibold", capacity && !capacity.canBook ? "text-red-600" : "text-[#71809B]")}>
+              <p role="status" className={cn("mt-2 text-xs font-semibold", capacity && !isAppointmentCapacityBookable(capacity) ? "text-red-600" : "text-[#71809B]")}>
                 {isCheckingCapacity
                   ? "Checking appointment capacity..."
                   : capacity
                   ? !capacity.canBook
+                    ? `No capacity remains on this date${selectedClinician ? ` for ${selectedClinician.label}` : ""}.`
+                    : capacity.slotAvailable === false
                     ? `This time is unavailable${selectedClinician ? ` for ${selectedClinician.label}` : ""}.`
+                    : capacity.fitsDuration === false
+                    ? `${formData.duration} min doesn't fit at this time${selectedClinician ? ` for ${selectedClinician.label}` : ""}; a later slot is fully booked.`
                     : selectedClinician && formData.time
                       ? `${selectedClinician.label} is available for ${formData.duration} min.`
                       : `${capacity.availableSlots} of ${capacity.totalSlots} slots available${formData.time ? " for this time" : " for this date"}.`

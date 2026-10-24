@@ -178,9 +178,8 @@ export function normalizeCalendarAppointments(payload: unknown, fallbackDate: st
     const endTime = endValue ? toDisplayTime(endValue) : minutesToDisplayTime(parseTimeToMinutes(startTime) + duration);
     const type = getString(appointment, ["type", "appointmentType"], "in_person");
     const patientName = getString(appointment, ["patientName", "patient"], "") || getNestedString(appointment, "patient", ["name", "fullName"]);
-    // AppointmentCalendarItemDto has no clinicianId or clinician fields at all — the calendar
-    // endpoint never returns clinician info, so this can never be resolved from the frontend.
-    const doctor = getString(appointment, ["doctor", "clinicianName", "assignedStaff"], "") || getNestedString(appointment, "clinician", ["name", "fullName"]);
+    // AppointmentCalendarItemDto returns nullable `clinicianName` (+ `clinicianId`) for assigned appointments.
+    const doctor = getString(appointment, ["clinicianName", "doctor", "assignedStaff"], "") || getNestedString(appointment, "clinician", ["name", "fullName"]);
     const date = getRecordDate(appointment, fallbackDate);
 
     return {

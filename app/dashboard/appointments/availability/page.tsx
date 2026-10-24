@@ -1,5 +1,7 @@
 "use client";
 
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -254,15 +256,6 @@ function priorityClass(priority: string) {
   return "bg-slate-100 text-slate-500";
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function fetchClinicianProfile(id: string) {
   const accessToken = await getAccessToken();

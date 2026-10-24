@@ -1,5 +1,7 @@
 "use client";
 
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+
 import { useState } from "react";
 import { AlertCircle, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -13,15 +15,6 @@ type CancelAppointmentModalProps = {
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function cancelAppointmentRequest(appointmentId: string) {
   const accessToken = await getAccessToken();

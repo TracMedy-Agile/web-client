@@ -1,5 +1,7 @@
 "use client";
 
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ComponentType } from "react";
@@ -140,15 +142,6 @@ function getAppointmentItems(payload: unknown): ApiRecord[] {
   return [];
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function fetchTeleconsultations() {
   const accessToken = await getAccessToken();

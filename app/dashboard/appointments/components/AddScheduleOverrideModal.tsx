@@ -1,5 +1,7 @@
 "use client";
 
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
+
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { CalendarDays, Clock3, FileText, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -170,15 +172,6 @@ function normalizeAppointment(record: ApiRecord): AppointmentRow {
   };
 }
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/get-token");
-    const { accessToken } = await res.json();
-    return typeof accessToken === "string" ? accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function apiRequest(path: string, init?: RequestInit, query?: URLSearchParams) {
   const accessToken = await getAccessToken();

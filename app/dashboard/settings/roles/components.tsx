@@ -2,11 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import { Ban, Check, ChevronDown, ChevronRight, KeyRound, LockKeyhole, ShieldCheck, UserPlus, Users } from "lucide-react";
-import { toast } from "sonner";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { capturePostHogEvent } from "@/lib/analytics/posthog";
 import { cn } from "@/lib/utils";
 
 export type RoleAccessLevel = "Standard Access" | "Full Access";
@@ -61,20 +59,6 @@ export const administrativePowers = [
   { key: "manageTeamMembers", label: "Manage Team Members", icon: Users, grantedTo: "Owners and Admins" },
   { key: "suspendMembers", label: "Suspend Members", icon: Ban, grantedTo: "Owners and Admins" },
 ] as const;
-
-export const dependencyRows = [
-  { permission: "Manage Care Episodes", requires: "View Care Episodes" },
-  { permission: "Manage Appointments", requires: "View Appointments" },
-  { permission: "Acknowledge Alerts", requires: "View Alerts" },
-  { permission: "Send Messages", requires: "View Messages" },
-  { permission: "Export Reports", requires: "View Reports & Analytics" },
-  { permission: "Manage Team Members", requires: "View Team" },
-] as const;
-
-export function unavailableRolePolicy(action: string) {
-  capturePostHogEvent("settings_roles_action_unavailable", { action });
-  toast.info("Roles and permissions settings endpoint is not available yet.");
-}
 
 type RoleCardProps = { role: string; accessLevel: RoleAccessLevel; description: string; permissionCount: number; previewPermissions: readonly string[]; permissions: readonly string[]; lastUpdated: string };
 
@@ -133,19 +117,30 @@ export function RoleCard({ role, accessLevel, description, permissionCount, prev
   );
 }
 
-export function PolicyToggle({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
+export function PolicyToggle({ title, description, checked, onChange, disabled = false }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-background p-4">
       <div>
         <p className="text-sm font-semibold text-foreground">{title}</p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} aria-label={title} />
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={title} />
     </div>
   );
 }
 
-export function AdministrativePowerTable() {
+export type AdministrativePowerKey = (typeof administrativePowers)[number]["key"];
+export type GrantOption = (typeof grantOptions)[number];
+
+export function AdministrativePowerTable({
+  values,
+  onChange,
+  disabled = false,
+}: {
+  values: Record<AdministrativePowerKey, GrantOption>;
+  onChange: (key: AdministrativePowerKey, value: GrantOption) => void;
+  disabled?: boolean;
+}) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-background">
       <div className="overflow-x-auto">
@@ -170,8 +165,15 @@ export function AdministrativePowerTable() {
                     </div>
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <Select defaultValue={power.grantedTo} onValueChange={() => unavailableRolePolicy(`Change who can grant ${power.label}`)}>
-                      <SelectTrigger className="ml-auto h-10 w-[190px] rounded-lg text-sm"><SelectValue /></SelectTrigger>
+                    <Select
+                      value={values[power.key]}
+                      disabled={disabled}
+                      onValueChange={(value) => {
+                        const option = grantOptions.find((item) => item === value);
+                        if (option) onChange(power.key, option);
+                      }}
+                    >
+                      <SelectTrigger className="ml-auto h-10 w-[190px] rounded-lg text-sm" aria-label={`Who can grant or edit ${power.label}`}><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {grantOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
                       </SelectContent>
@@ -187,7 +189,14 @@ export function AdministrativePowerTable() {
   );
 }
 
-export function DependencyRulesPanel() {
+export function DependencyRulesPanel({
+  rules,
+  error = false,
+}: {
+  /** Backend dependency graph; null while loading. */
+  rules: Array<{ permission: string; requires: readonly string[] }> | null;
+  error?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -218,12 +227,20 @@ export function DependencyRulesPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {dependencyRows.map((row) => (
-                  <tr key={row.permission}>
-                    <td className="px-5 py-4 font-bold text-foreground">{row.permission}</td>
-                    <td className="px-5 py-4 text-muted-foreground">→ {row.requires}</td>
-                  </tr>
-                ))}
+                {error ? (
+                  <tr><td colSpan={2} className="px-5 py-4 text-muted-foreground">Dependency rules could not be loaded.</td></tr>
+                ) : rules === null ? (
+                  <tr><td colSpan={2} className="px-5 py-4 text-muted-foreground">Loading dependency rules...</td></tr>
+                ) : rules.length === 0 ? (
+                  <tr><td colSpan={2} className="px-5 py-4 text-muted-foreground">No permission dependencies are defined.</td></tr>
+                ) : (
+                  rules.map((row) => (
+                    <tr key={row.permission}>
+                      <td className="px-5 py-4 font-bold text-foreground">{row.permission}</td>
+                      <td className="px-5 py-4 text-muted-foreground">→ {row.requires.join(", ")}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

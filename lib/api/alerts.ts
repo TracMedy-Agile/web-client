@@ -1,3 +1,4 @@
+import { getBrowserAccessToken as getAccessToken } from "@/lib/services/auth/browser-token";
 import {
   asRecord,
   getCareEpisodeById,
@@ -120,16 +121,6 @@ type AlertApiPage = {
 
 const BASE = process.env.NEXT_PUBLIC_API_URL;
 
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const response = await fetch("/api/auth/get-token");
-    const payload: unknown = await response.json();
-    const record = asRecord(payload);
-    return typeof record?.accessToken === "string" ? record.accessToken : null;
-  } catch {
-    return null;
-  }
-}
 
 async function requestAlerts(path: string, query: URLSearchParams): Promise<unknown> {
   const accessToken = await getAccessToken();
@@ -332,10 +323,17 @@ function formatTriggerSource(alert: AlertApiRecord) {
 }
 
 
+// Appends AlertTriggerDataDto.unit (backend-resolved, e.g. mmHg, %, °C) to the breached reading.
+function withUnit(value: string, record: ApiRecord): string {
+  const unit = getString(record, ["unit"]).trim();
+  if (!unit || value.endsWith(unit)) return value;
+  return unit === "%" || unit.startsWith("°") ? `${value}${unit}` : `${value} ${unit}`;
+}
+
 function getTriggerValue(record: ApiRecord): string {
   const direct = record.value;
-  if (typeof direct === "number" && Number.isFinite(direct)) return String(direct);
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  if (typeof direct === "number" && Number.isFinite(direct)) return withUnit(String(direct), record);
+  if (typeof direct === "string" && direct.trim()) return withUnit(direct.trim(), record);
   const highestSeverity = getNumber(record, ["highestSeverity"]);
   if (highestSeverity !== null) return String(highestSeverity);
   const consecutiveMissed = getNumber(record, ["consecutiveMissed", "consecutiveMisses"]);
